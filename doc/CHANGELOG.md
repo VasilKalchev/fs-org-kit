@@ -14,6 +14,21 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 Everything below 0.1 still holds; this adds param references, glob path
 keys, rule-owned caching, two rules, and self-checking docs.
 
+### `examples/`
+
+`examples/para/` — a toy PARA tree, a standard governing it, and a
+tutorial. Three violations are seeded into the tree so the first run
+reports something, and the standard stays small enough to read in one
+sitting: glob path keys, `inherit`, and one fixer, not a tour of the
+grammar.
+
+Each example's `root` is relative, which makes it cwd-dependent — the
+tutorial says to run from the example's own directory. An absolute root
+can't be committed, and resolving a relative root against the standard's
+own location is a change to `runner.py`, not to an example.
+`tests/test_docs_current.py` now scans `examples/` for dangling doc
+links.
+
 ### `file-size-v1`
 
 Per-file `max_size` / `min_size` thresholds — the twelfth bundled rule,
