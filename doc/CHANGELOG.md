@@ -55,9 +55,11 @@ Found while writing that rule's tests.
 literally entry-less, or a hollow tree of folders holding no file
 anywhere). `link-integrity-v1` (broken symlinks, `.desktop`
 `Type=Link`/`Type=Application`, `.url`, `.webloc`, and `.lnk` parsed
-from its LinkInfo structure; a remote URL is counted but never judged,
-since verifying one needs the network the sandbox blocks, and a macOS
-Finder alias is counted as unverifiable rather than guessed at).
+from its LinkInfo structure; a remote URL is counted but never judged -
+the rule could declare the sandbox's `network` capability and fetch it,
+and deliberately doesn't, since reachability is a fact about someone
+else's server rather than about your filesystem - and a macOS Finder
+alias is counted as unverifiable rather than guessed at).
 `link-policy-v1` (files/folders/links each required, allowed or
 forbidden - classification is link-first, or "no real files, links are
 fine" would be unsayable). `collect-v1` (sweeps a path into a

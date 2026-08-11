@@ -166,8 +166,8 @@ class TestDesktopEntries:
         assert verdict(run_check({}, tmp_path))["status"] == "violation"
 
     def test_http_url_is_counted_but_never_judged(self, tmp_path):
-        """Verifying it means a network request, which rule scripts don't
-        get - see the manifest."""
+        """This rule stays offline by choice, not because it couldn't ask
+        the sandbox for `network` - see the manifest for why."""
         (tmp_path / "x.desktop").write_text(
             desktop_entry(Type="Link", URL="https://example.com/page")
         )

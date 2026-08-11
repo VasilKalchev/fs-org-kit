@@ -2,8 +2,8 @@
 """
 link-integrity-v1-check.py - reports links whose target no longer exists,
 across the several unrelated formats that all mean "link". See
-link-integrity-v1.toml for which kinds are checked, what can actually be
-verified without a network, and why there's no fixer.
+link-integrity-v1.toml for which kinds are checked, why this rule stays
+offline and what that leaves unjudged, and why there's no fixer.
 
 Protocol (protocol_version 1.0, single scope):
     python link-integrity-v1-check.py --path <dir> --params '<json>'

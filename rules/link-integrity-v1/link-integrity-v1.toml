@@ -24,12 +24,23 @@ protocol_version = "1.0"
 # Only targets that name a local file: a symlink's target, a file:// URL,
 # a .lnk's stored local path, a .desktop Exec= resolved against PATH.
 #
-# An http(s) target is never reported broken. Checking one means a network
-# request, and rule scripts have no network - the runner's sandbox blocks
-# it (fs_org_kit.sandbox), deliberately, because a checker that reaches
-# the internet turns a filesystem audit into something with a very
-# different failure mode and a very different runtime. A .url or .webloc
-# pointing at a web page is therefore counted, not judged.
+# An http(s) target is never reported broken - counted, not judged. This
+# rule could request the sandbox's `network` capability and fetch them;
+# it deliberately doesn't:
+#
+#   - a verdict that depends on someone else's server isn't a fact about
+#     your filesystem. Offline, every bookmark reports broken, and the
+#     runner exits 1 exactly as it would for a real violation.
+#   - an HTTP status is a poor proxy for "broken": 403 bot protection,
+#     429 rate limiting, a soft-404 parking page returning 200, a login
+#     wall, a host that rejects HEAD.
+#   - 500 bookmarks means 500 round trips with timeouts, on a rule that
+#     otherwise finishes in milliseconds - and it would announce to every
+#     one of those sites that you still hold the bookmark, as a side
+#     effect of a filesystem audit.
+#
+# Reachability wants its own rule, attachable to the one folder where
+# that cost is acceptable, rather than a flag on this one.
 #
 # A .lnk written on Windows stores a path like C:\Users\... which means
 # nothing on this machine. `foreign_links` decides what to do with a
