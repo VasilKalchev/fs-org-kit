@@ -14,6 +14,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 """
 
 import argparse
+import fnmatch
 import json
 import sys
 from pathlib import Path
@@ -102,6 +103,10 @@ def main() -> int:
 
     unknown_is_violation = params.get("unknown_is_violation", False)
     recursive = params.get("recursive", True)
+    exclude_globs = params.get("exclude", [])
+    if not isinstance(exclude_globs, list):
+        print("error: exclude must be a list of glob strings", file=sys.stderr)
+        return 1
 
     root = Path(args.path)
     if not root.is_dir():
@@ -113,8 +118,10 @@ def main() -> int:
     for f in files:
         if not f.is_file():
             continue
-        mime = sniff(f)
         rel = f.relative_to(root).as_posix()
+        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
+            continue
+        mime = sniff(f)
 
         if mime is None:
             if unknown_is_violation and allowed:

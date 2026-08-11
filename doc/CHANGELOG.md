@@ -9,6 +9,29 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ---
 
+## Unreleased
+
+### Every bundled rule has tests
+
+The six that predated the coverage check - `mime-type-v1`,
+`naming-pattern-v1`, `spelling-abbreviations-v1`, `staleness-v1`,
+`timestamp-consistency-v1`, `uncataloged-reserved-v1` - are covered, and
+the exemption list in `tests/test_docs_current.py` is gone rather than
+empty, so a new rule without tests fails outright.
+
+`spelling-abbreviations-v1` is the one rule with a third-party
+dependency, so its suite shadows `pyspellchecker` with an importable stub
+to verify the missing-dependency message on a machine that has the
+package, and skips the rest when it's genuinely absent.
+
+### `mime-type-v1` 1.1 - `exclude` is now read
+
+The manifest declared it and the checker never looked at it, so an
+attachment that set `exclude` passed validation and was silently ignored.
+Found while writing that rule's tests.
+
+---
+
 ## 0.3
 
 ### Eight rules

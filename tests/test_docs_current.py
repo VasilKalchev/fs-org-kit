@@ -27,20 +27,6 @@ DOC_DIR = REPO_ROOT / "doc"
 TESTING_MD = DOC_DIR / "TESTING.md"
 README_MD = REPO_ROOT / "README.md"
 
-# Bundled rules that predate this check and still have no tests. This is
-# debt, not policy - shrink it, never grow it. A new rule with no tests
-# fails `test_every_bundled_rule_has_tests` rather than being quietly
-# added here, and a rule that gains tests fails
-# `test_untested_list_has_no_stale_entries` until it's removed.
-RULES_WITHOUT_TESTS = frozenset({
-    "mime-type-v1",
-    "naming-pattern-v1",
-    "spelling-abbreviations-v1",
-    "staleness-v1",
-    "timestamp-consistency-v1",
-    "uncataloged-reserved-v1",
-})
-
 NUMBER_WORDS = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
     7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven",
@@ -100,17 +86,11 @@ class TestTestCoverage:
         assert not missing
 
     def test_every_bundled_rule_has_tests(self):
+        """No exemption list: this held a shrinking set of grandfathered
+        rules until every one of them was covered. A new rule with no
+        tests fails here rather than being added back to it."""
         missing = {d.name for d in rule_dirs() if not list(d.glob("test_*.py"))}
-        assert not missing - RULES_WITHOUT_TESTS
-
-    def test_untested_list_has_no_stale_entries(self):
-        """A rule that gained tests must come off the list, or it hides a regression."""
-        now_tested = {name for name in RULES_WITHOUT_TESTS
-                      if list((RULES_DIR / name).glob("test_*.py"))}
-        assert not now_tested
-
-    def test_untested_list_names_real_rules(self):
-        assert RULES_WITHOUT_TESTS <= {d.name for d in rule_dirs()}
+        assert not missing
 
 
 class TestRuleInventory:

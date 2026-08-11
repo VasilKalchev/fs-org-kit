@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks each file's ACTUAL type, sniffed from its content (magic bytes), against an allowed or disallowed list of MIME types - catches mislabeled files that file-extensions-v1 can't (a .txt that's actually a PNG, an .exe renamed to .jpg)."
 severity = "error"
 scope = "single"
@@ -25,3 +25,6 @@ exclude = []
 # `unknown_is_violation` controls whether a file the sniffer can't
 # identify at all counts against `allowed` (yes, if true - "not in the
 # allowed list" includes "unrecognized") or is simply skipped (default).
+#
+# `exclude` - glob patterns (matched against the path relative to
+# --path) for files to skip without sniffing at all.
