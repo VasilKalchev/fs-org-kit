@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from fs_org_kit.sandbox import capabilities_for
+
 
 class Tier(str, Enum):
     BUNDLED = "bundled"
@@ -65,6 +67,11 @@ class RuleEntry:
     protocol_version: str
     overrides_bundled: bool
     uses_cache: bool = False
+    # capability names this rule's [sandbox] table grants - see
+    # fs_org_kit.sandbox. Empty means the default policy applies: no
+    # network, no subprocess, no native calls, and writes confined to the
+    # rule's cache plus (in --fix mode) root and its own targets.
+    sandbox: frozenset[str] = frozenset()
     exclude: list[str] = field(default_factory=list)
     params_names: list[str] = field(default_factory=list)
     params_defaults: dict = field(default_factory=dict)
@@ -199,6 +206,21 @@ def _scan_tier(
             ))
             overrides_bundled = False
 
+        sandbox_grants, sandbox_complaints = capabilities_for(manifest.get("sandbox"))
+        for complaint in sandbox_complaints:
+            issues.append(DiscoveryIssue(IssueLevel.WARNING, tier, rule_id, complaint))
+        if sandbox_grants and tier == Tier.EXTERNAL:
+            # Honored, unlike overrides_bundled - an external rule asking for
+            # a capability isn't claiming another rule's identity, and
+            # silently denying it would only produce a confusing runtime
+            # failure with no way forward. Said out loud, though: the point
+            # of the external tier is that nobody vouched for this rule.
+            issues.append(DiscoveryIssue(
+                IssueLevel.WARNING, tier, rule_id,
+                f"external-tier rule grants itself [sandbox] "
+                f"{', '.join(sorted(sandbox_grants))} - review the rule before relying on it",
+            ))
+
         params = manifest.get("params", {})
 
         entries[rule_id] = RuleEntry(
@@ -215,6 +237,7 @@ def _scan_tier(
             protocol_version=str(manifest.get("protocol_version", "1.0")),
             overrides_bundled=overrides_bundled,
             uses_cache=bool(manifest.get("uses_cache", False)),
+            sandbox=frozenset(sandbox_grants),
             exclude=list(manifest.get("exclude", [])),
             params_names=list(params.get("names", [])),
             params_defaults=dict(params.get("defaults", {})),

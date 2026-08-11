@@ -1,0 +1,63 @@
+version = "1.0"
+purpose = "Checks that child folders' icons share their parent's color while keeping their own icon variant, via KDE .directory files."
+severity = "info"
+scope = "single"
+protocol_version = "1.0"
+
+# COLOR IS INHERITED, MEANING IS NOT
+#
+# An icon name decomposes as <prefix>-<color>-<variant>:
+#
+#     folder-yellow-public
+#     ^^^^^^ ^^^^^^ ^^^^^^
+#     prefix color  variant
+#
+# Color says which part of the tree something belongs to; variant says
+# what it is. Those change for different reasons, so the rule propagates
+# one and leaves the other alone: a child of a yellow parent becomes
+# `folder-yellow-<its own variant>`, keeping `-public`, `-git`,
+# `-documents` or whatever it already declared about itself.
+#
+# The parent's color comes from the scanned path's own .directory, or
+# from `color` when set explicitly - useful when the parent itself
+# shouldn't be colored, or isn't a folder you control.
+#
+# WHEN A CHILD ALREADY HAS A DIFFERENT COLOR
+#
+# `on_different_color` decides, because all three answers are reasonable
+# depending on whether the color was set deliberately:
+#   "change"  (default) report it, and let the fixer recolor it
+#   "warn"    report it, but never touch it - the fixer leaves it alone
+#   "ignore"  don't report it at all
+#
+# A child with no icon set at all is a different case, governed by
+# `skip_unset`: false (default) gives it the parent's color with no
+# variant; true leaves undecorated folders undecorated.
+#
+# PLATFORM
+#
+# This is KDE/Dolphin. The .directory file itself is freedesktop
+# desktop-entry format, but reading it for a folder's icon is Dolphin's
+# behavior - GNOME/Nautilus stores custom folder icons as gvfs metadata
+# (metadata::custom-icon), which is not a file and would need `gio` to
+# be shelled out to. macOS stores an icns image in the folder's resource
+# fork, and Windows points desktop.ini at a resource index inside a DLL;
+# in both, the icon is an image or an index, with no color/variant to
+# decompose, so this rule's whole model has nothing to attach to.
+#
+# The theme is never consulted: the rule composes and compares NAMES,
+# and doesn't know or care whether `folder-yellow-public` resolves to
+# anything on this machine. That keeps it working headless, and means a
+# missing icon is a theme problem rather than a rule violation.
+
+[params]
+names = ["color", "colors", "icon_prefix", "on_different_color", "recursive", "exclude", "skip_unset"]
+
+[params.defaults]
+color = ""
+colors = ["black", "blue", "brown", "cyan", "green", "grey", "magenta", "orange", "red", "violet", "yellow"]
+icon_prefix = "folder"
+on_different_color = "change"
+recursive = false
+exclude = []
+skip_unset = false

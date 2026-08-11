@@ -47,6 +47,27 @@
 #              WITHOUT --cache-dir (standalone on the CLI) - by not
 #              caching at all, never by picking a fallback location of
 #              its own.
+#   sandbox    OPTIONAL table. Rule scripts run inside an audit-hook
+#              harness (fs_org_kit.sandbox) that blocks network access,
+#              starting other processes, native/ctypes calls, and writes
+#              outside what the invocation is entitled to touch: the
+#              rule's own cache directory and the system temp directory,
+#              plus - in --fix mode only - root and that invocation's own
+#              target path(s). A checker therefore cannot write anywhere
+#              but its cache, which is this protocol's long-standing
+#              "checkers never write" convention, finally enforced.
+#              A rule that genuinely needs one of those declares it, the
+#              same way uses_cache declares a need for storage:
+#                  [sandbox]
+#                  subprocess = true
+#              Valid keys: network, subprocess, native, unrestricted_writes.
+#              Only `true` grants; false and omission are both denials.
+#              Say WHY in a comment - a reviewer reads this table before
+#              trusting a rule, and "unrestricted_writes = true" with no
+#              explanation is indistinguishable from carelessness.
+#              This is a guard against accidents, NOT a security boundary:
+#              it lives inside the interpreter it polices, so ctypes walks
+#              straight past it. See doc/DESIGN.md, "OS-level sandboxing".
 #   overrides_bundled  ONLY meaningful on a rule in a user's own rules.own/
 #              (never in rules.external/ - see below). true means this
 #              rule intentionally replaces a bundled rule of the exact
@@ -118,6 +139,15 @@ single = "invoked once per path - takes --path, exactly one location"
 cross = "invoked once per cross-path set - takes --paths, 2 or more locations"
 both = "attachable either way - the script must accept both flags and validate them itself"
 
+# Capabilities a rule's own [sandbox] table may grant itself. Everything
+# here is denied by default; a key not in this list is a typo, and rule
+# discovery warns rather than silently granting nothing.
+[enums.sandbox]
+network = "may open network connections and resolve hostnames"
+subprocess = "may start other processes (this also ends the sandbox's reach - the child is not policed)"
+native = "may make ctypes/native calls (which can bypass the harness entirely)"
+unrestricted_writes = "may write anywhere the user can - for a fixer whose destination the core can't know in advance"
+
 
 # ===================================================================
 # Attributes
@@ -127,7 +157,7 @@ both = "attachable either way - the script must accept both flags and validate t
 # entries, one level up.
 
 [attributes]
-names = ["version", "purpose", "severity", "exclude", "scope", "protocol_version", "overrides_bundled", "uses_cache"]
+names = ["version", "purpose", "severity", "exclude", "scope", "protocol_version", "overrides_bundled", "uses_cache", "sandbox"]
 
 [attributes.defaults]
 severity = "info"

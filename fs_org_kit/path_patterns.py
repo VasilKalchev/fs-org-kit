@@ -104,8 +104,19 @@ def patterns_may_overlap(key_a: str, key_b: str) -> bool:
 
 def expand_pattern(root_dir: Path, key: str) -> list[Path]:
     """Runner-only: walks the real filesystem and returns every existing
-    directory matching `key` (a glob pattern relative to root_dir),
-    sorted for deterministic invocation order. Non-directory matches are
-    excluded - a [paths."..."] entry is always a folder."""
+    directory matching `key`, sorted for deterministic invocation order.
+    Non-directory matches are excluded - a [paths."..."] entry is always a
+    folder.
+
+    `key` is normally a pattern relative to root_dir. It may also be an
+    out-of-root pattern (see fs_org_kit.path_keys - the entry has to
+    declare outside_root for the validator to have allowed it here), in
+    which case globbing starts from the filesystem anchor instead:
+    Path.glob rejects an absolute pattern outright, so the pattern is
+    split into its anchor and the rest."""
     pattern = key.rstrip("/")
+    base = Path(pattern).expanduser() if pattern.startswith("~") else Path(pattern)
+    if base.is_absolute():
+        anchor = Path(base.anchor)
+        return sorted(p for p in anchor.glob(str(base.relative_to(anchor))) if p.is_dir())
     return sorted(p for p in root_dir.glob(pattern) if p.is_dir())

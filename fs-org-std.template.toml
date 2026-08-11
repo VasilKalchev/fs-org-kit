@@ -58,6 +58,24 @@
 # mark the ones that won't always exist, and moving the real folder on
 # disk needs no standard edit at all.
 #
+# `outside_root` (bool, no default) - confirms that this entry's key
+# deliberately names somewhere OUTSIDE root. Required on any key that
+# escapes, by any of three routes: absolute ("/etc/nginx/"), home-relative
+# ("~/.config/"), or walking up out of root ("../sibling/"). Without it,
+# such a key is a validation error.
+# It exists because the escape was previously silent and easy to do by
+# accident - joining an absolute key onto root DISCARDS root entirely - so
+# a stray leading slash would have quietly pointed rules at the wrong tree.
+# Unlike every other field here, it is never inherited and never picks up a
+# value from paths.attributes.defaults; it has to be written on the entry
+# that escapes. That's the same stance `reason` takes at rule attachment
+# sites: a field whose whole job is to make one thing deliberate is worth
+# nothing if it can arrive from somewhere else. The runner's sandbox also
+# reads it - an out-of-root path is a place a fixer is allowed to write,
+# and it can only know that if the standard says so.
+# [[paths.cross]] carries the same flag on the cross entry itself, covering
+# every path it lists.
+#
 # `inherit` (optional sub-table on a [paths."..."] or
 # [folders.reserved."..."] entry) - lets one entry reuse another's
 # attributes and/or rule attachments instead of redeclaring them:
@@ -123,8 +141,11 @@
 # of the -fix.py script file, not by a manifest field. Omission is
 # meaningful for `exclude` on a rule's own manifest - see rule.template.toml.
 #
-# Path keys: relative to `root`, no leading slash, trailing slash
-# (e.g. "path/a/", not "/path/a" or "path/a").
+# Path keys: relative to `root`, with a trailing slash (e.g. "path/a/").
+# A key that resolves OUTSIDE root - absolute ("/etc/nginx/"),
+# home-relative ("~/.config/"), or walking up ("../sibling/") - is legal,
+# but only on an entry that declares `outside_root = true`; see that field
+# below.
 #
 # Value formats for rule params that take a duration or a size:
 #   duration - <n><unit>, no space: 3d (days), 5w (weeks), 2m (months)
@@ -159,10 +180,12 @@ purpose = "Specific, individually documented locations under root - each gets it
 # valid field names on a [paths."..."] entry - most have no default
 # since a path's own content is what's supposed to fill them in
 [paths.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing"]
+names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
 
 [paths.attributes.defaults]
 allow_missing = false
+# `outside_root` deliberately has NO default here, and can't be given one:
+# it must be written on each escaping entry itself (see below).
 
 # rules applying to every *standardized* path (i.e. every path with its own
 # [paths."..."] entry below) - not every folder under root. See

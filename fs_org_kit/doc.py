@@ -337,6 +337,8 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
         rows.append(("See also", attrs["see_also"]))
     if attrs.get("allow_missing"):
         rows.append(("May be missing", "yes"))
+    if attrs.get("outside_root"):
+        rows.append(("Outside root", "yes - this entry deliberately points outside the governed tree"))
 
     if rows:
         b.line("| Field | Value |")

@@ -16,8 +16,9 @@ venv/
 *~
 .*.kate-swp
 
-# Machine-local Claude Code permissions; .claude/skills/ IS tracked
+# Machine-local Claude Code state; .claude/skills/ IS tracked
 .claude/settings.local.json
+.claude/worktrees/
 
 # Personal working notes, not project content
 scratch.md

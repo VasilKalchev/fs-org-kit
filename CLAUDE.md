@@ -114,6 +114,22 @@ ends at the doc updates `test_docs_current.py` checks.
   — every existing rule's argparse would reject an unknown flag), and a
   rule that does must still work without it (standalone runs, unusable
   location) by not caching at all.
+- `path_keys.py` — the single place a catalog key becomes a real path
+  (`resolve_key`). A key resolving outside `root` (absolute, `~`, or
+  `..`) is legal only on an entry declaring `outside_root = true`,
+  which is deliberately **never inherited and never defaulted** — the
+  same stance as `reason`. Note the accident it exists for:
+  `root / "/etc/x"` is `/etc/x`, so a stray leading slash used to
+  silently redirect rules to another tree. Never use a bare join.
+- `sandbox.py` — the audit-hook harness every rule script runs inside
+  (both halves in one module so the policy the runner *builds* and the
+  policy the child *enforces* can't drift). Blocks network,
+  subprocess, native calls, and writes outside cache+temp for a
+  checker, plus root and its own targets for a fixer. Capabilities are
+  declared in a manifest's `[sandbox]` table — the runner reads a
+  declaration and never special-cases a rule by name. It is a guard
+  against accidents, **not** a security boundary; don't describe it as
+  one. `--no-sandbox` disables it.
 - `inherit.py` — resolves `[paths."...".inherit]` (attribute/rule
   inheritance for the PARA-style "state via folder location" pattern) and
   standard-wide attribute defaults, once, before validation.
@@ -183,7 +199,11 @@ doc/RULES.md for the full authoring guide; the essentials:
   validator (which never touches the filesystem). Both sides of a
   state-varying path pair (e.g. `active/x/` / `archive/x/`) need it set,
   not just the currently-absent one.
-- Scripts are **not sandboxed** at the process level yet (planned
-  post-MVP audit-hook harness, explicitly out of scope for now) — don't
-  assume any enforcement beyond the documented convention that checkers
-  never write.
+- **Checkers really can't write now** — `sandbox.py` enforces it. A rule
+  that needs a blocked capability declares it in `[sandbox]`; never add
+  a runner-side exception for a specific rule. Rule scripts run
+  standalone are *not* sandboxed, so a rule can pass its own tests and
+  still fail under the runner — check both when touching a fixer.
+- A rule may keep helper modules beside its scripts (`_shared.py`), and
+  several do. The sandbox puts the script's directory on `sys.path` to
+  make that work, since `runpy.run_path` doesn't.

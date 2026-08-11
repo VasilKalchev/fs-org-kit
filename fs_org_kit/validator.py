@@ -88,6 +88,7 @@ except ModuleNotFoundError:  # Python < 3.11
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, resolve_entries
 from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
+from fs_org_kit.path_keys import OUTSIDE_ROOT_ATTR, comparison_key, escapes_root
 from fs_org_kit.path_patterns import is_pattern, patterns_may_overlap
 
 # the schema major version this validator understands - bump this
@@ -243,7 +244,6 @@ WARNING_CODES = {
     "version-format":              ("lint",       "schema_version/standard_version doesn't look like major.minor"),
     "no-paths":                    ("lint",       'no standardized [paths."..."] entries found'),
     "missing-path-attribute-list": ("validation", "paths.attributes.names is empty or missing"),
-    "path-leading-slash":          ("lint",       "a path key starts with a leading slash"),
     "path-trailing-slash":         ("lint",       "a path key doesn't end with a trailing slash"),
     "reserved-name-prefix":        ("lint",       "a reserved folder name doesn't start with `_`"),
     "unknown-path-field":          ("validation", "a path entry has a field not in paths.attributes.names"),
@@ -560,10 +560,15 @@ class Validator:
         patterned = [k for k in keys if is_pattern(k)]
         if not patterned:
             return
+        # Compared in normalized form (fs_org_kit.path_keys.comparison_key)
+        # so an out-of-root key can't collide with a same-looking key under
+        # root ("/etc/*/" vs "etc/*/"), while two spellings of the SAME
+        # out-of-root place still do ("~/x/*/" vs "/home/me/x/*/").
+        normalized = {k: comparison_key(k) for k in keys}
         for a, b in combinations(keys, 2):
             if not is_pattern(a) and not is_pattern(b):
                 continue
-            if not patterns_may_overlap(a, b):
+            if not patterns_may_overlap(normalized[a], normalized[b]):
                 continue
             if self._pattern_overlap_is_sanctioned(a, b, raw_paths):
                 continue
@@ -623,8 +628,6 @@ class Validator:
             loc = f'paths."{key}"'
             self._register("paths", key, loc)
 
-            if key.startswith("/"):
-                self.warning(loc, "path keys shouldn't start with a leading slash (relative to root)", "path-leading-slash")
             if not key.endswith("/"):
                 self.warning(loc, "path keys should end with a trailing slash", "path-trailing-slash")
 
@@ -632,6 +635,7 @@ class Validator:
                 self.error(loc, "expected a table")
                 continue
 
+            self._check_outside_root(key, entry, loc)
             self._check_inherit_shape(entry, loc)
 
             # a table that ONLY has a `rules` key (and no `inherit`) exists
@@ -669,6 +673,8 @@ class Validator:
                 self.error(f"{loc}.paths", "list is empty")
             elif not all(isinstance(p, str) for p in referenced):
                 self.error(f"{loc}.paths", "must be a list of path strings")
+            else:
+                self._check_cross_outside_root(cross, referenced, loc)
             self._check_rule_instances(cross.get("rules"), loc, context="cross")
 
     # -- folders ------------------------------------------------------------
@@ -714,6 +720,58 @@ class Validator:
             self._check_alphabetical_order(list(abbreviations.keys()), "abbreviations")
 
     # -- inherit table shape ------------------------------------------------
+
+    def _check_outside_root(self, key: str, entry: dict[str, Any], loc: str) -> None:
+        """A catalog key that resolves outside `root` is legal only when the
+        entry says so with `outside_root = true` - see fs_org_kit.path_keys
+        for what counts as escaping (absolute, `~`-relative, or `..` walking
+        up) and why an accidental escape used to pass silently.
+
+        The flag must be written on the escaping entry ITSELF. Arriving via
+        `inherit` or paths.attributes.defaults doesn't count, and is an error
+        rather than a quiet acceptance: this is the same reasoning that keeps
+        `reason` un-inheritable at rule attachment sites. A one-word edit to
+        an unrelated entry must never be able to widen the set of directories
+        the tool will walk into and, under --fix, write to."""
+        declared = entry.get(OUTSIDE_ROOT_ATTR)
+        resolved = self.resolved_paths.get(key)
+        inherited = bool(resolved.attributes.get(OUTSIDE_ROOT_ATTR)) if resolved else False
+
+        if declared is not True and inherited:
+            self.error(
+                f"{loc}.{OUTSIDE_ROOT_ATTR}",
+                f"resolved to true through inheritance or paths.attributes.defaults, but "
+                f"{OUTSIDE_ROOT_ATTR} is never inherited or defaulted - write it on this entry itself",
+            )
+        elif escapes_root(key) and declared is not True:
+            self.error(
+                loc,
+                f"resolves outside root - set {OUTSIDE_ROOT_ATTR} = true on this entry to confirm that's "
+                f"intended (an absolute key silently discards root, so this is opt-in rather than implicit)",
+            )
+        elif declared is True and not escapes_root(key):
+            self.error(
+                f"{loc}.{OUTSIDE_ROOT_ATTR}",
+                "is set, but this key resolves inside root - drop the flag, or make the key absolute",
+            )
+
+    def _check_cross_outside_root(self, cross: dict[str, Any], referenced: list[Any], loc: str) -> None:
+        """[[paths.cross]] lists raw path strings rather than catalog entries,
+        so the opt-in lives on the cross table and covers every path it
+        lists - one place to look, same as the per-entry flag."""
+        declared = cross.get(OUTSIDE_ROOT_ATTR) is True
+        outside = [p for p in referenced if isinstance(p, str) and escapes_root(p)]
+        if outside and not declared:
+            self.error(
+                f"{loc}.paths",
+                f"{', '.join(repr(p) for p in outside)} resolve(s) outside root - set "
+                f"{OUTSIDE_ROOT_ATTR} = true on this [[paths.cross]] entry to confirm that's intended",
+            )
+        elif declared and not outside:
+            self.error(
+                f"{loc}.{OUTSIDE_ROOT_ATTR}",
+                "is set, but every path listed here resolves inside root - drop the flag",
+            )
 
     def _check_inherit_shape(self, entry: dict[str, Any], loc: str) -> None:
         inherit = entry.get("inherit")
@@ -823,8 +881,9 @@ class Validator:
             elif any(not item for item in value):
                 self.warning(f"{loc}.{field_name}", "contains empty placeholder entries", "empty-list-item")
 
-        if "allow_missing" in resolved_attrs and not isinstance(resolved_attrs["allow_missing"], bool):
-            self.error(f"{loc}.allow_missing", "must be a boolean (true/false) if present")
+        for flag_name in ("allow_missing", OUTSIDE_ROOT_ATTR):
+            if flag_name in resolved_attrs and not isinstance(resolved_attrs[flag_name], bool):
+                self.error(f"{loc}.{flag_name}", "must be a boolean (true/false) if present")
 
     def _check_origin_field(self, origin: Any, loc: str) -> None:
         # origin is a LIST of enums.paths.origin values (content can be
