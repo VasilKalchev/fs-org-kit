@@ -1,0 +1,76 @@
+version = "1.0"
+purpose = "Checks that any name whose leading characters form a real calendar date or datetime uses one of the standard's accepted formats - a name with no such leading timestamp at all is left alone, not flagged."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: rewriting a name into the correct format is a human decision
+# (what the correct date/time actually IS isn't always recoverable from
+# a malformed one - e.g. "20251231235959name" is ambiguous about where
+# the intended separator should go).
+
+[params]
+names = ["formats", "target", "recursive", "exclude"]
+
+[params.defaults]
+target = "both"
+recursive = true
+exclude = []
+# `formats` has NO default - every standard's accepted timestamp shape
+# is different (this project's own convention docs use "YYYYMMDD_hhmmss"
+# and "YYYY-MM-DD" as examples, but that's not a universal default worth
+# baking in). Must be supplied at every attachment site.
+
+# formats - a list of Python strptime-style format strings, e.g.:
+#     ["%Y%m%d_%H%M%S-", "%Y-%m-%d-"]
+#   Only the fixed-width numeric directives are supported: %Y (4-digit
+#   year), %m/%d/%H/%M/%S (2-digit month/day/hour/minute/second) - not
+#   %y, %B, %A, or anything else with variable-width output, since this
+#   rule determines how many leading characters a format "should" occupy
+#   by rendering it against a reference datetime and measuring the
+#   result, then slicing that many characters off the front of the name
+#   to test. A format can include literal characters of its own (like
+#   the trailing "-" in the example above) - if you want a specific
+#   separator required between the timestamp and the rest of the name,
+#   write it into the format string yourself; a format with no trailing
+#   literal doesn't require any particular separator there at all (e.g.
+#   "%Y-%m-%d" alone accepts "2025-12-31report.txt" just as happily as
+#   "2025-12-31-report.txt" - only the leading date/time span is
+#   validated, whatever immediately follows is out of scope).
+#
+# How "looks timestamped" is decided (so a plain name is never flagged):
+#   A name is checked against `formats` first - if its leading
+#   characters exactly satisfy one of them, it's ok. If not, it's tried
+#   against a small BUILT-IN set of common raw shapes (YYYYMMDD,
+#   YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, YYYYMMDD_HHMMSS, YYYYMMDDHHMMSS, and
+#   a few similar variants) purely to decide whether the name *looks
+#   like an attempted timestamp at all* - not to accept it. If one of
+#   those matches too, the name is reported as a violation (a real
+#   date/datetime is there, just not in your accepted `formats`). If
+#   NEITHER list matches anything, the name has no leading timestamp at
+#   all and is left alone - this built-in set exists only to catch
+#   "close but wrong" attempts, it's not configurable and isn't itself
+#   an accepted-format list.
+#
+#   Each candidate (from either list) is additionally rejected if the
+#   character immediately following the matched span is itself a digit -
+#   otherwise a longer digit run (e.g. a 14-digit YYYYMMDDHHMMSS block)
+#   could be misread as a shorter one (an 8-digit YYYYMMDDdate) that
+#   just happens to start the same way.
+#
+# target    - "files" | "folders" | "both" - what to check names of.
+#             Files are checked by their full filename, extension
+#             included - a timestamp always comes first, so the
+#             extension at the end never interferes.
+# recursive - if true, checks every file/folder under --path; if false,
+#             only --path's own direct children.
+# exclude   - glob patterns (matched against the path relative to
+#             --path) to skip entirely - e.g. for a handful of
+#             grandfathered exceptions.
+#
+# Known limitation: this is a string-shape heuristic, not a semantic
+# one - a filename that happens to start with 8 digits that form a
+# valid calendar date (e.g. an invoice numbered "20251231-Q4.pdf") will
+# be treated as an attempted timestamp and checked against `formats`,
+# even if that was never the intent. There's no way to distinguish "a
+# coincidentally date-shaped number" from "an actual timestamp" from
+# the string alone.

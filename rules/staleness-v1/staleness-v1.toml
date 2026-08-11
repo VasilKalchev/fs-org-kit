@@ -1,0 +1,57 @@
+version = "1.0"
+purpose = "Checks each direct child of a path against an age threshold - either flagging things that have gone stale (mode=\"stale\", for active folders that should stay current) or things that are unexpectedly active (mode=\"active\", for archive folders that shouldn't be seeing new activity)."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+[params]
+names = ["mode", "threshold", "basis", "destination", "exclude"]
+
+[params.defaults]
+basis = "mtime"
+exclude = []
+# mode, threshold, and destination have NO default - both modes are
+# equally likely use cases (see basename-sync-v1's mode param for the
+# same reasoning), no single threshold makes sense across every use
+# case, and there's no universal "right" place to move a violating item
+# to. All three must be supplied at every attachment site.
+
+# mode = "stale"  - flag a direct child whose effective timestamp is
+#                   OLDER than `threshold` - hasn't been touched
+#                   recently enough. Meant for active/working folders.
+# mode = "active" - flag a direct child whose effective timestamp is
+#                   NEWER than `threshold` - has been touched more
+#                   recently than expected. Meant for archive folders
+#                   that shouldn't be seeing fresh activity.
+#
+# threshold - a duration in this project's established format (see
+#             rule.template.toml): <n><unit>, no space - "90d" (days),
+#             "12w" (weeks), "6m" (months, approximated as 30 days
+#             each).
+#
+# basis - "mtime" (content modified) or "atime" (last accessed).
+#         atime is unreliable on many filesystems/mount options (some
+#         disable it entirely for performance) - prefer mtime unless
+#         you've confirmed atime tracking is actually enabled.
+#
+# A direct child that's a FILE uses its own timestamp. A direct child
+# that's a FOLDER uses the MOST RECENT timestamp among every file
+# anywhere inside it (recursively) - a folder's own mtime often only
+# reflects its direct listing changing, not edits deep inside - falling
+# back to the folder's own timestamp only if it's entirely empty.
+#
+# exclude - glob patterns (matched against each direct child's own
+#           name) to skip entirely.
+#
+# destination - what the FIXER uses (see staleness-v1-fix.py): every
+#           violating item is moved to this folder, whatever mode is.
+#           That folder must already exist - the fixer never creates
+#           it. A relative value is resolved against --path's parent
+#           (e.g. "_arch" for a sibling archive folder, matching the
+#           old built-in behavior); an absolute value is used as-is,
+#           which is how you point the fixer at your OS's actual
+#           recycle bin/trash folder instead of an archive - there's no
+#           separate "recycle bin" option, `destination` covers both by
+#           just being a path. A name collision at the destination is
+#           never overwritten - that item is reported as unresolved,
+#           not silently clobbered.

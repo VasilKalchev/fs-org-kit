@@ -1,0 +1,44 @@
+version = "1.0"
+purpose = "Checks for folders that use the standard's reserved-name prefix (e.g. \"_\") but aren't cataloged under [folders.reserved.\"...\"] - a folder that LOOKS reserved but isn't documented."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: whether an uncataloged "_something" folder should be added
+# to the catalog, renamed, or removed is a human decision.
+
+[params]
+names = ["prefix", "cataloged", "recursive", "exclude"]
+
+[params.defaults]
+prefix = "_"
+recursive = true
+exclude = []
+# `cataloged` has NO default - every standard's reserved-folder catalog
+# is different, and there's no sensible universal list. A rule script
+# never sees the parsed standard directly (see doc/RULES.md), so this
+# has to be supplied at the attachment site. Point it at
+# [folders.reserved] itself with a {ref = "..."} value (see
+# fs_org_kit.param_refs) instead of retyping the list by hand and
+# keeping it in sync manually - the runner/validator expand it to
+# [folders.reserved]'s entry names (the `prefix` meta key is excluded
+# automatically) before this script ever sees it:
+#
+#   [[folders.rules.uncataloged-reserved-v1]]
+#   reason = "catch stray reserved-looking folders"
+#
+#   [folders.rules.uncataloged-reserved-v1.params]
+#   cataloged = { ref = "folders.reserved" }
+#
+# A literal list still works too, e.g. for a deliberately narrower set
+# than the standard's full [folders.reserved] table:
+#
+#   cataloged = ["_archive", "_temp", "_wip"]
+#
+# `prefix` defaults to "_" to match [folders.reserved]'s own default -
+# only needs overriding here if the standard customized its own prefix
+# too (folders.reserved.prefix).
+#
+# `exclude` - glob patterns (matched against the path relative to
+# --path) for folders to skip regardless of prefix match - e.g. version
+# control or tool directories that happen to start with the same prefix
+# but were never meant to be "reserved" in this standard's sense.

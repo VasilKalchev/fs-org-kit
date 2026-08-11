@@ -1,0 +1,141 @@
+# =====================================================================
+# rule.template.toml - grammar for a single rule manifest
+# =====================================================================
+#
+# One directory per rule, one manifest per directory:
+#   rules/<rule-name>-v<major>/<rule-name>-v<major>.toml    (this file's shape)
+#   rules/<rule-name>-v<major>/<rule-name>-v<major>-check.py
+#   rules/<rule-name>-v<major>/<rule-name>-v<major>-fix.py (optional)
+#
+# The "-v<major>" directory suffix IS the rule's major version, baked
+# into its identity - rules/name-regex-v1/ and rules/name-regex-v2/ are
+# two independent, coexisting catalog entries, not two revisions of one.
+# A breaking change to a rule's params or behavior means a new
+# -v<major> directory. A non-breaking refinement (smarter pattern, bug
+# fix) bumps `version`'s minor number in place, in the same directory.
+#
+# A rule is referenced from the main standard file by its full
+# directory name, e.g.:
+#   [[paths."area/inv/".rules.name-regex-v1]]
+#   reason = "..."
+#
+# Fields on THIS file:
+#   version    "<major>.<minor>" - major MUST match the directory's
+#              "-v<major>" suffix; minor is free to bump in place
+#   purpose    what this rule checks, for generated documentation
+#   severity   enums.severity below - how loud to report a violation
+#   exclude    OPTIONAL list of glob strings this rule never applies to
+#   scope      enums.scope below - single / cross / both
+#   protocol_version  "<major>.<minor>" - which version of the
+#              runner<->script calling convention this rule's check.py
+#              speaks. Independent of `version` above: `version` is
+#              about THIS rule's own params/behavior; protocol_version
+#              is about the wire format every rule shares. Defaults to
+#              "1.0" - only set it explicitly once a protocol v2 exists
+#              and this script has been migrated to it.
+#   uses_cache OPTIONAL, defaults false. true means this rule keeps
+#              state between runs and wants somewhere to put it. The
+#              runner then passes `--cache-dir <path>` at invocation
+#              (an existing, rule-private directory the core owns and
+#              can list/clear - see fs_org_kit/cache.py). A rule does
+#              NOT choose its own location: caching is a service the
+#              core provides, so that the core keeps an inventory of
+#              what exists and stays able to manage it, and so the
+#              per-platform path logic lives in exactly one place.
+#              A rule that leaves this false never receives the flag.
+#              A rule that sets it MUST still work when invoked
+#              WITHOUT --cache-dir (standalone on the CLI) - by not
+#              caching at all, never by picking a fallback location of
+#              its own.
+#   overrides_bundled  ONLY meaningful on a rule in a user's own rules.own/
+#              (never in rules.external/ - see below). true means this
+#              rule intentionally replaces a bundled rule of the exact
+#              same directory name. Without it, a same-named bundled
+#              rule stays authoritative and the collision is a warning,
+#              not a silent pick. A rule under rules.external/ claiming
+#              overrides_bundled = true has that claim ignored - an
+#              unverified rule must never be able to hijack a trusted
+#              rule's identity just by reusing its name.
+#   params.names     every parameter this rule's script accepts
+#   params.defaults  defaults for some or all of those params - any
+#                    param NOT listed here has no default and MUST be
+#                    supplied at the attachment site in the standard
+#
+# The checker script's protocol (protocol_version "1.0"):
+#   scope = single -> invoked with  --path <one resolved path>
+#   scope = cross   -> invoked with  --paths <path> [--paths <path> ...]
+#                      (2 or more)
+#   scope = both    -> MUST accept both --path and --paths, and must
+#                      itself error if both are given, or if --paths
+#                      is given with fewer than 2 values
+#   always also given:  --params '<json object>'
+#   given only when runner is in fix mode:  --fix
+#   given only to rules declaring uses_cache = true:  --cache-dir <dir>
+#     (an existing, rule-private directory; absent means run without
+#      caching, which every such rule must still handle)
+#   -fix.py scripts are only invoked if:
+#     (1) the file exists (presence indicates the rule can be fixed)
+#     (2) the runner was invoked with --fix (runtime control)
+#   single-scope and cross-scope scripts receive ONLY a location (or
+#   locations) and params - never purpose/notes/lifecycle/etc. Those
+#   fields are for human reading in the generated docs, not for a
+#   script to branch on.
+#   stdout: exactly one JSON line:
+#     {"status": "ok"}
+#     {"status": "violation", "message": "..."}
+#     {"status": "fixed", "message": "..."}
+#     {"status": "unfixable", "message": "..."}
+#   exit code: 0 = ran fine, read stdout for the verdict.
+#              nonzero = the checker itself is broken; stderr has why.
+
+
+version = "1.0"
+purpose = ""
+severity = "info"
+scope = "single"
+protocol_version = "1.0"
+
+[params]
+names = []
+
+[params.defaults]
+
+
+# ===================================================================
+# Enums
+# ===================================================================
+# Shared vocabulary across every rule manifest - declared once here,
+# not repeated per rule.
+
+[enums.severity]
+none = "deliberately silenced - never reported, regardless of any default"
+info = "worth noting, no action expected"
+warn = "should be addressed, but nothing is broken yet"
+error = "the standard is actively violated and needs correction"
+
+[enums.scope]
+single = "invoked once per path - takes --path, exactly one location"
+cross = "invoked once per cross-path set - takes --paths, 2 or more locations"
+both = "attachable either way - the script must accept both flags and validate them itself"
+
+
+# ===================================================================
+# Attributes
+# ===================================================================
+# Valid top-level fields on a rule.toml - mirrors how
+# fs-org-std.template.toml declares paths.attributes.names for path
+# entries, one level up.
+
+[attributes]
+names = ["version", "purpose", "severity", "exclude", "scope", "protocol_version", "overrides_bundled", "uses_cache"]
+
+[attributes.defaults]
+severity = "info"
+scope = "single"
+protocol_version = "1.0"
+overrides_bundled = false
+uses_cache = false
+# `exclude` has no default: omission carries the meaning "no exclusions,"
+# which a default value would erase. Whether a rule can be fixed is
+# determined by whether the -fix.py script exists on disk, not by a
+# manifest field; the runner discovers this structurally.

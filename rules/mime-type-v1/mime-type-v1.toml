@@ -1,0 +1,27 @@
+version = "1.0"
+purpose = "Checks each file's ACTUAL type, sniffed from its content (magic bytes), against an allowed or disallowed list of MIME types - catches mislabeled files that file-extensions-v1 can't (a .txt that's actually a PNG, an .exe renamed to .jpg)."
+severity = "error"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: a mislabeled file needs a human to decide whether to
+# rename, delete, or investigate it - never safe to guess.
+
+[params]
+names = ["allowed", "disallowed", "unknown_is_violation", "recursive", "exclude"]
+
+[params.defaults]
+allowed = []
+disallowed = []
+unknown_is_violation = false
+recursive = true
+exclude = []
+# Like file-extensions-v1: both allowed/disallowed default to empty so
+# params.defaults doesn't force either as "required" - but the checker
+# itself refuses to run unless exactly one is non-empty at call time.
+#
+# Detection is a compact built-in magic-byte sniffer covering common
+# image, audio, video, archive, and document formats, plus a heuristic
+# text/plain fallback (valid UTF-8, no null bytes) - not exhaustive.
+# `unknown_is_violation` controls whether a file the sniffer can't
+# identify at all counts against `allowed` (yes, if true - "not in the
+# allowed list" includes "unrecognized") or is simply skipped (default).

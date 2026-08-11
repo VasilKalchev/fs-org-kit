@@ -1,0 +1,153 @@
+version = "1.0"
+purpose = "Finds byte-identical files by content hash - either within a single path (scope=single) or only across the given paths (scope=cross), e.g. the same photo sitting in both an inbox and its filed destination. Hashes are cached on disk and reused until a file's size or mtime changes."
+severity = "warn"
+scope = "both"
+protocol_version = "1.0"
+uses_cache = true
+
+[params]
+names = ["recursive", "extensions", "exclude", "min_size", "algorithm", "cache", "cache_ttl_days"]
+
+[params.defaults]
+recursive = true
+extensions = []
+exclude = []
+min_size = 1
+algorithm = "blake2b"
+cache = true
+cache_ttl_days = 30
+
+# =====================================================================
+# Scope: what "duplicate" means depends on how this rule is attached
+# =====================================================================
+# This is the first bundled rule with scope = "both", because the same
+# check is genuinely useful in two different shapes and neither is a
+# special case of the other:
+#
+#   --path <p>   (single) - report any group of 2+ identical files found
+#                anywhere under p. "This folder contains redundant
+#                copies of its own contents."
+#
+#   --paths <a> --paths <b> ... (cross) - report ONLY groups that span
+#                2 or more of the given roots. Copies that sit entirely
+#                inside one root are NOT reported here, even though a
+#                single-scope attachment on that same root would flag
+#                them. "These two trees overlap" is a different question
+#                from "this tree repeats itself," and an attachment that
+#                asks the first one shouldn't get answers to the second.
+#
+# Attach it both ways if you want both questions answered - they're
+# independent attachments with independent reasons.
+#
+# =====================================================================
+# Params
+# =====================================================================
+#
+# recursive - if true, every file at any depth under each root is
+#             considered. If false, only files sitting directly inside
+#             each root.
+#
+# extensions - if non-empty, only files with one of these extensions
+#              are considered at all (case- and dot-insensitive, so
+#              "jpg", ".jpg" and "JPG" are the same thing). Empty means
+#              every file counts. Narrowing this is the cheapest way to
+#              make a run faster on a big tree.
+#
+# exclude - glob patterns, matched against each file's path relative to
+#           its OWN root (so "*.tmp" and "cache/*" both work), skipped
+#           entirely.
+#
+# min_size - files smaller than this many bytes are ignored. Defaults
+#            to 1, which skips empty files: every zero-byte file is
+#            byte-identical to every other zero-byte file, so including
+#            them produces one enormous, useless "duplicate group" that
+#            drowns out the real findings. Raise it (e.g. 1024) if
+#            small identical stubs - .gitkeep, tiny sidecar files - are
+#            also noise for a given attachment.
+#
+# algorithm - any hashlib algorithm name; "blake2b" (the default),
+#             "sha256", "md5", etc. blake2b is the default because it's
+#             in the standard library, and is typically faster than
+#             sha256 while being cryptographically stronger than md5.
+#             This rule never compares files byte-for-byte after a hash
+#             match, so don't set this to something you don't trust
+#             against accidental collision.
+#             Changing this value doesn't corrupt the cache - digests
+#             are stored per (file, algorithm), so switching back and
+#             forth just re-uses whichever set is already there.
+#
+# cache - set to false to hash everything from scratch on every run and
+#         write nothing to disk. Only worth doing to rule the cache out
+#         when a result looks wrong.
+#
+# cache_ttl_days - a cached digest whose file hasn't been seen by any
+#            run in this many days is dropped, so the cache doesn't
+#            grow forever as files are renamed, moved, or deleted.
+#            Purely a size control: dropping an entry costs one rehash
+#            the next time that file is actually seen, never a wrong
+#            answer.
+#
+# =====================================================================
+# What is NOT reported
+# =====================================================================
+# - Symlinks are skipped. A symlink is not a redundant copy - it costs
+#   no space and pointing it out as a "duplicate" of its own target is
+#   noise.
+# - Hardlinks to the same inode are collapsed into one file. Two names
+#   for one set of bytes are not two copies of it, and "delete the
+#   duplicate" would be actively wrong advice.
+#
+# =====================================================================
+# Why there is no fixer
+# =====================================================================
+# Finding duplicates is objective; deciding which copy is the canonical
+# one is a policy question this rule has no way to answer - path depth,
+# name quality, mtime, and which tree is "the library" are all
+# plausible tiebreakers and they disagree with each other constantly.
+# Guessing wrong means deleting the copy the user actually wanted to
+# keep, which is not recoverable. See basename-sync-v1's `fixer_script`
+# param for the shape a future delegating fixer would take, if one is
+# ever added: this rule would report the group and hand the decision to
+# a user-supplied script rather than making it internally.
+#
+# =====================================================================
+# The hash cache
+# =====================================================================
+# This rule does NOT choose where its cache lives. It declares
+# `uses_cache = true` above, and the runner hands it a ready-made,
+# rule-private directory via `--cache-dir` (see fs_org_kit/cache.py for
+# the actual per-platform location and why it's the cache directory and
+# not the config directory). Inside whatever directory it's given, this
+# rule creates one file:
+#
+#   <cache-dir>/duplicate-files-v1.sqlite3
+#
+# Centralizing the location means the core keeps an inventory of every
+# cache that exists and can list or clear them
+# (`python -m fs_org_kit.cache --list` / `--clear duplicate-files-v1`),
+# which is impossible if each rule picks its own spot.
+#
+# Invoked WITHOUT --cache-dir - standalone on the CLI, or when the core
+# couldn't create the directory - this rule hashes everything and stores
+# nothing. Slower, never wrong, and never a fallback location of its own.
+#
+# Lifetime: nothing ever deletes the database file itself - not this
+# rule, not the runner, and not `pip uninstall fs-org-kit` (pip removes
+# only what it installed and has no post-uninstall hook). Clearing it is
+# a deliberate act, and belongs to the core rather than to this rule:
+# `python -m fs_org_kit.cache --clear duplicate-files-v1`, or --clear
+# with no argument for every rule at once. Inside the file, a row whose
+# file hasn't been seen for `cache_ttl_days` is swept at the end of any run, and a sweep
+# that actually removed rows is followed by a VACUUM - a bare DELETE
+# only frees pages for reuse inside the file, so without it the cache
+# would get emptier but never smaller on disk.
+#
+# Invalidation: an entry stores the file's size and mtime alongside the
+# digest, and is reused only if BOTH still match exactly. Size is
+# checked as well as mtime because mtime alone is spoofable and
+# genuinely unreliable - restores, `cp -p`, rsync with -t, and unpacking
+# an archive all reproduce an old mtime on new content. Neither is free
+# of that risk on its own, but a file whose content changed while both
+# its size and its nanosecond mtime stayed identical is rare enough to
+# accept, and the alternative (rehashing everything every run) throws
+# away the entire point of the cache.

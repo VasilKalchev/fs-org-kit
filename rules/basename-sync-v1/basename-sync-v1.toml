@@ -1,0 +1,69 @@
+version = "1.0"
+purpose = "Checks whether 2+ paths agree on which files exist by name (ignoring or comparing extensions) - e.g. a lossless library that should have a matching lossy mirror, or a not-processed/processed pair where the source should disappear once processed."
+severity = "warn"
+scope = "cross"
+protocol_version = "1.0"
+# NOTE ON THE FIXER: it shells out to a user-provided script (fixer_script
+# param) once per violating file - if that script does real work (audio
+# transcoding, etc.), the runner's default 30s subprocess timeout is very
+# likely too short for anything but a handful of files. Run with a raised
+# --timeout for real use, e.g. `fs-org-run ... --fix --timeout 3600`.
+
+[params]
+names = ["mode", "recursive", "extensions", "exclude", "fixer_script"]
+
+[params.defaults]
+recursive = true
+extensions = []
+exclude = []
+fixer_script = ""
+# mode has NO default - both modes are equally likely use cases, so
+# every attachment must state explicitly which one it means rather than
+# silently falling back to either.
+# fixer_script defaults to "" (empty = not configured), so an attachment
+# that only ever runs checks isn't forced to supply a script it will
+# never use. Once --fix actually runs against an attachment that left it
+# "", the fixer reports "unfixable" rather than crashing or doing nothing.
+
+# mode = "shared"    - every file's name (stem) must appear in ALL given
+#                     paths, whatever extension it has in each - as if
+#                     the file were shared across them. A stem present
+#                     in some but not all paths is a violation.
+#                     Use case: lossless library -> lossy mirror should
+#                     always be complete.
+# mode = "exclusive" - a file's name (stem) must belong to exactly ONE
+#                     of the given paths - never appear in more than one
+#                     at once, regardless of extension. Use case:
+#                     not-processed/processed pair, where the
+#                     not-processed source should be removed once its
+#                     processed counterpart exists.
+#
+# recursive - if true, matching happens per relative path (folder
+#             structure counts: "artist/album/track01" only matches the
+#             same relative path in another root, not just the bare
+#             filename anywhere else in the tree). If false, only files
+#             directly inside each root are considered - no descending
+#             into subfolders at all.
+#
+# extensions - if non-empty, only files with one of these extensions are
+#              considered part of the comparison at all (e.g. ["flac",
+#              "opus"] to ignore cover art, playlists, etc. living
+#              alongside the audio files). Empty means every file counts.
+#
+# exclude - glob patterns (matched against each file's path relative to
+#           its own root) to ignore regardless of extension - e.g.
+#           ["cover.*", ".*", "*.log"].
+#
+# fixer_script - path to a user-provided executable. Invoked once per
+#                violating stem as:
+#                  <fixer_script> --mode <mode> --stem <stem>
+#                    --present '<json>' --missing '<json>'
+#                where --present is a JSON object {root: [extensions...]}
+#                for every given path that DOES have this stem, and
+#                --missing is a JSON list of the given paths that don't
+#                (always [] in exclusive mode - the violation there is
+#                simply "present in 2+ places"). Exit code 0 means this
+#                stem is now handled; nonzero means it wasn't. What the
+#                script actually DOES - convert, delete, move, notify -
+#                is entirely up to the user; this rule only detects and
+#                delegates, it never touches a file directly itself.

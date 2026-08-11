@@ -1,0 +1,28 @@
+version = "1.0"
+purpose = "Checks that every file under the path has an allowed extension, or does not have a disallowed one - exactly one of the two lists is used per attachment."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# This rule has no fixer script (no file-extensions-v1-fix.py). Whether a
+# misplaced file should be deleted, renamed, or moved is a human decision,
+# not safe to automate. The checker can only ever report violations.
+
+[params]
+names = ["allowed", "disallowed", "recursive", "exclude"]
+
+[params.defaults]
+allowed = []
+disallowed = []
+recursive = true
+exclude = []
+# `allowed` and `disallowed` both default to empty so neither is forced
+# "required" by the usual params.defaults rule - but the script itself
+# refuses to run unless exactly one of them is non-empty at call time.
+# Extensions are matched case-insensitively and without a leading dot
+# (e.g. "jpg", not ".jpg" or "JPG" - either is accepted, both are
+# normalized the same way). A file with no extension at all is treated
+# as extension "none", so it can be explicitly allowed/disallowed too.
+#
+# exclude - glob patterns (matched against each file's path relative to
+#           --path) to skip entirely, regardless of extension - e.g.
+#           for a handful of grandfathered exceptions.

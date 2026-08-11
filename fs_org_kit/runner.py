@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""
+runner.py - validates a populated standard, then runs every attached rule's
+checker (or fixer, in --fix mode) against the real filesystem.
+
+Usage:
+    python -m fs_org_kit.runner path/to/your-file.toml
+    python -m fs_org_kit.runner path/to/your-file.toml --fix
+    python -m fs_org_kit.runner path/to/your-file.toml --include-external
+    python -m fs_org_kit.runner path/to/your-file.toml --rules-dir /path/to/bundled/rules
+    python -m fs_org_kit.runner path/to/your-file.toml --no-color
+
+The standard is validated first (reusing fs_org_kit.validator) - a standard
+with structural errors is never run against the real filesystem. The
+resolved rule catalog from that validation pass (bundled + own + optional
+external, with collisions already settled) is reused directly rather than
+running discovery a second time.
+
+What gets resolved into invocations:
+    - per-path attachments:        [[paths."x/".rules.<name>]]
+    - blanket path attachments:    [[paths.rules.<name>]] - every
+      *cataloged* path (every path with its own [paths."..."] entry)
+    - cross-path attachments:      [[paths.cross.rules.<name>]]
+    - blanket folder attachments:  [[folders.rules.<name>]] - every
+      folder under root (cataloged or not). The rule's own params control
+      what happens: exclusions, recursion, etc. are specified by the rule,
+      not the runner - the runner just invokes the rule once per folder.
+
+A param value may be {ref = "dotted.path"} instead of a literal - see
+fs_org_kit.param_refs - expanded to the table/list found at that path
+elsewhere in the standard. Applied uniformly to every invocation
+regardless of which rule or param it's on; the runner has no per-rule
+knowledge of what any param means.
+
+A [paths."..."] key may be a glob pattern instead of a literal path -
+see fs_org_kit.path_patterns - expanded here against the real
+filesystem into zero, one, or many real targets, each sharing that
+entry's attributes/rule attachments. Pattern-overlap between two
+catalog keys is caught by the validator (a static, disk-free check);
+this module only ever expands one key at a time against real disk
+state, and treats a pattern matching nothing the same way a literal
+path treats not existing - governed by allow_missing, nothing new.
+
+Checker/fixer protocol - see rule.template.toml for the authoritative
+version:
+    scope=single -> --path <one path>
+    scope=cross  -> --paths <path> [--paths <path> ...] (2 or more)
+    scope=both   -> the script itself must accept both and validate them
+    always:        --params '<json object>'
+    fixer only:    --fix (never passed to a checker)
+    uses_cache:    --cache-dir <dir>, only for rules declaring
+                   uses_cache = true in their manifest. The core owns
+                   the location (fs_org_kit.cache) so it keeps an
+                   inventory it can list and clear; a rule never picks
+                   its own. Omitted if the directory can't be created,
+                   in which case the rule must run uncached.
+    stdout: exactly one JSON line -
+        {"status": "ok"} | {"status": "violation", "message": "..."}
+        | {"status": "fixed", "message": "..."} | {"status": "unfixable", "message": "..."}
+    exit 0 = ran fine, read stdout. nonzero = the script itself is broken.
+
+In --fix mode, a rule with a fixer is invoked via its -fix.py directly
+(not checked first, then fixed) - the fixer is expected to detect and
+resolve in one self-contained pass, per the protocol's four-status
+contract. A rule with no fixer still runs its checker normally in --fix
+mode; fix mode doesn't skip rules that can't be fixed, it just can't fix
+them.
+
+Exit codes:
+    0  every invocation came back ok or fixed (or there was nothing to run)
+    1  at least one violation, unfixable, or broken invocation
+    2  the standard could not be read, or had structural validation errors
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
+
+from fs_org_kit.cache import ensure_rule_cache_dir
+from fs_org_kit.discovery import RuleEntry
+from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
+from fs_org_kit.param_refs import expand_params
+from fs_org_kit.path_patterns import expand_pattern, is_pattern
+from fs_org_kit.validator import Validator, _index_source
+
+DEFAULT_TIMEOUT_SECONDS = 30.0
+
+_COLOR = {
+    "violation": "\033[33m",
+    "unfixable": "\033[31m",
+    "broken": "\033[31m",
+    "fixed": "\033[32m",
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+}
+
+
+# ---------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------
+
+@dataclass
+class Invocation:
+    rule_id: str
+    entry: RuleEntry
+    location: str          # dotted TOML location, for reporting
+    reason: str
+    params: dict[str, Any]
+    target_path: Path | None = None
+    target_paths: list[Path] | None = None
+
+    @property
+    def target_display(self) -> str:
+        if self.target_path is not None:
+            return str(self.target_path)
+        return ", ".join(str(p) for p in (self.target_paths or []))
+
+
+@dataclass
+class RunResult:
+    invocation: Invocation
+    status: str      # "ok" | "violation" | "fixed" | "unfixable" | "broken"
+    message: str = ""
+
+
+# ---------------------------------------------------------------------
+# Resolving the standard into invocations
+# ---------------------------------------------------------------------
+
+def _resolve_params(entry: RuleEntry, inst: dict[str, Any]) -> dict[str, Any]:
+    inst_params = inst.get("params", {})
+    if not isinstance(inst_params, dict):
+        inst_params = {}
+    return {**entry.params_defaults, **inst_params}
+
+
+def _add_invocations(
+    invocations: list[Invocation],
+    rules_table: Any,
+    targets: list[tuple[str, Path]],   # (dotted-key, resolved absolute path)
+    loc_prefix: str,
+    catalog: dict[str, RuleEntry],
+) -> None:
+    if not isinstance(rules_table, dict):
+        return
+    for rule_id, instances in rules_table.items():
+        entry = catalog.get(rule_id)
+        if entry is None:
+            continue  # already reported by the validation pass, skip silently here
+        if not isinstance(instances, list):
+            instances = [instances]
+        for i, inst in enumerate(instances):
+            if not isinstance(inst, dict):
+                continue
+            reason = inst.get("reason", "")
+            params = _resolve_params(entry, inst)
+            loc = f"{loc_prefix}.rules.{rule_id}[{i}]"
+            for _key, abs_path in targets:
+                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=abs_path))
+
+
+def _add_invocations_from_resolved(
+    invocations: list[Invocation],
+    resolved_rules: dict[str, list[RuleAttachment]],
+    targets: list[tuple[str, Path]],
+    loc_prefix: str,
+    catalog: dict[str, RuleEntry],
+) -> None:
+    """Same as _add_invocations, but consumes an already-inheritance-resolved
+    rules table (RuleAttachment objects) instead of a raw TOML dict - used
+    for individual [paths."..."] entries, where `inherit` may apply."""
+    for rule_id, attachments in resolved_rules.items():
+        entry = catalog.get(rule_id)
+        if entry is None:
+            continue  # already reported by the validation pass, skip silently here
+        for i, attachment in enumerate(attachments):
+            reason = attachment.instance.get("reason", "")
+            params = _resolve_params(entry, attachment.instance)
+            origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
+            loc = f"{loc_prefix}.rules.{rule_id}[{i}]{origin_note}"
+            for _key, abs_path in targets:
+                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=abs_path))
+
+
+def _resolve_active_targets(
+    resolved_paths: dict[str, ResolvedEntry], root_dir: Path
+) -> tuple[list[tuple[str, Path]], list[str]]:
+    """Splits cataloged paths into ones that exist on disk right now (the
+    only ones any rule gets invoked against) and ones that don't and
+    aren't marked allow_missing (a real problem, reported separately -
+    see main()). A path marked allow_missing that's currently absent is
+    simply excluded from `active` with no further note - that's the
+    entire point of the flag.
+
+    A glob-style key (fs_org_kit.path_patterns) can produce zero, one,
+    or many (key, abs_path) tuples from one catalog entry - every real
+    match shares that entry's resolved attributes/rules, invoked once
+    per match, exactly like [[folders.rules]] already invokes once per
+    real folder on disk. Whether zero matches counts as "missing"
+    follows the same allow_missing attribute a literal path already
+    uses - there's no separate "pattern matched nothing" concept.
+
+    A real match that's ALSO its own explicit literal catalog entry is
+    excluded from the pattern's own expansion - the validator only lets
+    a literal overlap a pattern through when that literal explicitly
+    inherits from it (see Validator._check_pattern_overlaps), so by the
+    time the runner runs, any such overlap is guaranteed sanctioned:
+    the literal entry's own resolved attributes/rules (already
+    including whatever it inherited) are authoritative for that one
+    real folder, not a second, separate invocation via the pattern. A
+    pattern whose real matches are ALL claimed this way still isn't
+    "missing" - the folders exist, they're just individually cataloged
+    elsewhere - only a pattern matching nothing on disk at all falls
+    through to the allow_missing check below."""
+    literal_abs_paths = {(root_dir / key).resolve() for key in resolved_paths if not is_pattern(key)}
+    active: list[tuple[str, Path]] = []
+    missing_and_not_allowed: list[str] = []
+    for key, resolved in resolved_paths.items():
+        if is_pattern(key):
+            raw_matches = expand_pattern(root_dir, key)
+            if raw_matches:
+                active.extend((key, m) for m in raw_matches if m not in literal_abs_paths)
+                continue
+        else:
+            abs_path = (root_dir / key).resolve()
+            if abs_path.is_dir():
+                active.append((key, abs_path))
+                continue
+        if not bool(resolved.attributes.get("allow_missing", False)):
+            missing_and_not_allowed.append(key)
+    return active, missing_and_not_allowed
+
+
+def collect_invocations(
+    data: dict[str, Any],
+    root_dir: Path,
+    catalog: dict[str, RuleEntry],
+    resolved_paths: dict[str, ResolvedEntry],
+) -> tuple[list[Invocation], list[str]]:
+    """Walk the standard and build one Invocation per (rule, target) pair.
+    Returns (invocations, missing_and_not_allowed) - the second list is
+    cataloged paths absent from disk and not marked allow_missing."""
+    invocations: list[Invocation] = []
+    paths = data.get("paths", {})
+
+    active_targets, missing = _resolve_active_targets(resolved_paths, root_dir)
+
+    # per-path attachments - resolved rules already include inherited +
+    # excluded + this entry's own, merged
+    for key, abs_path in active_targets:
+        resolved = resolved_paths[key]
+        _add_invocations_from_resolved(invocations, resolved.rules, [(key, abs_path)], f'paths."{key}"', catalog)
+
+    # paths.rules blanket - every *cataloged* path that currently exists.
+    # The blanket table itself isn't an entry that can use `inherit`, so
+    # this stays on the raw-dict path, same as before.
+    _add_invocations(invocations, paths.get("rules"), active_targets, "paths", catalog)
+
+    # paths.cross
+    for i, cross in enumerate(paths.get("cross", [])):
+        if not isinstance(cross, dict):
+            continue
+        rules_table = cross.get("rules")
+        referenced = cross.get("paths", [])
+        if not isinstance(rules_table, dict) or not referenced:
+            continue
+        abs_paths = [(root_dir / p).resolve() for p in referenced if isinstance(p, str)]
+        for rule_id, instances in rules_table.items():
+            entry = catalog.get(rule_id)
+            if entry is None:
+                continue
+            if not isinstance(instances, list):
+                instances = [instances]
+            for j, inst in enumerate(instances):
+                if not isinstance(inst, dict):
+                    continue
+                reason = inst.get("reason", "")
+                params = _resolve_params(entry, inst)
+                loc = f"paths.cross[{i}].rules.{rule_id}[{j}]"
+                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_paths=abs_paths))
+
+    # folders.rules blanket - apply to root itself
+    # the rule's own params control recursion, exclusion, etc.
+    folders_rules = data.get("folders", {}).get("rules")
+    if isinstance(folders_rules, dict):
+        for rule_id, instances in folders_rules.items():
+            entry = catalog.get(rule_id)
+            if entry is None:
+                continue
+            if not isinstance(instances, list):
+                instances = [instances]
+            for j, inst in enumerate(instances):
+                if not isinstance(inst, dict):
+                    continue
+                reason = inst.get("reason", "")
+                params = _resolve_params(entry, inst)
+                loc = f"folders.rules.{rule_id}[{j}]"
+                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=root_dir))
+
+    # {ref = "dotted.path"} param values (see fs_org_kit.param_refs) are
+    # expanded here, once, regardless of which of the four attachment
+    # shapes above produced the invocation - the validator has already
+    # confirmed every reference resolves, so no error handling is needed
+    # on this side.
+    for inv in invocations:
+        inv.params, _ = expand_params(inv.params, data)
+
+    return invocations, missing
+
+
+# ---------------------------------------------------------------------
+# Invoking rule scripts
+# ---------------------------------------------------------------------
+
+def invoke_script(
+    script: Path,
+    invocation: Invocation,
+    is_fix: bool,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> RunResult:
+    argv = [sys.executable, str(script)]
+    if invocation.target_path is not None:
+        argv += ["--path", str(invocation.target_path)]
+    else:
+        for p in invocation.target_paths or []:
+            argv += ["--paths", str(p)]
+    argv += ["--params", json.dumps(invocation.params)]
+    if is_fix:
+        argv.append("--fix")
+    if invocation.entry.uses_cache:
+        # The core owns the location; the rule is handed a ready-made,
+        # rule-private directory rather than resolving one itself (see
+        # fs_org_kit.cache). If it can't be created, the flag is simply
+        # omitted and the rule runs uncached - slower, never wrong.
+        cache_dir = ensure_rule_cache_dir(invocation.rule_id)
+        if cache_dir is not None:
+            argv += ["--cache-dir", str(cache_dir)]
+
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return RunResult(invocation, "broken", f"timed out after {timeout:.0f}s")
+    except OSError as e:
+        return RunResult(invocation, "broken", f"failed to launch: {e}")
+
+    if result.returncode != 0:
+        reason = result.stderr.strip() or result.stdout.strip() or f"exited {result.returncode} with no output"
+        return RunResult(invocation, "broken", reason)
+
+    try:
+        payload = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        return RunResult(invocation, "broken", f"did not print exactly one JSON line on stdout: {result.stdout!r}")
+
+    status = payload.get("status")
+    if status not in ("ok", "violation", "fixed", "unfixable"):
+        return RunResult(invocation, "broken", f"unrecognized status in JSON output: {payload!r}")
+
+    return RunResult(invocation, status, payload.get("message", ""))
+
+
+def run_invocation(invocation: Invocation, fix_requested: bool, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> RunResult:
+    entry = invocation.entry
+    if fix_requested and entry.has_fixer:
+        return invoke_script(entry.fix_script, invocation, is_fix=True, timeout=timeout)
+    return invoke_script(entry.check_script, invocation, is_fix=False, timeout=timeout)
+
+
+# ---------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------
+
+def _format_result(result: RunResult, standard_dir: Path, color: bool) -> str:
+    tag = result.status.upper()
+    target = result.invocation.target_display
+    try:
+        target = str(Path(target).relative_to(standard_dir))
+    except ValueError:
+        pass  # outside standard_dir (e.g. root elsewhere) - show absolute
+    if color and result.status in _COLOR:
+        c = _COLOR[result.status]
+        tag = f"{c}{tag}{_COLOR['reset']}"
+    line = f"{result.invocation.location}: [{tag}] {result.invocation.rule_id} ({target})"
+    if result.message:
+        line += f": {result.message}"
+    return line
+
+
+def _print_summary(results: list[RunResult], color: bool) -> None:
+    counts = {"ok": 0, "violation": 0, "fixed": 0, "unfixable": 0, "broken": 0}
+    for r in results:
+        counts[r.status] = counts.get(r.status, 0) + 1
+
+    print("Summary")
+    for status in ("ok", "violation", "fixed", "unfixable", "broken"):
+        n = counts[status]
+        label = status.rjust(9)
+        if color and status in _COLOR and n:
+            print(f"  {_COLOR[status]}{label}{_COLOR['reset']}  {n}")
+        else:
+            print(f"  {label}  {n}")
+    print(f"\n{len(results)} invocation(s) total")
+
+
+# ---------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+    )
+    parser.add_argument("path", type=Path, help="path to a populated fs-org-std.toml")
+    parser.add_argument("--fix", action="store_true", help="invoke fixers where available, instead of just reporting")
+    parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
+    parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
+    parser.add_argument("--no-color", action="store_true", help="disable colored output")
+    parser.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"seconds allowed per rule invocation before it's treated as broken (default {DEFAULT_TIMEOUT_SECONDS:.0f}s) "
+             f"- raise this for fixers that shell out to slow external tools (e.g. audio transcoding)",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        raw_text = args.path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"error: {args.path} not found", file=sys.stderr)
+        return 2
+
+    try:
+        with args.path.open("rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        print(f"error: {args.path} is not valid TOML: {e}", file=sys.stderr)
+        return 2
+
+    standard_dir = args.path.resolve().parent
+    header_occurrences, key_lines = _index_source(raw_text)
+    validator = Validator(
+        data, standard_dir, header_occurrences, key_lines,
+        include_external=args.include_external, bundled_rules_dir=args.rules_dir,
+    )
+    issues = validator.run()
+    errors = [i for i in issues if i.level == "error"]
+    warnings = [i for i in issues if i.level == "warning"]
+
+    if errors:
+        print(
+            f"error: {args.path} has {len(errors)} validation error(s) - fix these before running rules "
+            f"(run `python -m fs_org_kit.validator {args.path}` for details)",
+            file=sys.stderr,
+        )
+        return 2
+
+    color = not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+    if warnings:
+        note = f"standard validated: 0 errors, {len(warnings)} warning(s) (run the validator directly for details)"
+        print(f"{_COLOR['dim']}{note}{_COLOR['reset']}\n" if color else f"{note}\n")
+
+    root = data.get("root", "")
+    root_dir = Path(root).expanduser().resolve() if root else standard_dir
+
+    invocations, missing = collect_invocations(data, root_dir, validator.rule_catalog, validator.resolved_paths)
+
+    if missing:
+        for key in missing:
+            reason = "matched no folder on disk" if is_pattern(key) else "not found on disk"
+            line = f'missing: paths."{key}" is cataloged but {reason} (not marked allow_missing)'
+            print(f"{_COLOR['unfixable']}{line}{_COLOR['reset']}" if color else line)
+        print()
+
+    if not invocations and not missing:
+        print("no rule attachments to run")
+        return 0
+
+    results = [run_invocation(inv, args.fix, timeout=args.timeout) for inv in invocations]
+
+    for result in results:
+        if result.status != "ok":
+            print(_format_result(result, standard_dir, color))
+
+    print()
+    _print_summary(results, color)
+
+    if missing or any(r.status in ("violation", "unfixable", "broken") for r in results):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

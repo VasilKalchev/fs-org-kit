@@ -1,0 +1,58 @@
+version = "1.0"
+purpose = "Checks file and/or folder names against a regular expression - either every name must match it (allow), or no name may match it (disallow)."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: renaming to fit a pattern is a human decision (what SHOULD
+# the name be, not just what it shouldn't be).
+
+[params]
+names = ["pattern", "mode", "target", "recursive", "exclude"]
+
+[params.defaults]
+target = "both"
+recursive = true
+exclude = []
+# `pattern` and `mode` have NO default - a naming pattern rule with no
+# actual pattern configured, or an ambiguous default mode, would be
+# meaningless. Both must be supplied at every attachment site.
+
+# pattern - a Python regular expression, tested against each item's own
+#           name (folders: the folder name; files: the full filename
+#           INCLUDING extension - write \.ext$ in the pattern yourself
+#           if extension should matter). Not anchored automatically -
+#           write ^...$ yourself if you want a full-name match rather
+#           than "matches anywhere in the name".
+#
+# mode = "allow"    - every checked name MUST match pattern. A name
+#                     that doesn't match is a violation. (whitelist)
+# mode = "disallow" - no checked name may match pattern. A name that
+#                     matches is a violation. (blacklist)
+#
+# target = "files" | "folders" | "both" - what to check names of.
+#
+# exclude - glob patterns (matched against the path relative to
+#           --path) to skip entirely, regardless of pattern - e.g. for
+#           a handful of grandfathered exceptions.
+#
+# Reference patterns, for inspiration when writing your own:
+#
+# - Portable charset (mode = "disallow"): '[<>:"|?*\\]' - matches any
+#   of the characters Windows/exFAT/FAT32 forbid in a filename
+#   (< > : " | ? * and backslash). A name that never matches this stays
+#   safely usable if the tree is ever copied to or shared from a
+#   Windows-formatted drive, even if every machine you use today is
+#   Unix-like. `/` isn't included - it's a path separator, not a
+#   character that can appear in a single filename anyway.
+#
+# - Accidental OS/app default names (mode = "disallow") - names that
+#   are almost certainly a leftover default rather than deliberately
+#   chosen, e.g. "New folder", "Untitled.txt", "Copy of report.pdf":
+#     '^[Nn]ew [Ff]older(\s*\(\d+\))?$'
+#     '^Untitled(\s+\d+)?(\.[A-Za-z0-9]+)?$'
+#     '^[Cc]opy [Oo]f .+$'
+#     '^New .+ \(\d+\)\..+$'
+#   This rule only takes one `pattern` per attachment, so combine these
+#   with `|` into a single regex, or attach naming-pattern-v1 more than
+#   once (same path, different pattern each time) if you'd rather keep
+#   them separate and independently toggleable.

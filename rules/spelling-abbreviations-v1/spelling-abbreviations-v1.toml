@@ -1,0 +1,56 @@
+version = "1.0"
+purpose = "Checks that words in file/folder names are either spelled correctly or are known abbreviations - catches typos and undocumented shorthand before they spread across a tree."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: correcting a misspelling or deciding to document a new
+# abbreviation is a human judgment call.
+#
+# REQUIRES the pyspellchecker package: pip install pyspellchecker
+# (a rule may depend on third-party packages - see doc/RULES.md's
+# "dependency isolation" - it just needs to be installed for THIS
+# rule specifically, not for fs-org-kit as a whole).
+
+[params]
+names = ["abbreviations", "languages", "min_word_length", "ignore", "numbers_ok", "target", "recursive", "exclude"]
+
+[params.defaults]
+languages = ["en"]
+min_word_length = 3
+ignore = []
+numbers_ok = true
+target = "both"
+recursive = true
+exclude = []
+# `abbreviations` has NO default - every standard's abbreviation list is
+# different, and (same situation as uncataloged-reserved-v1) a rule
+# script never sees the parsed standard directly, so this param has to
+# be supplied at the attachment site rather than read from
+# [abbreviations] automatically. Point it at [abbreviations] itself
+# with a {ref = "..."} value (see fs_org_kit.param_refs) instead of
+# retyping the list by hand - the runner/validator expand it to
+# [abbreviations]'s keys before this script ever sees it:
+#
+#   [folders.rules.spelling-abbreviations-v1.params]
+#   abbreviations = { ref = "abbreviations" }
+#
+# A literal list still works too, e.g. for a deliberately narrower set
+# than the standard's full [abbreviations] table:
+#
+#   abbreviations = ["arch", "cfg", "img", "misc", ...]
+#
+# Words are extracted by splitting each name (file: without its final
+# extension; folder: the whole name) on "-", "_", and spaces. A word is
+# accepted if: it's shorter than min_word_length, OR numbers_ok and it's
+# purely numeric, OR it case-insensitively matches something in
+# `abbreviations` or `ignore`, OR the spell checker (pyspellchecker)
+# recognizes it in ANY of `languages`. Anything else is a violation.
+#
+# `languages` - a list, not a single value, since names in a personal
+#               filesystem are often a mix (e.g. ["en", "de"]) - a
+#               dictionary is loaded per language, and a word only
+#               violates if it's unrecognized in every one of them.
+#
+# `ignore` is for words that are correctly spelled in no dictionary but
+# aren't really "abbreviations" either - proper nouns, brand names,
+# personal names, project codenames.

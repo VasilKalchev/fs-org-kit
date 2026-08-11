@@ -1,0 +1,36 @@
+version = "1.0"
+purpose = "Checks that a file or folder's embedded timestamp is consistent with the timestamps embedded in its ancestor folder names - a file dated 2026-03-06 inside a 2026-03-05 folder is a contradiction, even though both are individually valid dates."
+severity = "error"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: which of two contradicting timestamps is the "right" one -
+# the folder, or the file - is a human judgment call, not safe to guess.
+
+[params]
+names = ["recursive", "require_all_components_timestamped"]
+
+[params.defaults]
+recursive = true
+require_all_components_timestamped = false
+
+# Recognized patterns, tried against each path component from the
+# attached root down to each file, most specific first:
+#   filename:  YYYYMMDD_HHMMSS at the very start (before the first
+#              non-digit/non-underscore character) - full datetime
+#   folder:    YYYY-MM-DD or YYYYMMDD                - full date
+#   folder:    YYYY-MM   or YYYYMM                    - year + month
+#   folder:    YYYY                                    - year only
+#
+# A component that matches none of these is simply skipped by default
+# (require_all_components_timestamped = false) - e.g. a "Photos" folder
+# with no date in its name doesn't break the chain, it's just not part
+# of the check. Set the flag to true to instead flag any component that
+# doesn't look like a timestamp at all.
+#
+# Consistency is checked field-by-field walking root -> leaf: a more
+# specific descendant's known fields (year/month/day/hour/min/sec) must
+# not contradict any field already established by a less specific
+# ancestor. Every file AND every intermediate folder is checked against
+# its own ancestor chain, not just leaf files - a "2026-03-05" folder
+# under a "2025" year folder is itself a violation regardless of what's
+# inside it.

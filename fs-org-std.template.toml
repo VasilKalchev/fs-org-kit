@@ -1,0 +1,398 @@
+# =====================================================================
+# fs-org-std - personal filesystem organization standard (template)
+# =====================================================================
+#
+# This file is the SKELETON / GRAMMAR for fs-org-std.toml, a
+# machine-enforceable standard for organizing everything under `root`.
+# It is not meant to be populated and used directly - copy its shape
+# into the real fs-org-std.toml, and validate that file against this
+# grammar with validate_fs_org_std.py.
+#
+# Core concepts:
+#   root      - the directory this whole standard governs.
+#   paths     - specific, individually documented locations, each keyed
+#               by its path relative to `root` (e.g. "path/a/").
+#   folders   - rules and definitions that apply without being tied to
+#               one cataloged path: [[folders.rules]] apply to EVERY
+#               folder under root (cataloged or not); [folders.reserved]
+#               defines reserved folder-NAME patterns, independent of
+#               location.
+#   rules     - REFERENCES to rule types, attached ("instantiated")
+#               under a path, folder, or cross-path set via
+#               [[<...>.rules.<name>]], where a fresh `reason` (and any
+#               required params) must be supplied at that call site.
+#               The rule types themselves are defined externally, one
+#               per rules/<rule-name>-v<major>/rule.toml - see
+#               rule.template.toml for that file's grammar, and
+#               rules/rule-a-v1/ + rules/rule-b-v1/ for worked examples.
+#               A rule's name always carries its major version
+#               (e.g. "rule-a-v1"), since that's the compatibility unit:
+#               a breaking change to a rule is a new directory, not an
+#               edit to the old one.
+#   enums     - closed value sets used to validate specific fields.
+#               (enums.severity and enums.scope, for rules specifically,
+#               now live in rule.template.toml alongside what they
+#               validate.)
+#
+# paths.attributes.names lists the valid fields on a [paths."..."] entry,
+# same idea as rule.template.toml's own attributes.names. Unlike a rule's
+# own attributes, most path attributes have no sensible standard-wide
+# default (nothing about a specific path's `purpose` is universal) - so
+# paths.attributes.defaults is normally near-empty. It's not FORBIDDEN
+# to add a default there, though: whatever's declared applies wherever an
+# entry doesn't set that field itself (and isn't set via inheritance
+# either) - see `allow_missing` below for the one field that ships with a
+# real default out of the box.
+# `origin` is a LIST of enums.paths.origin values (e.g. content that's
+# partly self-authored and partly generated) - every other enum-backed
+# field on a path entry is single-valued.
+#
+# `allow_missing` (bool, default false via paths.attributes.defaults) -
+# marks a cataloged path as one that may not currently exist on disk.
+# Without it, a cataloged path the runner can't find on disk is reported
+# as a problem. With it, that's expected - the runner skips it silently
+# (no rules invoked for it) rather than treating its absence as an error.
+# This is what makes state-via-location schemes (PARA-style archiving:
+# a project moves from active/x/ to archive/x/ and back) not require
+# editing this file on every move - catalog BOTH possible locations once,
+# mark the ones that won't always exist, and moving the real folder on
+# disk needs no standard edit at all.
+#
+# `inherit` (optional sub-table on a [paths."..."] or
+# [folders.reserved."..."] entry) - lets one entry reuse another's
+# attributes and/or rule attachments instead of redeclaring them:
+#   [paths."archive/project-x/".inherit]
+#   attributes = "active/project-x/"   # full inherit, this entry's own
+#                                       # explicit fields still override
+#   rules = "active/project-x/"        # inherited rules MERGE with this
+#                                       # entry's own attachments (both
+#                                       # apply) - use exclude_rules to
+#                                       # drop specific inherited ones
+#   exclude_rules = ["rule-a-v2"]      # rule ids to drop from what
+#                                       # `rules` would otherwise bring in
+# `attributes` and `rules` may point at different source entries, or be
+# omitted independently (e.g. inherit attributes only, declare all rules
+# fresh). Chains are allowed (C inherits from B inherits from A);
+# cycles are a validation error. `exclude_rules` without `rules` set is
+# a validation error - there's nothing to exclude from. To CHANGE an
+# inherited rule's params rather than just drop it, exclude it and
+# redeclare it fresh with the params you want - a same-named rule
+# inherited AND separately declared on the same entry doesn't silently
+# override, both instances apply.
+# Inheritance is scoped to its own kind: a path can only inherit from
+# another path, a reserved folder entry only from another reserved
+# folder entry.
+#
+# A [paths."..."] key may be a GLOB PATTERN instead of one exact
+# location - same vocabulary as `exclude` params elsewhere (fnmatch/
+# pathlib.Path.glob: *, **, ?, [abc] - no brace-expansion, no stdlib
+# support for it; [1-3] already covers a numeric range):
+#   [paths."clients/*/"]
+#   purpose = "A client's workspace"
+#   lifecycle = "ongoing"
+#   origin = ["self"]
+#   [[paths."clients/*/".rules.rule-a-v1]]
+#   reason = "..."
+# One entry, every real match sharing its attributes/rules - invoked
+# once per match, exactly like [[folders.rules]] invokes once per real
+# folder on disk. A pattern matching zero real folders follows
+# `allow_missing`, same as a literal path not existing - no separate
+# concept. Two catalog keys that could match the same real folder is a
+# validation error (checked statically, from the key strings alone, no
+# filesystem access) UNLESS a literal entry explicitly opts in via
+# inherit - the sanctioned way to override one instance:
+#   [paths."clients/acme/"]
+#   purpose = "Acme specifically"
+#   lifecycle = "ongoing"
+#   origin = ["self"]
+#   [paths."clients/acme/".inherit]
+#   attributes = "clients/*/"
+#   rules = "clients/*/"
+# Without that inherit link, `clients/acme/` colliding with
+# `clients/*/` is rejected, not silently resolved by precedence - see
+# doc/DESIGN.md's "Path Pattern Keys" for the full rationale, including
+# why two overlapping PATTERNS (no natural precedence between them)
+# have no such override and are always an error.
+#
+# `instance_attributes` (must be supplied fresh at every attachment site,
+# currently just `reason`) - never has a default; that's what distinguishes
+# it from a rule's own attributes (purpose/severity/exclude/scope),
+# which now live in that rule's own manifest instead of here.
+#
+# Whether a rule can be fixed is determined structurally by the presence
+# of the -fix.py script file, not by a manifest field. Omission is
+# meaningful for `exclude` on a rule's own manifest - see rule.template.toml.
+#
+# Path keys: relative to `root`, no leading slash, trailing slash
+# (e.g. "path/a/", not "/path/a" or "path/a").
+#
+# Value formats for rule params that take a duration or a size:
+#   duration - <n><unit>, no space: 3d (days), 5w (weeks), 2m (months)
+#   size     - <n><unit>, binary units: 500MiB, 10GiB, 1TiB
+#
+# Versioning: schema_version tracks this file's STRUCTURE (the
+# grammar); standard_version tracks the CONTENT of the real standard.
+
+
+
+
+root = "~/usr/"
+
+[meta]
+description = ""
+
+schema_version = "1.0"     # version of this TOML *structure* (the grammar/spec)
+schema_date = 2026-08-05
+
+standard_version = "1.0"   # version of the *content* of the standard
+standard_date = 2026-08-04
+
+
+
+
+# ===================================================================
+# Paths
+# ===================================================================
+[paths]
+purpose = "Specific, individually documented locations under root - each gets its own [paths.\"...\"] entry describing what it's for, its lifecycle, and its origin."
+
+# valid field names on a [paths."..."] entry - most have no default
+# since a path's own content is what's supposed to fill them in
+[paths.attributes]
+names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing"]
+
+[paths.attributes.defaults]
+allow_missing = false
+
+# rules applying to every *standardized* path (i.e. every path with its own
+# [paths."..."] entry below) - not every folder under root. See
+# [[folders.rules]] for that broader scope.
+[[paths.rules.rule-a-v1]]
+reason = "Why is this rule applied to all standardized paths?"
+
+
+# -------------------------------------------------------------------
+# Paths > path/a/
+# -------------------------------------------------------------------
+[paths."path/a/"]
+purpose = ""
+notes = ""
+use_for = [
+  "",
+  ""
+]
+not_for = [
+  "",
+  ""
+]
+lifecycle = ""
+origin = []
+see_also = ""
+
+[[paths."path/a/".rules.rule-a-v1]]
+reason = "Why is this rule applied to this path?"
+
+[paths."path/a/".rules.rule-a-v1.params]
+key-a-1 = "custom value"
+# A param value can be {ref = "dotted.path"} instead of a literal -
+# expanded by the runner/validator to the table's keys (or the list)
+# found at that path elsewhere in this file, e.g.:
+#   key-a-2 = { ref = "abbreviations" }         # -> [abbreviations]'s keys
+#   key-a-3 = { ref = "folders.reserved" }      # -> [folders.reserved]'s entry names
+# Use this instead of retyping a list that's already declared elsewhere
+# in this file by hand - see fs_org_kit.param_refs and doc/DESIGN.md.
+
+
+# -------------------------------------------------------------------
+# Paths > path/b/
+# -------------------------------------------------------------------
+[paths."path/b/"]
+purpose = ""
+notes = ""
+use_for = [
+  "",
+  ""
+]
+not_for = [
+  "",
+  ""
+]
+lifecycle = ""
+origin = []
+see_also = ""
+
+
+# -------------------------------------------------------------------
+# Paths > path/a/aa/
+# -------------------------------------------------------------------
+[paths."path/a/aa/"]
+purpose = ""
+notes = ""
+use_for = [
+  "",
+  ""
+]
+not_for = [
+  "",
+  ""
+]
+lifecycle = ""
+origin = []
+see_also = ""
+
+
+# -------------------------------------------------------------------
+# Paths > path/a/archived/ - worked example of `inherit`
+# -------------------------------------------------------------------
+# A location that only sometimes exists - e.g. path/a/ moved here when
+# archived, and moved back when reactivated. Rather than edit this file
+# on every move, both locations are cataloged once; whichever one isn't
+# currently real on disk is simply skipped by the runner, because of
+# allow_missing below.
+[paths."path/a/archived/"]
+lifecycle = "archival"          # overrides path/a/'s inherited lifecycle
+allow_missing = true            # this location may not currently exist
+
+[paths."path/a/archived/".inherit]
+attributes = "path/a/"          # purpose, notes, use_for, etc. - full
+                                 # inherit, this entry's own explicit
+                                 # fields above still win
+rules = "path/a/"                # inherited rule attachments MERGE with
+                                 # any this entry declares itself
+exclude_rules = ["rule-a-v1"]    # dropped from what `rules` brings in -
+                                 # e.g. a staleness check that shouldn't
+                                 # apply once something's archived
+
+
+# -------------------------------------------------------------------
+# Paths > Cross
+# -------------------------------------------------------------------
+[[paths.cross]]
+paths = ["path/a/", "path/b/"]
+
+[[paths.cross.rules.rule-a-v1]]
+reason = "Why is this rule applied to this set of paths?"
+
+[paths.cross.rules.rule-a-v1.params]
+key-a-1 = "custom value"
+
+
+# ===================================================================
+# Folders
+# ===================================================================
+[folders]
+purpose = "Rules and definitions that apply without being tied to one cataloged path: blanket rules over every folder under root, and reserved folder-name patterns that apply independent of location."
+
+# valid field names on a [folders.reserved."..."] entry - same shape as
+# paths.attributes above, minus allow_missing (a reserved-name pattern
+# isn't one location, so "does it exist on disk" doesn't apply the same
+# way). `inherit` works identically here too - see the worked example
+# under [paths."path/a/archived/"] above; the mechanism is namespace-
+# scoped, so a reserved folder entry can only inherit from another
+# reserved folder entry, never from a [paths."..."] entry.
+[folders.attributes]
+names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also"]
+
+[folders.attributes.defaults]
+
+# rules applying to EVERY folder under root, cataloged or not - use this to
+# catch folders that exist on disk but aren't part of the documented standard.
+[[folders.rules.rule-a-v1]]
+reason = "Why is this rule applied to all folders?"
+
+[folders.rules.rule-a-v1.params]
+key-a-1 = "custom value"
+
+
+# -------------------------------------------------------------------
+# Folders > Reserved
+# -------------------------------------------------------------------
+# `prefix` is the naming convention every reserved folder is expected to
+# follow, wherever it appears in the tree - checked by the validator's
+# own reserved-name-prefix lint, and available to rules (as a param,
+# since scripts never see the parsed standard directly) that need to
+# scan the real filesystem for prefix-matching folders, e.g. to find
+# ones that exist on disk but were never cataloged here.
+[folders.reserved]
+prefix = "_"
+
+[folders.reserved."_folder-name"]
+purpose = "Example - describe what this specific reserved folder name means, wherever it appears in the tree."
+notes = "E.g.: caveats..."
+use_for = [
+  "",
+  ""
+]
+not_for = [
+  "",
+  ""
+]
+lifecycle = ""
+origin = []
+
+
+
+# ===================================================================
+# Enums
+# ===================================================================
+[enums]
+purpose = "Validate the specified values."
+
+# -------------------------------------------------------------------
+# Enums > Paths
+# -------------------------------------------------------------------
+[enums.paths.lifecycle]
+transient = "meant to be emptied constantly, nothing lingers"
+temporary = "has a completion condition, then gets archived"
+ongoing = "continuously active/maintained, no end state"
+archival = "already at rest, rarely touched"
+
+[enums.paths.origin]
+self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
+external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
+generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
+
+# `exclude` is a native TOML array of glob strings and needs no enum table.
+# (Whether a rule can be fixed is structural - it's the presence of the
+# -fix.py script file - not manifest-declared.)
+
+
+# ===================================================================
+# Tags
+# ===================================================================
+[tags]
+
+
+
+
+# ===================================================================
+# Abbreviations
+# ===================================================================
+[abbreviations]
+area = "Area of responsibility"
+arch = "Archive"
+app = "Application"
+bkup = "Backup"
+career = "Career information"
+embd = "Embedded"
+fin = "Finance"
+fw = "Firmware"
+inv = "Inventory"
+item = "Individual owned item"
+knwl = "Knowledge"
+lib = "Library"
+lnk = "Link"
+lrn = "Learn"
+med = "Medical"
+ndx = "Index"
+prj = "Project"
+res = "Resource"
+scr = "Script"
+std = "Standard"
+strg = "Storage"
+sys = "System"
+task = "Task"
+tmpl = "Template"
+tool = "Tool"
+vm = "Virtual machine"
+ws = "Workspace"

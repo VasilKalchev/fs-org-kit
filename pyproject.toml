@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fs-org-kit"
+version = "0.2.0"
+description = "A personal filesystem organization standard, made machine-enforceable."
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+fs-org-validate = "fs_org_kit.validator:main"
+fs-org-run = "fs_org_kit.runner:main"
+fs-org-doc = "fs_org_kit.doc:main"
+fs-org-cache = "fs_org_kit.cache:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fs_org_kit*"]
+
+[tool.setuptools.package-data]
+"*" = [
+    "rules/**/*.toml",
+    "rules/**/*.py",
+    "fs-org-std.template.toml",
+    "rule.template.toml",
+]

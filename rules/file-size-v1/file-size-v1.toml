@@ -1,0 +1,86 @@
+version = "1.0"
+purpose = "Checks that each individual file is not larger than max_size and not smaller than min_size - a per-file threshold, unlike folder-structure-v1's max_size, which is the total for a whole tree."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+[params]
+names = ["max_size", "min_size", "recursive", "extensions", "exclude"]
+
+[params.defaults]
+max_size = ""
+min_size = ""
+recursive = true
+extensions = []
+exclude = []
+
+# =====================================================================
+# Why this is not a param on folder-structure-v1
+# =====================================================================
+# That rule describes a folder's SHAPE - how many things are in it, how
+# deep it nests, how much space it occupies in total. "No single file may
+# exceed 2GiB" is a statement about the files themselves; it would be the
+# one threshold in that rule not describing the folder. Splitting them
+# also lets the two be attached independently, with separate reasons.
+#
+# The cost is duplicated size parsing: both rules carry their own
+# parse_size/format_size, because a rule is a standalone script that must
+# keep working when copied into someone's rules.own/ on its own. The unit
+# vocabulary is deliberately identical (B/KiB/MiB/GiB/TiB, binary), so
+# "500MiB" means the same thing in both.
+#
+# =====================================================================
+# Params
+# =====================================================================
+#
+# max_size / min_size  - per-file thresholds, checked against every file
+#                        individually. Same size vocabulary used
+#                        throughout the standard: 500MiB, 10GiB, 1TiB;
+#                        a bare number is bytes.
+#                        Both default to "" meaning "off", so each is
+#                        independently optional - but at least one must
+#                        be set, or the attachment asks nothing. The
+#                        script rejects that call rather than silently
+#                        reporting ok, since a threshold-less attachment
+#                        is always an authoring mistake.
+#
+#                        min_size is for catching truncated downloads
+#                        and zero-byte placeholders, not for enforcing
+#                        that files be large. An empty file is 0B and
+#                        violates any min_size at all.
+#
+# recursive            - true (default) checks every file in the tree,
+#                        false only the path's direct children. Unlike
+#                        folder-structure-v1's flag of the same name,
+#                        this one is straightforward: a per-file check
+#                        has no "per folder" interpretation to switch
+#                        between.
+#
+# extensions           - narrow the check to specific file types, e.g.
+#                        ["mp4", "mkv"] to bound video files only.
+#                        Matching is case-insensitive and a leading dot
+#                        is optional. Empty (default) checks every file.
+#
+# exclude              - glob patterns matched against each item's path
+#                        relative to --path. An excluded FOLDER prunes
+#                        its whole subtree, not just the folder itself.
+#
+# =====================================================================
+# What is NOT reported
+# =====================================================================
+# Symlinks are skipped entirely. A symlink's own size is the length of
+# the path it stores, which is never what an attachment means, and
+# following it would report a file that lives outside the tree being
+# checked - and report it twice if the target is also inside.
+#
+# Folders have no size of their own here. A folder's own st_size is
+# directory-entry bookkeeping, not the contents; total tree size is
+# folder-structure-v1's max_size.
+#
+# =====================================================================
+# Why there is no fixer
+# =====================================================================
+# Finding an oversized file is objective; what to do about it is not.
+# Delete, move to cold storage, recompress, split, or accept it are all
+# plausible, they disagree constantly, and the wrong guess destroys data
+# the user wanted. Same reasoning as duplicate-files-v1.

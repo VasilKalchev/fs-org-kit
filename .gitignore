@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+.*.kate-swp
+
+# Machine-local Claude Code permissions; .claude/skills/ IS tracked
+.claude/settings.local.json
+
+# Personal working notes, not project content
+scratch.md

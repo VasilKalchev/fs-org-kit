@@ -1,0 +1,69 @@
+version = "1.0"
+purpose = "Checks the shape of a folder: how many items/files/folders sit directly inside it, how deeply nested its subfolders go, and how much space it takes up on disk - catches a folder that's become a dumping ground, or an over-engineered nest of near-empty subfolders."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+# No fixer: restructuring (splitting, merging, moving things out) is a
+# human decision about how the content should actually be organized.
+
+[params]
+names = [
+    "max_items", "min_items",
+    "max_files", "min_files",
+    "max_folders", "min_folders",
+    "max_depth",
+    "max_size", "min_size",
+    "recursive", "exclude",
+]
+
+[params.defaults]
+max_items = -1
+min_items = -1
+max_files = -1
+min_files = -1
+max_folders = -1
+min_folders = -1
+max_depth = -1
+max_size = ""
+min_size = ""
+recursive = false
+exclude = []
+# -1 / "" are "no limit" sentinels, not real thresholds - same idea as
+# file-extensions-v1's allowed/disallowed both defaulting to [] ("not
+# actively constraining"). A count can never legitimately be negative,
+# and a size string can never legitimately be empty, so neither
+# sentinel collides with any real value someone might actually want to
+# set. Every threshold below is independently optional - set only the
+# ones you actually want checked.
+
+# max_items / min_items     - direct children of --path (files +
+#                             folders combined), not recursive
+# max_files / min_files     - direct children that are files
+# max_folders / min_folders - direct children that are folders
+# max_depth                 - deepest FOLDER nesting level under
+#                             --path, recursive (--path itself is
+#                             depth 0, its direct subfolders depth 1)
+# max_size / min_size       - total size of everything under --path,
+#                             recursive. Same duration/size value
+#                             format as elsewhere in this project:
+#                             <n><unit>, binary units - 500MiB, 10GiB,
+#                             1TiB (also accepts a bare integer number
+#                             of bytes)
+#
+# recursive - controls whether the item/file/folder COUNT thresholds
+#             (max/min _items/_files/_folders) apply only to --path's
+#             own direct children (false, the default - matches the
+#             pre-recursive behavior of this rule), or to every folder
+#             in the tree independently (true). With recursive = false,
+#             one direct subfolder containing 1000 sub-subfolders is
+#             fine even with max_folders = 5 - only --path's own direct
+#             children are counted. With recursive = true, that same
+#             subfolder is itself checked against max_folders using ITS
+#             OWN direct children, so it would violate. max_depth and
+#             max_size/min_size are already whole-tree checks and are
+#             unaffected by this flag.
+#
+# exclude - glob patterns (matched against each item's path relative to
+#           --path) to leave out of every count, the depth calculation,
+#           and the size total - an excluded folder's contents are
+#           skipped too, not just the folder itself.
