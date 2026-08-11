@@ -1,0 +1,62 @@
+version = "1.0"
+purpose = "Checks a path for entries it must have, should have, or must not have - e.g. a project folder required to contain README.md and suggested to contain .git/."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+# THE PARAMETERS ARE THREE FLAT LISTS
+#
+#   [paths."prj/*/".rules.required-content-v1.params]
+#   required  = ["README.md"]
+#   suggested = [".git/", "LICENSE"]
+#   forbidden = ["*.pyc", "node_modules/"]
+#
+# Three lists of globs, not one list of tables with a `severity` field
+# each. A table-per-entry would let an attachment say "this one is an
+# error and that one is a warning", but severity is a property of the
+# RULE (it lives in this manifest, once) rather than of an attachment -
+# so the extra structure would carry a distinction the rest of the
+# system has nowhere to put. Three names carry it instead, and the
+# message says which tier each finding came from.
+#
+# A trailing slash means "must be a directory": "build/" and "build" ask
+# different questions, and a project that has a file called `build`
+# where a folder belongs is exactly the case worth catching. Without a
+# slash, either kind satisfies the entry.
+#
+# Globs match against paths relative to the scanned path, so "src/*.py"
+# and "**/*.tmp" both work; matching is also tried against the bare
+# entry name, so "*.pyc" catches one at any depth without a "**/" prefix.
+#
+# `required` and `suggested` differ only in how the message reads, not
+# in whether they're reported - a suggestion nobody is told about isn't
+# one. Set `report_suggested = false` at an attachment site that wants
+# the required checks alone.
+#
+# OVERLAP WITH OTHER RULES
+#
+# `forbidden` overlaps naming-pattern-v1's disallow list, and for a pure
+# "no .pyc anywhere" policy that rule is the better tool - it exists for
+# name policy and says so. What's new here is the other direction:
+# nothing else in the collection can assert that something is PRESENT.
+# A regex cannot; folder-structure-v1 counts entries without caring
+# which; file-extensions-v1 constrains what may appear, not what must.
+# `forbidden` earns its place by keeping one folder's expected shape in
+# one attachment, rather than splitting "a project has a README and no
+# build droppings" across two rules that then have to be kept in sync.
+#
+# WHY THERE IS NO FIXER
+#
+# A missing README.md can be created, but only as an empty file that
+# satisfies the check while meaning nothing - passing the rule would
+# become the goal instead of the point of it. Deleting forbidden entries
+# is the one mechanical repair available, and it's the destructive half.
+
+[params]
+names = ["required", "suggested", "forbidden", "report_suggested"]
+
+[params.defaults]
+required = []
+suggested = []
+forbidden = []
+report_suggested = true

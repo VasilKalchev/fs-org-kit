@@ -202,13 +202,21 @@ This design:
 2. Makes it clear that a fixer owns the full problem-solving, not the runner
 3. Simplifies the runner's logic - just invoke once, read status
 
-### Scripts are never sandboxed by the runner (MVP)
+### Scripts run inside an audit-hook harness
 
-Rule scripts run directly as subprocesses with no additional sandboxing. An audit-hook harness (sys.addaudithook to block network, subprocess, certain filesystem ops) is planned post-MVP, but deliberately not included now:
+Rule scripts run under `sys.addaudithook` (`fs_org_kit/sandbox.py`), which blocks network access, starting other processes, native/ctypes calls, and writes outside what the invocation is entitled to touch. `--no-sandbox` turns it off.
 
-- It's a soft guard against bugs and accidents, not a security boundary (ctypes bypasses it)
-- OS-level sandboxing (containers, Landlock, Seatbelt) is a separate, harder problem
-- The MVP's scope is to *run* rules correctly, not to enforce sandboxing
+It is a guard against bugs and accidents, **not** a security boundary, and describing it as one would be wrong: the hook lives inside the interpreter it polices, so `ctypes` reaches straight past it, and nothing here constrains a rule that was malicious rather than careless. What it does catch is the class of mistake an author makes without meaning to - a checker that writes, a fixer that reaches outside the tree it was pointed at, a rule that quietly phones home - none of which was detectable before, because the convention was documented and entirely unenforced.
+
+Two decisions shaped it:
+
+**The policy is built in the parent, never derived in the child.** Anything the child worked out after installing the hook would have to be exempted from the hook, which is a hole. So the runner computes the writable set from the manifest's declarations plus the invocation's own targets, and passes it in.
+
+**Capabilities are declared in the manifest, not special-cased in the runner.** `basename-sync-v1`'s fixer shells out to a user-provided script, so it declares `[sandbox] subprocess = true`; `collect-v1`'s destination is a user-configured path the core can't know in advance, so it declares `unrestricted_writes`. This is the same shape as `uses_cache`: the rule states a need, the core grants it uniformly, and the runner keeps no per-rule knowledge. It also puts the grant somewhere a reviewer reads before trusting a rule.
+
+The writable set is `{cache, temp}` for a checker, and additionally `{root} ∪ {targets}` for a fixer. Targets are listed separately from root because a path may be outside root - that's what `outside_root` declares, and this is one of the things it declares it *for*.
+
+A violation raises an exception deriving from `BaseException` rather than `Exception`, since rule scripts routinely wrap their work in `except Exception` and a swallowed violation would be reported as an ordinary failure or as success. Violations are also recorded, so even `except BaseException` can't turn one into a clean result.
 
 ## Validation vs. Execution
 
@@ -270,6 +278,28 @@ Same reasoning as `discovery.py` for rules: resolution is needed by both the val
 
 `resolve_entries()` runs as a pure data-transformation step before validation. It produces a `ResolvedEntry` per catalog key with final, flattened attributes and rules - the validator's field checks and the runner's invocation-building both just read `resolved.attributes`/`resolved.rules` and never need their own inheritance-walking logic. This mirrors the same "resolve once, flatten, reuse" pattern already used for rule discovery and the validator/runner relationship generally.
 
+## Out-of-Root Path Keys
+
+### The problem it solves
+
+`root` is the tree the standard governs, and a catalog key is relative to it. But a personal filesystem doesn't stop at one tree: `~/.config/`, `/etc/`, an external drive's mount point are all worth cataloging and attaching rules to, and none of them sit under a `root` of, say, `~/usr/`.
+
+### Why it's an opt-in flag rather than just accepting an absolute key
+
+It was already "working", wrongly. `Path("/home/me/usr") / "/etc/nginx"` is `/etc/nginx` - Python's path join **discards** the left side when the right is absolute. So an absolute key typo'd into a standard would already have sent rules walking somewhere far outside root, with nothing anywhere saying so. `outside_root = true` turns a silent escape into a deliberate one, which is the same stance `overrides_bundled` takes for rule identity: the surprising thing is rejected by default, and one explicit field on the record opts out.
+
+Three routes escape and all three need the flag - absolute (`/etc/`), home-relative (`~/.config/`), and walking up (`../sibling/`). The `..` case matters most: it escapes just as completely and is the easiest to write by accident.
+
+### Why it is never inherited or defaulted
+
+Hardcoded, like `reason`. A flag whose only job is to make one thing deliberate is worth nothing if it can arrive from somewhere else - a one-word edit to an unrelated entry must not be able to widen the set of directories the tool will walk into and, under `--fix`, write to. Arriving via `inherit` or `paths.attributes.defaults` is an error rather than a quiet acceptance.
+
+### What it feeds
+
+`fs_org_kit/path_keys.py` owns `resolve_key`, the single place a key becomes a real path, so all three escape routes are handled identically everywhere rather than being re-derived per consumer. The sandbox reads the flag's consequence: an out-of-root target is a place a fixer may write, and the policy can only know that because the standard said so.
+
+Overlap detection compares keys in a normalized form, so `/srv/*/` and `srv/*/` are correctly *not* a collision while `~/x/` and `/home/me/x/` still are.
+
 ## Path Pattern Keys
 
 ### The problem it solves
@@ -302,7 +332,7 @@ When the runner actually expands a pattern against real disk, any real match tha
 
 ### OS-level sandboxing
 
-Blocking network and subprocess calls at the audit-hook level is enough for MVP. Real OS-level sandboxing (bubblewrap, Landlock, Seatbelt) is a separate project-level decision, deferred.
+The audit-hook harness above is a soft guard, and can't be made into anything more from inside the interpreter. Real isolation (bubblewrap, Landlock, Seatbelt) is a separate project-level decision, deferred - it changes how rules are distributed and trusted, not just how they're invoked.
 
 ### Recursive rule invocation on folders
 

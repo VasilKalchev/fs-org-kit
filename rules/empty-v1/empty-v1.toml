@@ -1,0 +1,59 @@
+version = "1.0"
+purpose = "Reports zero-byte files and empty folders under a path - leftovers from an interrupted download, a failed export, or a folder whose contents were moved out and never cleaned up."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+# WHAT COUNTS AS EMPTY
+#
+# A file is empty when it is exactly zero bytes. This rule deliberately
+# has no "nearly empty" threshold - that's file-size-v1's `min_size`,
+# which already expresses it in the project's shared size vocabulary.
+# Zero bytes is a different claim from "small": it means nothing was ever
+# written, which is a fact about the file rather than a policy about it.
+#
+# A folder's emptiness has two useful readings, chosen by
+# `folder_empty_means`:
+#   "no_entries"  nothing inside at all. The literal reading.
+#   "no_files"    no file anywhere in its subtree - a folder holding only
+#                 more empty folders. This is what's left after moving a
+#                 tree's contents elsewhere, and "no_entries" misses it
+#                 entirely: the parent still has children, so it looks
+#                 occupied while containing nothing.
+#
+# EXCLUSIONS DON'T CHANGE WHAT'S EMPTY
+#
+# `exclude` controls what gets REPORTED, not what counts as content. A
+# folder holding only an excluded file is not empty - it has a file in
+# it. The alternative reads well in one case ("ignore .DS_Store, so a
+# folder holding only that is empty") and badly in every other, because
+# it makes emptiness depend on the attachment site rather than on disk.
+#
+# WHAT IS NOT REPORTED
+#
+# Symlinks, of either kind. A symlink's own size is the length of the
+# path it stores, so a "zero-byte symlink" isn't a thing, and following
+# one to judge its target would report a file that isn't in this tree.
+# A dangling symlink is link-integrity-v1's subject, not this rule's.
+#
+# The scanned path itself IS reported when it's empty - a cataloged
+# location that exists but holds nothing is usually the finding, not a
+# detail to skip.
+#
+# WHY THERE IS NO FIXER
+#
+# Deleting is only one of the plausible responses, and it's the
+# irreversible one. An empty folder may be a deliberate placeholder
+# (a mount point, an output directory something else expects to exist);
+# a zero-byte file may be a sentinel or a lock. The right answer depends
+# on why it's empty, which is exactly what this rule can't know.
+
+[params]
+names = ["check_files", "check_folders", "recursive", "exclude", "folder_empty_means"]
+
+[params.defaults]
+check_files = true
+check_folders = true
+recursive = true
+exclude = []
+folder_empty_means = "no_entries"

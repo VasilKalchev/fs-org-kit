@@ -9,10 +9,7 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ---
 
-## 0.2
-
-Everything below 0.1 still holds; this adds param references, glob path
-keys, rule-owned caching, two rules, and self-checking docs.
+## 0.4
 
 ### `examples/`
 
@@ -28,6 +25,80 @@ can't be committed, and resolving a relative root against the standard's
 own location is a change to `runner.py`, not to an example.
 `tests/test_docs_current.py` now scans `examples/` for dangling doc
 links.
+
+---
+
+## 0.3
+
+### Eight rules
+
+`empty-v1` (zero-byte files, and two readings of "empty folder" -
+literally entry-less, or a hollow tree of folders holding no file
+anywhere). `link-integrity-v1` (broken symlinks, `.desktop`
+`Type=Link`/`Type=Application`, `.url`, `.webloc`, and `.lnk` parsed
+from its LinkInfo structure; a remote URL is counted but never judged,
+since verifying one needs the network the sandbox blocks, and a macOS
+Finder alias is counted as unverifiable rather than guessed at).
+`link-policy-v1` (files/folders/links each required, allowed or
+forbidden - classification is link-first, or "no real files, links are
+fine" would be unsayable). `collect-v1` (sweeps a path into a
+strftime-templated target; the only bundled rule whose fixer moves user
+data, and it never overwrites under any conflict setting).
+`required-content-v1` (required/suggested/forbidden globs - three flat
+lists rather than tables with a severity each, since severity is a
+property of the rule, not the attachment). `changed-since-v1` (cached
+snapshot diff, optionally drawn as a tree with unchanged branches
+collapsed). `folder-icon-inherit-v1` and `folder-icon-auto-v1` (KDE
+`.directory` icons: one propagates a parent's color while keeping each
+child's variant, the other assigns variants from name or content
+conditions while preserving color, so the two compose in either order).
+
+Folders in `changed-since-v1` are tracked by presence, never by their
+own timestamps: a folder's mtime moves whenever anything inside it
+appears, which would report one edit twice when recursive and leak deep
+edits when not - exactly what `recursive = false` says not to look at.
+
+### `fs_org_kit/sandbox.py` - rule scripts run policed
+
+`sys.addaudithook` blocking network, subprocess, native calls, and
+writes outside what an invocation may touch: cache and temp for a
+checker, plus root and its own targets for a fixer. So "checkers never
+write" is enforced rather than merely documented.
+
+Capabilities are declared in a manifest's `[sandbox]` table, the same
+shape as `uses_cache` - the runner reads a declaration and never
+special-cases a rule by name. `basename-sync-v1` declares `subprocess`
+(its fixer delegates to a user script); `collect-v1` declares
+`unrestricted_writes` (its destination comes from the standard).
+
+A guard against accidents, explicitly not a security boundary - the
+hook lives inside the interpreter it polices. `SandboxViolation` derives
+from `BaseException` so a rule's `except Exception` can't swallow it,
+and violations are recorded besides, so even a bare `except:` can't
+report success. Building it surfaced that `runpy.run_path` doesn't put
+the script's directory on `sys.path` the way direct execution does,
+which broke `staleness-v1`'s import of its `_shared` module.
+
+### `fs_org_kit/path_keys.py` - out-of-root path keys
+
+A catalog key may resolve outside `root` - `/etc/nginx/`, `~/.config/`,
+`../sibling/` - on an entry declaring `outside_root = true`.
+
+The flag exists because the escape was already silent: joining an
+absolute key onto root *discards* root, so a stray leading slash pointed
+rules at another tree with nothing saying so. Never inherited, never
+defaulted, for the same reason `reason` isn't - a one-word edit
+elsewhere must not widen what the tool walks into and, under `--fix`,
+writes to. `resolve_key` is now the single place a key becomes a real
+path; the previous `path-leading-slash` lint is gone, replaced by a
+validation error.
+
+---
+
+## 0.2
+
+Everything below 0.1 still holds; this adds param references, glob path
+keys, rule-owned caching, two rules, and self-checking docs.
 
 ### `file-size-v1`
 
@@ -281,8 +352,10 @@ Returns `(catalog, issues)` as data — discovery never prints.
 
 ## Not built yet
 
-- **Sandboxing / audit-hook harness.** Rule scripts run with the user's
-  full permissions. See DESIGN.md, "OS-level sandboxing".
+- **OS-level sandboxing.** The audit-hook harness added in 0.3 is a soft
+  guard and can't be made into more from inside the interpreter. Real
+  isolation (bubblewrap, Landlock, Seatbelt) changes how rules are
+  distributed and trusted, not just how they're invoked. See DESIGN.md.
 - **Near-duplicate (similarity) detection.** Needs a separate detector per
   media type sharing only a report format, most of them with third-party
   or non-pip dependencies, and nearest-neighbour search rather than a dict

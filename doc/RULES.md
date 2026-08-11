@@ -102,6 +102,7 @@ recursive = true
 | `protocol_version` | no (defaults `"1.0"`) | Which version of the runner↔script wire format `-check.py`/`-fix.py` speak. Independent of `version` - see [below](#protocol_version-vs-version). |
 | `overrides_bundled` | no (defaults `false`) | Only meaningful for a rule in `rules.own/`. See [Overriding a bundled rule](#overriding-a-bundled-rule). |
 | `uses_cache` | no (defaults `false`) | `true` if your rule keeps state between runs. The runner then passes `--cache-dir <path>`. See [Rules that cache](#rules-that-cache). |
+| `sandbox` | no, no default | Table granting capabilities the harness otherwise blocks. See [The sandbox](#the-sandbox). |
 | `exclude` | no, no default | List of glob strings this rule never applies to. Omitting it means "no exclusions" - a default value here would erase that distinction, so there isn't one. |
 | `params.names` | yes | Every parameter your checker/fixer accepts. |
 | `params.defaults` | no | Defaults for some or all of those params. Any param **not** listed here has no default and **must** be supplied at every attachment site in the standard, or validation fails. |
@@ -231,10 +232,67 @@ fixers, below).
 
 ### A checker never writes
 
-Even though nothing currently *enforces* this at the process level
-(there's no sandboxing yet - see [DESIGN.md](DESIGN.md)), a checker
-must never modify the filesystem. If a rule can fix something, that
-logic belongs in a separate `-fix.py`, invoked only in `--fix` mode.
+A checker must never modify the filesystem. If a rule can fix
+something, that logic belongs in a separate `-fix.py`, invoked only in
+`--fix` mode.
+
+This is now enforced, not just asked for: the runner gives a checker no
+writable location beyond its own cache and the system temp directory,
+so a stray write fails the invocation rather than quietly happening.
+See [The sandbox](#the-sandbox).
+
+### The sandbox
+
+Every invocation runs inside an audit-hook harness
+(`fs_org_kit/sandbox.py`) that blocks network access, starting other
+processes, native/ctypes calls, and writes outside what that invocation
+may touch:
+
+| | writable |
+|---|---|
+| a **checker** | its own cache directory, the system temp directory |
+| a **fixer** | those, plus `root` and the invocation's own target path(s) |
+
+Most rules never notice. If yours genuinely needs more, declare it -
+the same shape as `uses_cache`, and for the same reason: the core reads
+a declaration rather than special-casing your rule by name.
+
+```toml
+[sandbox]
+subprocess = true
+```
+
+| capability | grants |
+|---|---|
+| `network` | opening connections, resolving hostnames |
+| `subprocess` | starting other processes - note this also ends the harness's reach, since the child isn't policed |
+| `native` | `ctypes` calls, which can bypass the harness entirely |
+| `unrestricted_writes` | writing anywhere you can - for a fixer whose destination the core can't know in advance |
+
+Only `true` grants; `false` and omission are both denials, so you can
+spell out a denial for a reader without changing behavior. A key that
+isn't one of the four is a typo, and discovery warns about it rather
+than silently granting nothing.
+
+**Say why in a comment.** A reviewer reads this table before trusting
+your rule, and `unrestricted_writes = true` with no explanation is
+indistinguishable from carelessness. Only two rules in this repo declare
+anything at all, and both are worth reading as examples:
+`basename-sync-v1` delegates every file operation to a user-provided
+script, and `collect-v1`'s destination comes from the standard, so the
+core can't know it ahead of time.
+
+Two things worth knowing while developing:
+
+- Running your script **standalone on the CLI is never sandboxed** - the
+  harness is something the runner wraps around it. So a rule can pass
+  its own tests and still fail under `fs-org-run`. If that happens, the
+  stderr message names the exact operation and lists what was writable.
+- **This is a guard against accidents, not a security boundary.** It
+  lives inside the interpreter it polices. Don't design a rule around it
+  holding against anything deliberate.
+
+`fs-org-run --no-sandbox` turns it off entirely.
 
 ### Rules that cache
 

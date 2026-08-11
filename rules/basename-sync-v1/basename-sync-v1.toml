@@ -9,6 +9,15 @@ protocol_version = "1.0"
 # likely too short for anything but a handful of files. Run with a raised
 # --timeout for real use, e.g. `fs-org-run ... --fix --timeout 3600`.
 
+# The fixer is the only reason this is here: it delegates every actual
+# file operation to the user's `fixer_script`, so it must be able to start
+# a process. The checker never does. Note that the sandbox stops policing
+# writes once that script is running - it's a separate process, outside
+# this interpreter's audit hook - which is a deliberate consequence of
+# handing the work to a script the standard names rather than doing it here.
+[sandbox]
+subprocess = true
+
 [params]
 names = ["mode", "recursive", "extensions", "exclude", "fixer_script"]
 

@@ -1,0 +1,68 @@
+version = "1.0"
+purpose = "Reports links whose target no longer exists - symlinks, XDG .desktop entries, Windows .lnk/.url shortcuts, and macOS .webloc bookmarks."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+# WHAT COUNTS AS A LINK
+#
+# "Link" is not one thing. Every desktop platform grew its own, and a
+# folder that has been carried across machines or restored from a backup
+# usually holds more than one kind. `kinds` selects which are checked:
+#
+#   "symlink"   POSIX symbolic links. The only kind the filesystem itself
+#               knows about, and the only one that can form a cycle.
+#   "desktop"   freedesktop .desktop entries. Type=Link (URL= points at
+#               the target) and Type=Application (Exec= names a program)
+#               are both checked; Type=Directory has no target to break.
+#   "shortcut"  Windows .lnk (binary shell link) and .url (INI-format
+#               internet shortcut).
+#   "webloc"    macOS .webloc bookmarks (a plist holding one URL).
+#
+# WHAT CAN ACTUALLY BE VERIFIED
+#
+# Only targets that name a local file: a symlink's target, a file:// URL,
+# a .lnk's stored local path, a .desktop Exec= resolved against PATH.
+#
+# An http(s) target is never reported broken. Checking one means a network
+# request, and rule scripts have no network - the runner's sandbox blocks
+# it (fs_org_kit.sandbox), deliberately, because a checker that reaches
+# the internet turns a filesystem audit into something with a very
+# different failure mode and a very different runtime. A .url or .webloc
+# pointing at a web page is therefore counted, not judged.
+#
+# A .lnk written on Windows stores a path like C:\Users\... which means
+# nothing on this machine. `foreign_links` decides what to do with a
+# target that can't apply here: "skip" (the default - silence about
+# something unknowable) or "report" (list them separately, for a tree
+# you know should be self-contained).
+#
+# macOS Finder aliases are NOT supported. They store an opaque binary
+# bookmark blob whose resolution is a Cocoa API call, not a path lookup,
+# and a half-implementation that guessed would report confident nonsense.
+# They're detected and counted as unverifiable rather than ignored, so
+# the count in the message never quietly disagrees with what's on disk.
+#
+# CHAINS AND CYCLES
+#
+# `follow_chains` (default true) reports a symlink whose target is itself
+# a link that dangles - the first hop resolves, so a naive existence
+# check calls it fine while opening it still fails. A symlink cycle is
+# always reported: it can't be traversed at all, and the OS says so.
+#
+# WHY THERE IS NO FIXER
+#
+# A broken link has no recoverable target by definition, so the only
+# mechanical repair is deletion - which throws away the one record of
+# what used to be there, and is exactly wrong when the target is on an
+# unmounted drive rather than gone.
+
+[params]
+names = ["kinds", "recursive", "exclude", "foreign_links", "follow_chains"]
+
+[params.defaults]
+kinds = ["symlink", "desktop", "shortcut", "webloc"]
+recursive = true
+exclude = []
+foreign_links = "skip"
+follow_chains = true

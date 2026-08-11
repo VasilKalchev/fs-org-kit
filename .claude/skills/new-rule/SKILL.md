@@ -40,8 +40,14 @@ The scaffold already has the protocol right. What matters as you fill it in:
 - **Exit 0 means "I ran"** — the verdict is in stdout. Nonzero means the
   *script* is broken (bad params, missing path); reason on stderr, which
   the runner reports as `broken`. Finding a violation is never nonzero.
-- **A checker never writes.** Nothing enforces this yet; it's still the
-  contract.
+- **A checker never writes.** This is enforced: `fs_org_kit/sandbox.py`
+  gives a checker no writable location beyond its cache and temp, and a
+  fixer only root plus its own targets. A rule needing more declares it
+  in `[sandbox]` (`network`, `subprocess`, `native`,
+  `unrestricted_writes`) with a comment saying why — never work around
+  it in the runner. Note that standalone runs are **not** sandboxed, so
+  a rule can pass its own tests and still fail under `fs-org-run`;
+  exercise a fixer through the runner at least once.
 - **You only get locations and params** — never `purpose`, `lifecycle`,
   `origin`. Behavior that varies per attachment must be a declared param.
 - **Stdlib by default.** Third-party dependencies are allowed (the

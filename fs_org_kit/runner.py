@@ -59,6 +59,16 @@ version:
         | {"status": "fixed", "message": "..."} | {"status": "unfixable", "message": "..."}
     exit 0 = ran fine, read stdout. nonzero = the script itself is broken.
 
+Every invocation runs inside the audit-hook harness in
+fs_org_kit.sandbox unless --no-sandbox is passed: no network, no
+subprocess, no native calls, and no writes beyond the rule's own cache
+directory and the system temp directory - plus, in --fix mode, root and
+that invocation's own target path(s). A rule needing more declares it in
+its manifest's [sandbox] table, the same way uses_cache declares a need
+for storage; the runner reads the declaration and never special-cases a
+rule by name. It's a guard against accidents, not a security boundary -
+see the sandbox module's own docstring for what it can't do.
+
 In --fix mode, a rule with a fixer is invoked via its -fix.py directly
 (not checked first, then fixed) - the fixer is expected to detect and
 resolve in one self-contained pass, per the protocol's four-status
@@ -92,7 +102,9 @@ from fs_org_kit.cache import ensure_rule_cache_dir
 from fs_org_kit.discovery import RuleEntry
 from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
 from fs_org_kit.param_refs import expand_params
+from fs_org_kit.path_keys import resolve_key
 from fs_org_kit.path_patterns import expand_pattern, is_pattern
+from fs_org_kit.sandbox import Policy, child_env
 from fs_org_kit.validator import Validator, _index_source
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -120,6 +132,16 @@ class Invocation:
     params: dict[str, Any]
     target_path: Path | None = None
     target_paths: list[Path] | None = None
+    # carried per-invocation so the sandbox can tell a fixer which tree it
+    # was pointed at; None only when an Invocation is built outside the
+    # normal collect_invocations path (tests), where root is unknowable
+    root_dir: Path | None = None
+
+    @property
+    def targets(self) -> list[Path]:
+        if self.target_path is not None:
+            return [self.target_path]
+        return list(self.target_paths or [])
 
     @property
     def target_display(self) -> str:
@@ -224,7 +246,7 @@ def _resolve_active_targets(
     "missing" - the folders exist, they're just individually cataloged
     elsewhere - only a pattern matching nothing on disk at all falls
     through to the allow_missing check below."""
-    literal_abs_paths = {(root_dir / key).resolve() for key in resolved_paths if not is_pattern(key)}
+    literal_abs_paths = {resolve_key(root_dir, key) for key in resolved_paths if not is_pattern(key)}
     active: list[tuple[str, Path]] = []
     missing_and_not_allowed: list[str] = []
     for key, resolved in resolved_paths.items():
@@ -234,7 +256,7 @@ def _resolve_active_targets(
                 active.extend((key, m) for m in raw_matches if m not in literal_abs_paths)
                 continue
         else:
-            abs_path = (root_dir / key).resolve()
+            abs_path = resolve_key(root_dir, key)
             if abs_path.is_dir():
                 active.append((key, abs_path))
                 continue
@@ -276,7 +298,7 @@ def collect_invocations(
         referenced = cross.get("paths", [])
         if not isinstance(rules_table, dict) or not referenced:
             continue
-        abs_paths = [(root_dir / p).resolve() for p in referenced if isinstance(p, str)]
+        abs_paths = [resolve_key(root_dir, p) for p in referenced if isinstance(p, str)]
         for rule_id, instances in rules_table.items():
             entry = catalog.get(rule_id)
             if entry is None:
@@ -316,6 +338,7 @@ def collect_invocations(
     # on this side.
     for inv in invocations:
         inv.params, _ = expand_params(inv.params, data)
+        inv.root_dir = root_dir
 
     return invocations, missing
 
@@ -329,6 +352,7 @@ def invoke_script(
     invocation: Invocation,
     is_fix: bool,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    sandboxed: bool = True,
 ) -> RunResult:
     argv = [sys.executable, str(script)]
     if invocation.target_path is not None:
@@ -339,6 +363,7 @@ def invoke_script(
     argv += ["--params", json.dumps(invocation.params)]
     if is_fix:
         argv.append("--fix")
+    cache_dir = None
     if invocation.entry.uses_cache:
         # The core owns the location; the rule is handed a ready-made,
         # rule-private directory rather than resolving one itself (see
@@ -348,8 +373,24 @@ def invoke_script(
         if cache_dir is not None:
             argv += ["--cache-dir", str(cache_dir)]
 
+    env = None
+    if sandboxed:
+        # The policy is built here, in the parent, from the manifest's
+        # declared capabilities plus this invocation's own targets - the
+        # child does no discovery of its own, since anything it worked out
+        # after the hook was installed would have to be exempted from it.
+        policy = Policy.for_invocation(
+            set(invocation.entry.sandbox),
+            is_fix=is_fix,
+            targets=invocation.targets,
+            root_dir=invocation.root_dir,
+            cache_dir=cache_dir,
+        )
+        argv = policy.wrap(argv)
+        env = child_env()
+
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return RunResult(invocation, "broken", f"timed out after {timeout:.0f}s")
     except OSError as e:
@@ -371,11 +412,16 @@ def invoke_script(
     return RunResult(invocation, status, payload.get("message", ""))
 
 
-def run_invocation(invocation: Invocation, fix_requested: bool, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> RunResult:
+def run_invocation(
+    invocation: Invocation,
+    fix_requested: bool,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    sandboxed: bool = True,
+) -> RunResult:
     entry = invocation.entry
     if fix_requested and entry.has_fixer:
-        return invoke_script(entry.fix_script, invocation, is_fix=True, timeout=timeout)
-    return invoke_script(entry.check_script, invocation, is_fix=False, timeout=timeout)
+        return invoke_script(entry.fix_script, invocation, is_fix=True, timeout=timeout, sandboxed=sandboxed)
+    return invoke_script(entry.check_script, invocation, is_fix=False, timeout=timeout, sandboxed=sandboxed)
 
 
 # ---------------------------------------------------------------------
@@ -428,6 +474,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
     parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
     parser.add_argument("--no-color", action="store_true", help="disable colored output")
+    parser.add_argument(
+        "--no-sandbox", action="store_true",
+        help="run rule scripts directly, without the audit-hook harness (fs_org_kit.sandbox) that "
+             "blocks network, subprocess, native calls, and out-of-policy writes",
+    )
     parser.add_argument(
         "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
         help=f"seconds allowed per rule invocation before it's treated as broken (default {DEFAULT_TIMEOUT_SECONDS:.0f}s) "
@@ -488,7 +539,10 @@ def main(argv: list[str] | None = None) -> int:
         print("no rule attachments to run")
         return 0
 
-    results = [run_invocation(inv, args.fix, timeout=args.timeout) for inv in invocations]
+    results = [
+        run_invocation(inv, args.fix, timeout=args.timeout, sandboxed=not args.no_sandbox)
+        for inv in invocations
+    ]
 
     for result in results:
         if result.status != "ok":

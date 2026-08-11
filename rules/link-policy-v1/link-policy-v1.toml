@@ -1,0 +1,61 @@
+version = "1.0"
+purpose = "Constrains which kinds of entry may appear under a path - real files, folders, and links each independently required, allowed, or forbidden."
+severity = "warn"
+scope = "single"
+protocol_version = "1.0"
+
+# THE SHAPE THIS EXISTS FOR
+#
+# An index folder: subfolders for structure, links pointing at content
+# that lives somewhere else, and no real files at all. Saying that
+# directly is the point -
+#
+#   files = "forbidden"     # nothing actually stored here
+#   folders = "allowed"     # structure is fine
+#   links = "required"      # and it isn't an index if it links to nothing
+#
+# THREE POLICIES, ONE PER KIND
+#
+#   "allowed"    (default) no constraint
+#   "forbidden"  no entry of this kind may appear in scope
+#   "required"   at least one entry of this kind must appear in scope
+#
+# Both are properties of the whole scope, not of each folder in it.
+# "required" asks whether the scope contains one anywhere, so it stays
+# meaningful with recursion on - a per-folder reading would fail on every
+# leaf directory the moment you asked for folders.
+#
+# CLASSIFICATION IS LINK-FIRST
+#
+# A .desktop entry is a file on disk and a link by intent. Since the
+# whole point here is to tell those apart, a recognized link is a link,
+# never a file - otherwise "files = forbidden, links = allowed" would
+# forbid the links too, and the arrangement above would be unsayable.
+# A symlink to a directory is likewise a link, not a folder.
+#
+# `link_kinds` decides what counts as a link, using the same vocabulary
+# as link-integrity-v1: symlink, desktop, shortcut, webloc. Narrow it to
+# ["symlink"] and a .desktop file goes back to counting as a file, which
+# is the right answer for a folder that stores launchers as content.
+#
+# This rule says nothing about whether a link WORKS - that's
+# link-integrity-v1. A folder can satisfy this rule completely while
+# every link in it dangles; the two are meant to be attached together.
+#
+# WHY THERE IS NO FIXER
+#
+# Every repair is a judgment call about content: a forbidden file could
+# be deleted, moved out, or replaced by a link to wherever it should have
+# lived, and only a person knows which. A missing required kind can't be
+# conjured at all.
+
+[params]
+names = ["files", "folders", "links", "link_kinds", "recursive", "exclude"]
+
+[params.defaults]
+files = "allowed"
+folders = "allowed"
+links = "allowed"
+link_kinds = ["symlink", "desktop", "shortcut", "webloc"]
+recursive = false
+exclude = []

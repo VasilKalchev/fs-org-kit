@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""
+folder-icon-auto-v1-check.py - reports folders whose icon doesn't match
+what their name or contents say it should be. See folder-icon-auto-v1.toml
+for the condition vocabulary and why {color} is never taken away.
+
+Protocol (protocol_version 1.0, single scope):
+    python folder-icon-auto-v1-check.py --path <dir> --params '<json>'
+
+stdout: exactly one JSON line - {"status": "ok"}
+                               | {"status": "violation", "message": "..."}
+exit code: 0 = ran fine (read stdout for the verdict)
+           nonzero = this invocation is broken - stderr has why
+"""
+
+import argparse
+import fnmatch
+import json
+import sys
+from pathlib import Path
+
+from _shared import BadParams, evaluate, fail, read_settings
+
+MAX_REPORTED = 8
+
+
+def excluded(rel_path: str, globs: list) -> bool:
+    return any(fnmatch.fnmatch(rel_path, g) or fnmatch.fnmatch(Path(rel_path).name, g) for g in globs)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--path", required=True)
+    parser.add_argument("--params", required=True)
+    parser.add_argument("--fix", action="store_true")
+    args = parser.parse_args()
+
+    if args.fix:
+        print("error: --fix belongs to folder-icon-auto-v1-fix.py, not the checker", file=sys.stderr)
+        return 1
+
+    try:
+        settings = read_settings(args.params, args.path)
+    except BadParams as e:
+        return fail(str(e))
+
+    findings = evaluate(settings, excluded)
+    if not findings:
+        print(json.dumps({"status": "ok"}))
+        return 0
+
+    described = [f"{rel} ({current or 'no icon'} -> {desired})" for rel, current, desired in findings]
+    shown = ", ".join(described[:MAX_REPORTED])
+    if len(described) > MAX_REPORTED:
+        shown += f", ... ({len(described) - MAX_REPORTED} more)"
+    print(json.dumps({
+        "status": "violation",
+        "message": f"{len(findings)} folder(s) don't have the icon their name or contents call for: {shown}",
+    }))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

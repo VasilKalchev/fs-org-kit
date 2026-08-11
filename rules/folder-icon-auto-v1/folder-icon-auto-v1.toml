@@ -1,0 +1,74 @@
+version = "1.0"
+purpose = "Assigns folder icons from name or content conditions - a folder containing .git gets the git icon - while preserving any color already set."
+severity = "info"
+scope = "single"
+protocol_version = "1.0"
+
+# THE RULES ARE A LIST, FIRST MATCH WINS
+#
+#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   name = "^\\.?git$"
+#   icon = "folder-{color}-git"
+#
+#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   contains = ["package.json"]
+#   icon = "folder-{color}-script"
+#
+#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   contains_any = ["*.jpg", "*.png", "*.raw"]
+#   ratio = 0.6
+#   icon = "folder-{color}-images"
+#
+# Ordered, not scored: a folder can satisfy several conditions, and a
+# declared order is something a person can read and reason about, while
+# a scoring scheme is something they'd have to reverse-engineer from
+# behavior.
+#
+# CONDITIONS
+#
+#   name          regex, matched against the folder's own name
+#   contains      globs that must ALL match something directly inside
+#   contains_any  globs of which at least one must match
+#   ratio         with contains_any: the fraction of the folder's files
+#                 that must match, so "mostly images" is expressible
+#                 rather than just "contains one image"
+#   empty         true/false - matches a folder with nothing in it
+#
+# Several conditions in one entry are ANDed. An entry with no condition
+# at all is rejected: it would match everything from wherever it sits in
+# the list, which is never what was meant.
+#
+# `contains` looks only at direct children. Recursing would make a
+# single stray file redefine an entire tree's icon, and would turn a
+# cheap listing into a full walk of every folder scanned.
+#
+# COLOR IS NEVER TAKEN AWAY
+#
+# `{color}` in an icon expands to the color the folder ALREADY has, so
+# this rule assigns meaning without disturbing whatever colour scheme is
+# in place - including one folder-icon-inherit-v1 established. Only when
+# a folder has no color does `default_color` fill in.
+#
+# The two rules are meant to be attached together and compose in either
+# order: this one sets `folder-<existing>-git`, the other rewrites the
+# color while keeping `-git`. Neither can undo the other's decision.
+#
+# An icon without `{color}` is used verbatim, which is how to pin one
+# outright.
+#
+# PLATFORM
+#
+# KDE/Dolphin .directory files - see folder-icon-inherit-v1's manifest
+# for why the other desktops can't work this way.
+
+[params]
+names = ["match", "default_color", "colors", "icon_prefix", "recursive", "exclude"]
+
+[params.defaults]
+default_color = "blue"
+colors = ["black", "blue", "brown", "cyan", "green", "grey", "magenta", "orange", "red", "violet", "yellow"]
+icon_prefix = "folder"
+recursive = false
+exclude = []
+# `match` has NO default - a rule that assigns icons with no idea which
+# icons to assign has nothing to do.

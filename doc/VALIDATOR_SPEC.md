@@ -75,6 +75,21 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
   `enums.paths.origin`
 - `use_for` / `not_for`, when present, must be lists
 - `allow_missing`, when present, must be a boolean
+- `outside_root`, when present, must be a boolean
+- a path key that resolves outside `root` - absolute (`/etc/nginx/`),
+  home-relative (`~/.config/`), or walking up (`../sibling/`) - is an
+  error unless that entry declares `outside_root = true`. Joining an
+  absolute key onto `root` silently discards `root`, so this is opt-in
+  rather than implicit (see doc/DESIGN.md)
+- `outside_root = true` on a key that resolves *inside* root is also an
+  error: a flag claiming something untrue misleads the next reader as
+  much as a missing one
+- `outside_root` reaching an entry through `inherit` or
+  `paths.attributes.defaults` is an error. Like `reason`, it must be
+  written on the entry it applies to - a flag whose job is to make one
+  thing deliberate is worth nothing if it can arrive from elsewhere
+- `[[paths.cross]]` carries the same flag, covering every path it lists,
+  with the same both-ways checks
 - a rule attached under `paths."<key>".rules` where `[paths."<key>"]`
   itself was never declared (no own content, no `inherit`) is an
   error - an orphaned attachment, not an under-filled-out entry
@@ -108,8 +123,9 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
 ## Lint
 
 - `root` should end with a trailing slash
-- a path key shouldn't start with a leading slash, and should end
-  with a trailing slash (`some/path/`, not `/some/path` or `some/path`)
+- a path key should end with a trailing slash (`some/path/`, not
+  `some/path`). A key that resolves *outside* root is no longer a lint
+  matter at all - see `outside_root` under Validate.
 - `schema_version` / `standard_version` should look like
   `major.minor` (e.g. `"1.0"`) - malformed values don't break
   anything (the major-compatibility check just silently skips), so

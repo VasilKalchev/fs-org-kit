@@ -8,7 +8,7 @@ maintaining - and a set of small scripts check whether it actually is,
 and where possible, fix it.
 
 > **Status: 0.1 complete.** Validator, rule discovery, runner, and doc
-> generator are all functional, with twelve bundled rules. For what
+> generator are all functional, with twenty bundled rules. For what
 > changed and when, see [doc/CHANGELOG.md](doc/CHANGELOG.md). For
 > important design decisions and architectural details, see
 > [doc/DESIGN.md](doc/DESIGN.md). For a guide to writing your own rules,
@@ -50,10 +50,16 @@ fs-org-kit/                        (this repo - the tool, not your data)
       file-extensions-v1-check.py
   fs_org_kit/                      # the Python package
     __init__.py
+    cache.py                       # where rules keep state between runs
     discovery.py                   # rule discovery - shared by all tools
-    validator.py                   # validates a populated standard
-    runner.py                      # runs rule checkers against real filesystem
     doc.py                         # generates Markdown documentation
+    inherit.py                     # resolves `inherit` and attribute defaults
+    param_refs.py                  # {ref = "dotted.path"} param values
+    path_keys.py                   # what a path key names, incl. outside root
+    path_patterns.py               # glob keys in [paths."..."]
+    runner.py                      # runs rule checkers against real filesystem
+    sandbox.py                     # audit-hook harness rule scripts run inside
+    validator.py                   # validates a populated standard
   examples/                        # runnable example standards + toy trees
     para/
       fs-org-std.toml
@@ -143,6 +149,24 @@ origin = ["self"]
 see_also = ""
 ```
 
+A path key is normally relative to `root`. One that resolves *outside*
+it - `"/etc/nginx/"`, `"~/.config/"`, `"../sibling/"` - is legal only on
+an entry that says so:
+
+```toml
+[paths."~/.config/"]
+outside_root = true
+purpose = "Application config that lives outside the governed tree"
+```
+
+Without the flag it's a validation error. The flag exists because the
+escape used to be silent: joining an absolute key onto `root` *discards*
+`root` entirely, so a stray leading slash would have quietly pointed
+rules at a different tree. Unlike every other field, `outside_root` is
+never inherited and never picks up a default - it has to be written on
+the entry that escapes, the same way `reason` has to be written at every
+rule attachment site.
+
 - `lifecycle` (single value): `transient` (emptied constantly, nothing
   lingers) · `temporary` (has a completion condition, then archived) ·
   `ongoing` (continuously maintained, no end state) · `archival`
@@ -214,6 +238,41 @@ plain subprocesses over a small JSON-based protocol.
 runner↔script protocol, trust tiers, testing your rule standalone, and
 a complete worked example - see **[doc/RULES.md](doc/RULES.md)**.
 
+### Rules run sandboxed
+
+Every rule script runs inside an audit-hook harness
+(`fs_org_kit/sandbox.py`) that blocks network access, starting other
+processes, native/ctypes calls, and writes outside what that invocation
+is entitled to touch:
+
+|  | writable |
+|---|---|
+| a **checker** | its own cache directory, the system temp directory |
+| a **fixer** | those, plus `root` and the invocation's own target path(s) |
+
+So "checkers never write" - a documented convention with nothing
+enforcing it until now - is enforced, and a fixer pointed at one folder
+can't rewrite another.
+
+A rule that genuinely needs more declares it, the same way `uses_cache`
+declares a need for storage:
+
+```toml
+[sandbox]
+subprocess = true      # e.g. basename-sync-v1 delegates to a user script
+```
+
+Valid capabilities: `network`, `subprocess`, `native`,
+`unrestricted_writes`. The runner reads the declaration and never
+special-cases a rule by name. `fs-org-run --no-sandbox` turns the whole
+thing off.
+
+**This is a guard against accidents, not a security boundary.** It lives
+inside the interpreter it polices, so `ctypes` reaches straight past it,
+and nothing here constrains a rule that was malicious rather than
+careless. Real isolation means the OS (bubblewrap, Landlock, Seatbelt)
+and is out of scope - see [doc/DESIGN.md](doc/DESIGN.md).
+
 ### Rules that cache, and uninstalling
 
 Most rules are stateless. A few keep a cache between runs so they don't
@@ -282,6 +341,7 @@ Validates first, then resolves every rule attachment into an invocation and runs
 - Handles per-path, blanket (`paths.rules`), cross-path (`paths.cross`), and folder (`folders.rules`) attachments. The rule's own params control behavior (recursion, exclusion, etc.).
 - Only non-`ok` results are printed; the summary counts everything.
 - `--include-external`, `--rules-dir`, `--no-color` mirror the validator's flags.
+- `--no-sandbox` runs scripts directly, without the audit-hook harness; `--timeout` raises the per-invocation limit.
 - Exit codes: 0 (clean), 1 (violations/broken), 2 (invalid standard).
 
 ---

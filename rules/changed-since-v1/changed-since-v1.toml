@@ -1,0 +1,70 @@
+version = "1.0"
+purpose = "Reports what was added, removed, or modified under a path since the last run, from a cached snapshot of names, sizes, and modification times."
+severity = "info"
+scope = "single"
+protocol_version = "1.0"
+uses_cache = true
+
+# WHAT THIS IS FOR
+#
+# Every other rule answers "is this correct right now". This one answers
+# "what moved since I last looked" - useful for a location that is
+# supposed to be stable (an archive, a published tree, a reference set)
+# where any change at all is worth seeing, and equally for reviewing what
+# a busy folder accumulated over a week.
+#
+# THE FIRST RUN IS NEVER A VIOLATION
+#
+# With no stored snapshot there is nothing to compare against, so the
+# first run records a baseline and reports ok. This is also what happens
+# when the runner can't give the rule a cache directory (see
+# fs_org_kit/cache.py): every run is then a first run, and the rule
+# reports ok forever rather than inventing a comparison. Running
+# standalone on the CLI works the same way.
+#
+# `fs-org-cache --clear changed-since-v1` resets every baseline, which is
+# the way to say "accept the current state as the new normal" for all
+# attachments at once. `update_baseline = false` does the opposite for
+# one attachment: keep comparing against the original snapshot, so a
+# change stays reported until someone deals with it instead of becoming
+# the new baseline on the next run.
+#
+# WHAT COUNTS AS A CHANGE
+#
+# `track` decides: "mtime" (timestamp only), "size" (size only), or
+# "both" (default). Size-only is the honest choice for a tree that gets
+# restored from backups or synced with tools that rewrite timestamps -
+# see duplicate-files-v1's manifest for the same problem. Neither reads
+# file contents: this rule is meant to be cheap enough to attach to a
+# large tree, and hashing it would not be.
+#
+# Folders are tracked by presence alone - added and removed, never
+# modified. A folder's own timestamp moves whenever anything inside it
+# appears or disappears, so tracking it would report one edit twice when
+# recursive, and would report changes deep inside when NOT recursive,
+# which is exactly what that setting says not to look at.
+#
+# THE REPORT
+#
+#   "summary"  (default) counts plus a short list.
+#   "list"     every change, one per line, prefixed + - or ~.
+#   "tree"     the same changes drawn as an indented tree, with
+#              unchanged branches collapsed away, so a change deep in a
+#              hierarchy is readable in context rather than as a long path.
+#
+# WHY THERE IS NO FIXER
+#
+# There is nothing to repair. A reported change is information; the
+# response is to look, and then either fix the real problem with some
+# other rule or accept the new state as the baseline.
+
+[params]
+names = ["recursive", "exclude", "track", "report", "max_reported", "update_baseline"]
+
+[params.defaults]
+recursive = true
+exclude = []
+track = "both"
+report = "summary"
+max_reported = 20
+update_baseline = true
