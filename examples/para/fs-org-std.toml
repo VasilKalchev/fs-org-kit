@@ -1,0 +1,186 @@
+# =====================================================================
+# fs-org-std - a PARA tree, made machine-enforceable
+# =====================================================================
+#
+# A small, complete, working standard for the toy filesystem in ./tree/.
+# Read README.md next to this file for the guided tour; read
+# ../../fs-org-std.template.toml for the full grammar (this file uses a
+# deliberately small slice of it).
+#
+# `root` is RELATIVE, so it resolves against the directory you run the
+# commands FROM, not against this file. Run everything from
+# examples/para/.
+
+root = "./tree/"
+
+[meta]
+description = "PARA (Projects / Areas / Resources / Archive) plus an inbox, as an enforceable standard."
+
+schema_version = "1.0"     # grammar version - matches fs-org-std.template.toml
+schema_date = 2026-08-05
+
+standard_version = "1.0"   # version of the content below
+standard_date = 2026-08-11
+
+
+# ===================================================================
+# Paths
+# ===================================================================
+[paths]
+purpose = "The five top-level locations of this PARA tree, plus the shape every individual project folder is expected to have."
+
+[paths.attributes]
+names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
+
+[paths.attributes.defaults]
+allow_missing = false
+
+
+# -------------------------------------------------------------------
+# Paths > archive/
+# -------------------------------------------------------------------
+[paths."archive/"]
+purpose = "Everything from the other three categories that is no longer active - kept, not deleted."
+use_for = ["finished or abandoned projects", "areas you no longer maintain"]
+not_for = ["anything you still expect to touch this month"]
+lifecycle = "archival"
+origin = ["self"]
+
+# -------------------------------------------------------------------
+# Paths > archive/*/ - one archived project (worked `inherit` example)
+# -------------------------------------------------------------------
+# An archived project is still a project, just at rest: it keeps the
+# same purpose and the same rules as an active one, and only its
+# lifecycle changes. Rather than restate any of that, this entry
+# inherits it - so a project moving between projects/ and archive/ (by
+# hand, or by this standard's own fixer) needs no edit to this file.
+[paths."archive/*/"]
+lifecycle = "archival"                 # the one thing that differs
+
+[paths."archive/*/".inherit]
+attributes = "projects/*/"             # purpose, use_for, not_for, origin...
+rules = "projects/*/"                  # ...and the README requirement
+
+
+# -------------------------------------------------------------------
+# Paths > areas/
+# -------------------------------------------------------------------
+[paths."areas/"]
+purpose = "Ongoing responsibilities with a standard to maintain and no finish line - health, finances, the car."
+notes = "The PARA distinction that does the most work: an area is never 'done'. If it can be finished, it belongs in projects/."
+use_for = ["a responsibility you hold indefinitely"]
+not_for = ["anything with a deadline or a definition of done"]
+lifecycle = "ongoing"
+origin = ["self"]
+
+
+# -------------------------------------------------------------------
+# Paths > inbox/
+# -------------------------------------------------------------------
+[paths."inbox/"]
+purpose = "Landing zone for anything not yet filed - scans, downloads, half-written notes."
+notes = "Not part of canonical PARA, but a common addition: without it, filing pressure lands on the four real categories."
+use_for = ["anything you haven't decided about yet"]
+not_for = ["anything you've already decided about"]
+lifecycle = "transient"
+origin = ["external", "self"]
+
+# An interrupted download or a failed export leaves a zero-byte file
+# behind that looks like real content in a file listing. Folders are
+# left alone here - an empty folder in an inbox is just an inbox.
+[[paths."inbox/".rules.empty-v1]]
+reason = "a zero-byte file in the inbox is a failed download, not something waiting to be filed"
+
+[paths."inbox/".rules.empty-v1.params]
+check_folders = false
+
+
+# -------------------------------------------------------------------
+# Paths > projects/
+# -------------------------------------------------------------------
+[paths."projects/"]
+purpose = "Short-term efforts with a definition of done and (usually) a deadline."
+use_for = ["anything you can finish"]
+not_for = ["standing responsibilities - those are areas/", "reference material - that's resources/"]
+lifecycle = "temporary"
+origin = ["self"]
+
+# The core PARA dynamic, enforced: a project that has gone quiet has
+# stopped being a project. `destination` is relative to the scanned
+# path's parent, so it lands in tree/archive/. This rule ships a fixer,
+# so `fs-org-run --fix` performs the move.
+[[paths."projects/".rules.staleness-v1]]
+reason = "a project nobody has touched in three months is finished or abandoned - either way it belongs in archive/"
+
+[paths."projects/".rules.staleness-v1.params]
+mode = "stale"
+threshold = "90d"
+destination = "archive"
+
+
+# -------------------------------------------------------------------
+# Paths > projects/*/ - every individual project folder
+# -------------------------------------------------------------------
+# A GLOB KEY: one entry, applied to every real folder it matches. Add a
+# project on disk and it is covered with no edit here.
+[paths."projects/*/"]
+purpose = "One project: its notes, its files, and a README stating what 'done' means."
+use_for = ["working files for this project only"]
+not_for = ["reference material that outlives the project - move it to resources/ when you finish"]
+lifecycle = "temporary"
+origin = ["self"]
+
+[[paths."projects/*/".rules.required-content-v1]]
+reason = "a project without a written definition of done drifts into being an area"
+
+[paths."projects/*/".rules.required-content-v1.params]
+required = ["README.md"]
+
+
+# -------------------------------------------------------------------
+# Paths > resources/
+# -------------------------------------------------------------------
+[paths."resources/"]
+purpose = "Topics of ongoing interest - reference material that belongs to no single project."
+use_for = ["notes, clippings and references you'll want again"]
+not_for = ["anything you're actively working on"]
+lifecycle = "ongoing"
+origin = ["self", "external"]
+
+# Resources accumulate from everywhere - downloads, screenshots, exports
+# - and arrive with whatever name the source gave them. One convention
+# for both files and folders keeps the pile searchable.
+[[paths."resources/".rules.naming-pattern-v1]]
+reason = "reference material is only findable if it is named for what it contains"
+
+[paths."resources/".rules.naming-pattern-v1.params]
+pattern = '^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)?$'   # kebab-case, optional extension
+mode = "allow"
+
+
+# ===================================================================
+# Folders
+# ===================================================================
+# Blanket rules over every folder under root, and reserved folder-NAME
+# patterns (e.g. `_archive`) that mean the same thing wherever they
+# appear. This example needs neither - see fs-org-std.template.toml.
+[folders]
+purpose = "Unused in this example."
+
+
+# ===================================================================
+# Enums
+# ===================================================================
+[enums]
+purpose = "Closed value sets. A path entry's `lifecycle` and `origin` are checked against these."
+
+[enums.paths.lifecycle]
+transient = "meant to be emptied constantly, nothing lingers"
+temporary = "has a completion condition, then gets archived"
+ongoing = "continuously active/maintained, no end state"
+archival = "already at rest, rarely touched"
+
+[enums.paths.origin]
+self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
+external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
+generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"

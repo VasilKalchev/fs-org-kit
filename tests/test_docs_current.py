@@ -50,7 +50,8 @@ def rule_dirs() -> list[Path]:
 
 def scanned_files() -> list[Path]:
     """Every file whose text may reference a doc, excluding scratch space."""
-    patterns = ("*.md", "*.toml", "doc/*.md", "fs_org_kit/*.py", "tests/*.py",
+    patterns = ("*.md", "*.toml", "doc/*.md", "examples/*.md", "examples/*/*.md",
+                "fs_org_kit/*.py", "tests/*.py",
                 "rules/*/*.py", ".claude/skills/*/*.md", ".claude/skills/*/*.py")
     found = {p for pattern in patterns for p in REPO_ROOT.glob(pattern)}
     return sorted(p for p in found if p.name not in SCAN_EXCLUDE)

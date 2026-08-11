@@ -60,6 +60,11 @@ fs-org-kit/                        (this repo - the tool, not your data)
     runner.py                      # runs rule checkers against real filesystem
     sandbox.py                     # audit-hook harness rule scripts run inside
     validator.py                   # validates a populated standard
+  examples/                        # runnable example standards + toy trees
+    para/
+      fs-org-std.toml
+      README.md                    # tutorial
+      tree/
   doc/                              # design docs, changelog, rule-authoring guide
     CHANGELOG.md
     DESIGN.md
@@ -69,6 +74,10 @@ fs-org-kit/                        (this repo - the tool, not your data)
   README.md
   CLAUDE.md
 ```
+
+The fastest way in is [`examples/para/`](examples/para/) - a toy PARA
+tree with three deliberate mistakes in it, a standard that catches them,
+and a tutorial that walks from `fs-org-validate` to `--fix`.
 
 Short commands, once installed (`pip install -e .`):
 
