@@ -1760,17 +1760,6 @@ Checks for folders that use the standard's reserved-name prefix (e.g. "_") but a
 | `ongoing` | continuously active/maintained, no end state |
 | `archival` | already at rest, rarely touched |
 
-```mermaid
-graph LR
-    l0["transient"]
-    l1["temporary"]
-    l2["ongoing"]
-    l3["archival"]
-    l0 --> l1
-    l1 --> l2
-    l2 --> l3
-```
-
 **`enums.group.origin`:**
 
 | Value | Meaning |

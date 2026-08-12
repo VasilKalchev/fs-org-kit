@@ -53,10 +53,10 @@ fs-org-kit/                        (this repo - the tool, not your data)
     cache.py                       # where rules keep state between runs
     discovery.py                   # rule discovery - shared by all tools
     doc.py                         # generates Markdown documentation
-    fields.py                      # the three kinds of field an entry carries
-    inherit.py                     # resolves `inherit` and attribute defaults
+    fields.py                      # what a namespace declares its entries carry
+    inherit.py                     # resolves `inherit` across entries
     param_refs.py                  # {ref = "dotted.path"} param values
-    path_keys.py                   # what a path key names, incl. outside root
+    path_keys.py                   # what real location a path key names
     path_patterns.py               # glob keys in [paths."..."]
     runner.py                      # runs rule checkers against real filesystem
     sandbox.py                     # audit-hook harness rule scripts run inside
@@ -139,10 +139,10 @@ Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
 
 ### A path entry
 
-An entry is three tables, named for who reads them:
+An entry is its documentation fields, plus two tables:
 
 ```toml
-[paths."area/inv/".doc]              # prose, for the generated docs
+[paths."area/inv/"]                  # prose, for the generated docs
 purpose = "Inventory tracking"
 use_for = ["owned item records"]
 not_for = ["receipts"]
@@ -151,62 +151,43 @@ not_for = ["receipts"]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."area/inv/".rules]            # what the rule machinery reads
-allow_missing = false
+[[paths."area/inv/".rules.file-extensions-v1]]
+reason = "keep inventory scans to actual images"
 ```
 
-A path key is normally relative to `root`. One that resolves *outside*
-it - `"/etc/nginx/"`, `"~/.config/"`, `"../sibling/"` - is legal only on
-an entry that says so:
+A path key is normally relative to `root`, but doesn't have to be:
+`"/etc/nginx/"`, `"~/.config/"` and `"../sibling/"` each name exactly
+where they say, and rules attached to them run there.
 
-```toml
-[paths."~/.config/".doc]
-purpose = "Application config that lives outside the governed tree"
+A cataloged path that isn't on disk right now is simply skipped - the
+catalog says where things go, not that every location currently exists.
 
-[paths."~/.config/".rules]
-outside_root = true
-```
-
-Without the flag it's a validation error. The flag exists because the
-escape used to be silent: joining an absolute key onto `root` *discards*
-`root` entirely, so a stray leading slash would have quietly pointed
-rules at a different tree. Unlike every other field, `outside_root` is
-never inherited and never picks up a default - it has to be written on
-the entry that escapes, the same way `reason` has to be written at every
-rule attachment site.
-
-Each namespace declares what may go in the first two tables (see
+Each namespace declares what may go in the first two (see
 [doc/DESIGN.md](doc/DESIGN.md)):
 
 ```toml
+[paths.attributes]
 # free-form prose - a string or a list of strings, rendered as written
-[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
 # enum-backed, checked against enums.group.<field>, and used to group
 # paths in the generated docs
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]          # origin holds several values; lifecycle one
 required = ["lifecycle", "origin"]
-
-# the namespace's own rules table: control-field defaults, then any
-# rules attached to every cataloged path
-[paths.rules]
-allow_missing = false
 ```
 
-- **`doc`** fields are yours to name - nothing in the code knows what
-  `purpose` means, and a standard can carry `owner` or `sensitivity`
-  instead. The validator warns on any field the namespace never
-  declared.
-- **`group`** fields need a vocabulary under `enums.group.<field>`. The
+- **Documentation** fields are yours to name - nothing in the code knows
+  what `purpose` means, and a standard can carry `owner` or
+  `sensitivity` instead. The validator warns on any field the namespace
+  never declared.
+- **Grouping** fields need a vocabulary under `enums.group.<field>`. The
   template ships `lifecycle` (`transient` · `temporary` · `ongoing` ·
   `archival`) and `origin` (`self` · `external` · `generated`).
-- **`rules`** holds the rule attachments and the two control fields the
-  tool reads itself, `allow_missing` and `outside_root` - never declared
-  in either list above.
+- `group`, `rules` and `inherit` are the only names an entry can't use
+  for a field of its own.
 
 `folders` declares its own two field lists, so reserved folder names can
 carry a different set of fields from paths; the vocabularies under

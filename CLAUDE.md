@@ -115,12 +115,11 @@ ends at the doc updates `test_docs_current.py` checks.
   rule that does must still work without it (standalone runs, unusable
   location) by not caching at all.
 - `path_keys.py` — the single place a catalog key becomes a real path
-  (`resolve_key`). A key resolving outside `root` (absolute, `~`, or
-  `..`) is legal only on an entry whose `rules` table declares
-  `outside_root = true`, which is deliberately **never inherited and
-  never defaulted** — the same stance as `reason`. Note the accident it exists for:
-  `root / "/etc/x"` is `/etc/x`, so a stray leading slash used to
-  silently redirect rules to another tree. Never use a bare join.
+  (`resolve_key`). A key may be relative, absolute, `~`-relative or walk
+  up out of `root`, and resolves to exactly where it names. Note the
+  accident it exists for: `root / "/etc/x"` is `/etc/x`, and a join
+  never expands `~`, so a bare join silently lands elsewhere. Never use
+  one.
 - `sandbox.py` — the audit-hook harness every rule script runs inside
   (both halves in one module so the policy the runner *builds* and the
   policy the child *enforces* can't drift). Blocks network,
@@ -130,21 +129,20 @@ ends at the doc updates `test_docs_current.py` checks.
   declaration and never special-cases a rule by name. It is a guard
   against accidents, **not** a security boundary; don't describe it as
   one. `--no-sandbox` disables it.
-- `fields.py` — the three tables an entry is made of (`doc` /
-  `group` / `rules`) and the per-namespace declaration of what may go
-  in the first two. Nothing in the package knows what `purpose` or
-  `lifecycle` mean; only the control fields `allow_missing` and
-  `outside_root` are hardcoded, because the tool acts on those itself.
-  Parsed once by the validator (`path_fields` / `folder_fields`) and
-  reused by the doc generator.
-- `inherit.py` — resolves `[paths."...".inherit]` (per-table
+- `fields.py` — what a namespace declares its entries may carry:
+  documentation fields (written on the entry itself) and grouping
+  fields (in its `group` table), declared under
+  `<ns>.attributes`. **No field name is hardcoded anywhere in the
+  package** — a standard names its own fields, and app behavior must
+  never key on one. Parsed once by the validator (`path_fields` /
+  `folder_fields`) and reused by the doc generator.
+- `inherit.py` — resolves `[paths."...".inherit]` (per-part
   inheritance for the PARA-style "state via folder location" pattern)
-  and standard-wide defaults, once, before validation. One `inherit`
-  key per table (`doc` / `group` / `rules`, plus `exclude_rules`), each
-  free to name a different source. `resolve_entries()` produces a
-  flattened `ResolvedEntry` per catalog key (`.doc` / `.group` /
-  `.control` / `.rules`) so nothing downstream needs its own
-  inheritance-walking logic.
+  once, before validation. One `inherit` key per part of an entry
+  (`doc` / `group` / `rules`, plus `exclude_rules`), each free to name a
+  different source. `resolve_entries()` produces a flattened
+  `ResolvedEntry` per catalog key (`.doc` / `.group` / `.rules`) so
+  nothing downstream needs its own inheritance-walking logic.
 - `validator.py` — read-only. Validates TOML structure, resolved rule
   attachments/scope compatibility, resolved inheritance, and lint checks.
   Issues are tagged `kind` (`validation`/`lint`) and `level`
@@ -197,7 +195,7 @@ doc/RULES.md for the full authoring guide; the essentials:
 - **Resolve once, flatten, reuse** — this pattern recurs for rule
   discovery (validator discovers, runner/doc reuse `rule_catalog`) and
   for inheritance (`resolve_entries()` runs once; validator and runner
-  both just read `resolved.doc`/`.group`/`.control`/`.rules`). Don't
+  both just read `resolved.doc`/`.group`/`.rules`). Don't
   reintroduce a second discovery/resolution pass when adding a new
   consumer — thread the existing resolved data through instead.
 - **Fixability is structural** — a rule is fixable iff its `-fix.py`
@@ -205,11 +203,9 @@ doc/RULES.md for the full authoring guide; the essentials:
 - **`reason` at every rule attachment site is required and never
   inherited/defaulted** — hardcoded in the validator, deliberately, to
   force per-attachment justification.
-- **`allow_missing`** is resolved by the runner only, never the
-  validator (which never touches the filesystem). It lives in an
-  entry's `rules` table, with the attachments that read it. Both sides
-  of a state-varying path pair (e.g. `active/x/` / `archive/x/`) need
-  it set, not just the currently-absent one.
+- **A cataloged path that isn't on disk is skipped silently** by the
+  runner, and never reported. "This path should exist" is a rule's
+  question, not the runner's — there is no `allow_missing` any more.
 - **Checkers really can't write now** — `sandbox.py` enforces it. A rule
   that needs a blocked capability declares it in `[sandbox]`; never add
   a runner-side exception for a specific rule. Rule scripts run

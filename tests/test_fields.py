@@ -12,7 +12,7 @@ import tomllib
 
 import pytest
 
-from fs_org_kit.fields import CONTROL_FIELDS, DOC, GROUP, RULES, FieldSpec, parse_field_spec
+from fs_org_kit.fields import DOC, GROUP, FieldSpec, parse_field_spec
 
 
 def spec_for(toml_text: str, namespace: str = "paths"):
@@ -24,17 +24,14 @@ def locations(issues, level="error"):
 
 
 DECLARED = '''
-[paths.doc]
+[paths.attributes]
 names = ["purpose", "notes", "use_for"]
 required = ["purpose"]
 
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle"]
-
-[paths.rules]
-allow_missing = false
 
 [enums.group.lifecycle]
 ongoing = "x"
@@ -47,17 +44,16 @@ self = "x"
 
 class TestParsing:
 
-    def test_the_three_tables_are_kept_apart(self):
+    def test_the_two_kinds_are_kept_apart(self):
         spec, issues = spec_for(DECLARED)
         assert issues == []
         assert spec.doc_names == ("purpose", "notes", "use_for")
         assert spec.group_names == ("lifecycle", "origin")
-        assert spec.control_names == ("allow_missing", "outside_root")
 
     def test_declared_order_is_preserved(self):
         """The doc generator renders in this order, so it's the author's
         order, not alphabetical and not TOML-table-hash order."""
-        spec, _ = spec_for('[paths.doc]\nnames = ["zulu", "alpha", "mike"]\n')
+        spec, _ = spec_for('[paths.attributes]\nnames = ["zulu", "alpha", "mike"]\n')
         assert spec.doc_names == ("zulu", "alpha", "mike")
 
     def test_required_is_read_per_table(self):
@@ -69,24 +65,6 @@ class TestParsing:
         spec, _ = spec_for(DECLARED)
         assert spec.is_multi("origin")
         assert not spec.is_multi("lifecycle")
-
-    def test_a_control_default_comes_from_the_namespace_rules_table(self):
-        """An entry's control fields live in its `rules` table, so the
-        standard-wide default for one lives in the namespace's."""
-        spec, _ = spec_for(DECLARED)
-        assert spec.defaults[RULES] == {"allow_missing": False}
-
-    def test_only_control_fields_are_taken_from_that_table(self):
-        """[paths.rules] also holds the blanket attachments - those are
-        not defaults for anything."""
-        spec, _ = spec_for('''
-[paths.rules]
-allow_missing = true
-
-[[paths.rules.rule-a-v1]]
-reason = "r"
-''')
-        assert spec.defaults[RULES] == {"allow_missing": True}
 
     def test_an_empty_namespace_declares_nothing(self):
         spec, issues = spec_for("[paths]\n")
@@ -107,10 +85,10 @@ class TestVocabularies:
         `folders` grouping by `lifecycle` reads the same table `paths`
         does, with nothing to redeclare."""
         standard = '''
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle"]
 
-[folders.group]
+[folders.attributes.group]
 names = ["lifecycle"]
 
 [enums.group.lifecycle]
@@ -126,7 +104,7 @@ archival = "x"
         """Prose by default; a standard may still close one field's value
         set without making it a grouping field."""
         spec, issues = spec_for('''
-[paths.doc]
+[paths.attributes]
 names = ["purpose", "review_cycle"]
 
 [enums.doc.review_cycle]
@@ -137,7 +115,7 @@ quarterly = "x"
         assert spec.doc_values == {"review_cycle": frozenset({"annual", "quarterly"})}
 
     def test_a_grouping_field_with_no_vocabulary_warns_but_still_groups(self):
-        spec, issues = spec_for('[paths.group]\nnames = ["lifecycle"]\n')
+        spec, issues = spec_for('[paths.attributes.group]\nnames = ["lifecycle"]\n')
         assert "enums.group.lifecycle" in locations(issues, "warning")
         assert spec.group_names == ("lifecycle",)
 
@@ -146,69 +124,62 @@ class TestNamespacesAreIndependent:
 
     def test_folders_reads_its_own_field_lists(self):
         spec, issues = spec_for('''
-[paths.doc]
+[paths.attributes]
 names = ["purpose", "notes"]
 
-[folders.doc]
+[folders.attributes]
 names = ["purpose"]
 ''', namespace="folders")
         assert issues == []
         assert spec.doc_names == ("purpose",)
 
-    def test_folders_has_no_control_fields(self):
-        """A reserved NAME isn't one location, so neither control field has
-        anything to apply to."""
-        spec, _ = spec_for("[folders]\n", namespace="folders")
-        assert spec.control_names == ()
-        assert CONTROL_FIELDS["folders"] == ()
-
 
 class TestDeclarationErrors:
 
     def test_names_must_be_a_list_of_strings(self):
-        _, issues = spec_for('[paths.doc]\nnames = "purpose"\n')
-        assert "paths.doc.names" in locations(issues)
+        _, issues = spec_for('[paths.attributes]\nnames = "purpose"\n')
+        assert "paths.attributes.names" in locations(issues)
 
     def test_required_must_name_a_declared_field(self):
         spec, issues = spec_for('''
-[paths.doc]
+[paths.attributes]
 names = ["purpose"]
 required = ["notes"]
 ''')
-        assert "paths.doc.required" in locations(issues)
+        assert "paths.attributes.required" in locations(issues)
         assert spec.required(DOC) == frozenset()
 
     def test_multi_must_name_a_declared_grouping_field(self):
         _, issues = spec_for('''
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle"]
 multi = ["origin"]
 ''')
-        assert "paths.group.multi" in locations(issues)
+        assert "paths.attributes.group.multi" in locations(issues)
 
-    def test_a_control_field_cant_be_redeclared_as_documentation(self):
-        _, issues = spec_for('[paths.doc]\nnames = ["purpose", "allow_missing"]\n')
-        assert "paths.doc.names" in locations(issues)
-
-    def test_a_control_field_cant_be_used_for_grouping(self):
-        _, issues = spec_for('[paths.group]\nnames = ["outside_root"]\n')
-        assert "paths.group.names" in locations(issues)
+    def test_a_field_cant_be_named_after_a_structural_key(self):
+        """`group`, `rules` and `inherit` are how an entry is put
+        together - a documentation field of the same name would be
+        indistinguishable from one."""
+        for reserved in ("group", "rules", "inherit"):
+            _, issues = spec_for(f'[paths.attributes]\nnames = ["purpose", "{reserved}"]\n')
+            assert "paths.attributes.names" in locations(issues), reserved
 
     def test_a_field_cant_be_both_documentation_and_grouping(self):
         """The two are read differently - one free-form, one against a
         closed vocabulary - so a name has to pick one."""
         _, issues = spec_for('''
-[paths.doc]
+[paths.attributes]
 names = ["lifecycle"]
 
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle"]
 ''')
-        assert "paths.group.names" in locations(issues)
+        assert "paths.attributes.group.names" in locations(issues)
 
     def test_a_name_listed_twice_is_an_error(self):
-        _, issues = spec_for('[paths.doc]\nnames = ["purpose", "purpose"]\n')
-        assert "paths.doc.names" in locations(issues)
+        _, issues = spec_for('[paths.attributes]\nnames = ["purpose", "purpose"]\n')
+        assert "paths.attributes.names" in locations(issues)
 
 
 class TestSpecHelpers:
@@ -218,7 +189,6 @@ class TestSpecHelpers:
         spec = FieldSpec("paths")
         assert not spec.is_declared()
         assert spec.names(DOC) == () and spec.names(GROUP) == ()
-        assert spec.defaults == {}
 
 
 if __name__ == "__main__":

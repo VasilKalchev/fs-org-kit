@@ -44,14 +44,13 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import RuleEntry
-from fs_org_kit.fields import ALL_CONTROL_FIELDS, DOC, GROUP, FieldSpec
-from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
+from fs_org_kit.fields import DOC, GROUP, FieldSpec
+from fs_org_kit.inherit import ResolvedEntry, RuleAttachment, own_fields
 from fs_org_kit.validator import Validator, _index_source
 
 ALL_SECTIONS = ("overview", "paths", "cross", "folders", "rules", "enums", "abbreviations", "tags")
-ALL_DIAGRAMS = ("tree", "lifecycle", "rules", "cross")
+ALL_DIAGRAMS = ("tree", "rules", "cross")
 MERMAID_NODE_LIMIT = 40
-KNOWN_LIFECYCLE_ORDER = ("transient", "temporary", "ongoing", "archival")
 
 
 # ---------------------------------------------------------------------
@@ -134,13 +133,9 @@ def collect_rule_sites(
         )
 
     def add_raw_table(table: Any, label: str, slug: str | None) -> None:
-        """A `rules` table holds control fields alongside attachments -
-        only the attachments are sites."""
         if not isinstance(table, dict):
             return
         for rule_id, instances in table.items():
-            if rule_id in ALL_CONTROL_FIELDS:
-                continue
             if not isinstance(instances, list):
                 instances = [instances]
             for inst in instances:
@@ -197,18 +192,6 @@ def build_tree_diagram(resolved_paths: dict[str, ResolvedEntry]) -> str | None:
         parent = _path_parent_key(k)
         target = node_id.get(parent, "root")
         lines.append(f"    {target} --> {node_id[k]}")
-    lines.append("```")
-    return "\n".join(lines)
-
-
-def build_lifecycle_diagram(lifecycle_enum: dict[str, Any]) -> str | None:
-    if set(lifecycle_enum.keys()) != set(KNOWN_LIFECYCLE_ORDER):
-        return None
-    lines = ["```mermaid", "graph LR"]
-    for i, val in enumerate(KNOWN_LIFECYCLE_ORDER):
-        lines.append(f'    l{i}["{val}"]')
-    for i in range(len(KNOWN_LIFECYCLE_ORDER) - 1):
-        lines.append(f"    l{i} --> l{i + 1}")
     lines.append("```")
     return "\n".join(lines)
 
@@ -326,15 +309,6 @@ def _field_label(name: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-# The two fields the tool reads itself get a rendered sentence rather than
-# their raw name and `true` - they say something about the entry that a
-# reader of the docs (not the TOML) has no other way to learn.
-CONTROL_FIELD_ROWS = {
-    "allow_missing": ("May be missing", "yes"),
-    "outside_root": ("Outside root", "yes - this entry deliberately points outside the governed tree"),
-}
-
-
 def _string_values(value: Any) -> list[str]:
     """Both shapes a field can hold, flattened - a bare string, or a list
     of them, with empty placeholder entries dropped."""
@@ -352,11 +326,10 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
     inherit = raw.get("inherit", {}) if isinstance(raw.get("inherit"), dict) else {}
 
     def marker(kind: str, field_name: str) -> str:
-        """An inherited value is worth marking as such; a field written on
-        this entry, in this entry's own table, is not."""
+        """An inherited value is worth marking as such; one the entry
+        writes itself is not."""
         source = inherit.get(kind)
-        own = raw.get(kind)
-        written_here = isinstance(own, dict) and field_name in own
+        written_here = field_name in own_fields(raw, kind)
         return f" *(inherited from `{source}`)*" if source and not written_here else ""
 
     rows: list[tuple[str, str]] = []
@@ -376,11 +349,6 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
         if values:
             linked = ", ".join(f"[`{v}`](#{slug_for('section', 'enums')})" for v in values)
             rows.append((_field_label(name), linked + marker(GROUP, name)))
-
-    for name in spec.control_names:
-        if resolved.control.get(name):
-            label, text = CONTROL_FIELD_ROWS.get(name, (_field_label(name), "yes"))
-            rows.append((label, text))
 
     if rows:
         b.line("| Field | Value |")
@@ -475,8 +443,6 @@ def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
             b.line("| Rule | Reason | Params |")
             b.line("|---|---|---|")
             for rule_id, instances in sorted(rules_table.items()):
-                if rule_id in ALL_CONTROL_FIELDS:
-                    continue
                 if not isinstance(instances, list):
                     instances = [instances]
                 rule_slug = slug_for("rule", rule_id)
@@ -560,7 +526,7 @@ def render_rules(b: DocBuilder, rule_catalog: dict[str, RuleEntry], sites_by_rul
         b.line()
 
 
-def render_enums(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> None:
+def render_enums(b: DocBuilder, data: dict[str, Any]) -> None:
     """One table per vocabulary, under the kind of field it belongs to -
     a standard names its own fields, so neither the set of tables nor
     their names is known ahead of time. The heading is the dotted key
@@ -591,13 +557,6 @@ def render_enums(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
         for val, desc in values.items():
             b.line(f"| `{val}` | {desc} |")
         b.line()
-        # The one vocabulary with an inherent order rather than just a set
-        # of values - drawn only when it's exactly the known one.
-        if kind == GROUP and name == "lifecycle" and "lifecycle" in diagrams:
-            diagram = build_lifecycle_diagram(values)
-            if diagram:
-                b.line(diagram)
-                b.line()
 
 
 def render_abbreviations(b: DocBuilder, data: dict[str, Any]) -> None:
@@ -659,7 +618,7 @@ def generate(
     if "rules" in sections:
         render_rules(b, validator.rule_catalog, sites_by_rule, diagrams)
     if "enums" in sections:
-        render_enums(b, data, diagrams)
+        render_enums(b, data)
     if "abbreviations" in sections:
         render_abbreviations(b, data)
     if "tags" in sections:

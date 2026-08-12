@@ -20,14 +20,12 @@ schema_date = "2026-01-01"
 standard_version = "2.0"
 standard_date = "2026-01-01"
 
-[paths.doc]
+[paths.attributes]
 names = ["purpose", "notes", "use_for", "see_also"]
 required = ["purpose"]
 
-[paths.rules]
-allow_missing = false
 
-[paths.group]
+[paths.attributes.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
@@ -44,8 +42,7 @@ self = "x"
 external = "x"
 [tags]
 [abbreviations]
-[folders]
-[folders.doc]
+[folders.attributes]
 names = []
 [folders.reserved]
 '''
@@ -110,14 +107,14 @@ reason = "r"
 
     def test_warnings_do_not_block(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."z/".doc]
+[paths."z/"]
 purpose = "Z"
 
 [paths."z/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -135,7 +132,7 @@ class TestSections:
 
     def _std(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -178,14 +175,14 @@ class TestDiagrams:
 
     def _std_with_paths(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."a/aa/".doc]
+[paths."a/aa/"]
 purpose = "AA"
 
 [paths."a/aa/".group]
@@ -213,7 +210,7 @@ origin = ["self"]
         body_parts = []
         for i in range(45):
             body_parts.append(
-                f'[paths."item{i}/".doc]\npurpose = "x"\n'
+                f'[paths."item{i}/"]\npurpose = "x"\n'
                 f'[paths."item{i}/".group]\nlifecycle = "ongoing"\norigin = ["self"]\n'
             )
         std = write_standard(tmp_path, "\n".join(body_parts))
@@ -222,23 +219,9 @@ origin = ["self"]
         assert "```mermaid" not in out
         assert "skipped" in out
 
-    def test_lifecycle_diagram_only_for_known_vocabulary(self, tmp_path, capsys):
-        std = write_standard(tmp_path, '''
-[paths."a/".doc]
-purpose = "A"
-
-[paths."a/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-''')
-        main([str(std), "--sections", "enums", "--diagrams", "lifecycle"])
-        out = capsys.readouterr().out
-        # BOILERPLATE's lifecycle enum matches the known vocabulary exactly
-        assert "```mermaid" in out
-
     def test_mermaid_special_chars_sanitized(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."weird[name]/".doc]
+[paths."weird[name]/"]
 purpose = "has \\"quotes\\" and [brackets]"
 
 [paths."weird[name]/".group]
@@ -267,7 +250,7 @@ class TestTableOfContents:
 
     def test_toc_present_by_default(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -279,7 +262,7 @@ origin = ["self"]
 
     def test_no_toc_flag(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -291,7 +274,7 @@ origin = ["self"]
 
     def test_every_link_has_a_matching_anchor(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -321,7 +304,7 @@ class TestAttributeTable:
 
     def test_list_valued_field_becomes_bullets_not_a_repr(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 see_also = ["b/", "c/"]
 
@@ -329,7 +312,7 @@ see_also = ["b/", "c/"]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."b/".doc]
+[paths."b/"]
 purpose = "B"
 
 [paths."b/".group]
@@ -344,7 +327,7 @@ origin = ["self"]
 
     def test_string_valued_field_becomes_a_table_row(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 see_also = "b/"
 
@@ -357,7 +340,7 @@ origin = ["self"]
 
     def test_field_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 see_also = [""]
 
@@ -372,7 +355,7 @@ origin = ["self"]
         """The declaration drives rendering, so a field the namespace never
         declared (already a validator warning) can't appear in the docs."""
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 undeclared = "should not be rendered"
 
@@ -385,7 +368,7 @@ origin = ["self"]
 
     def test_a_grouping_field_links_to_its_vocabulary(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -396,21 +379,6 @@ origin = ["self"]
         out = capsys.readouterr().out
         assert "| Lifecycle | [`ongoing`](#section-enums) |" in out
 
-    def test_control_fields_render_as_sentences(self, tmp_path, capsys):
-        std = write_standard(tmp_path, '''
-[paths."a/".doc]
-purpose = "A"
-
-[paths."a/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-
-[paths."a/".rules]
-allow_missing = true
-''')
-        main([str(std), "--sections", "paths"])
-        assert "| May be missing | yes |" in capsys.readouterr().out
-
 
 class TestGroupingIndex:
     """Grouping fields exist to sort entries into buckets - the index is
@@ -418,14 +386,14 @@ class TestGroupingIndex:
 
     def _std(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."b/".doc]
+[paths."b/"]
 purpose = "B"
 
 [paths."b/".group]
@@ -447,7 +415,7 @@ origin = ["self"]
 
     def test_a_multi_valued_field_lists_an_entry_under_each_value(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -469,11 +437,11 @@ schema_date = "2026-01-01"
 standard_version = "2.0"
 standard_date = "2026-01-01"
 
-[paths.doc]
+[paths.attributes]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [enums]
@@ -489,7 +457,7 @@ class TestInheritanceRendering:
 
     def test_inherited_field_shown_and_marked(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."active/x/".doc]
+[paths."active/x/"]
 purpose = "Active X"
 
 [paths."active/x/".group]
@@ -513,7 +481,7 @@ class TestRuleReverseIndex:
 
     def test_rule_lists_every_attachment_site(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]
@@ -526,7 +494,7 @@ reason = "reason A"
 [paths."a/".rules.file-extensions-v1.params]
 allowed = ["jpg"]
 
-[paths."b/".doc]
+[paths."b/"]
 purpose = "B"
 
 [paths."b/".group]
@@ -551,7 +519,7 @@ class TestNoEmDashes:
 
     def test_generated_output_has_no_em_dashes(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/".doc]
+[paths."a/"]
 purpose = "A"
 
 [paths."a/".group]

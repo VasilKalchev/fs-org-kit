@@ -11,75 +11,84 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
-### An entry is three tables now - schema 2.0
+### An entry declares its own fields - schema 2.0
 
-`purpose` and `allow_missing` used to sit in the same flat entry and in
-the same `paths.attributes.names` list, reading as the same kind of
-thing. Only one of them was: the tool acts on `allow_missing` and
-`outside_root`, while the rest are documentation nothing reads - except
+`purpose` and `allow_missing` used to sit side by side in a flat entry
+and in one `paths.attributes.names` list, reading as the same kind of
+thing. Only one of them was: the tool acted on `allow_missing` and
+`outside_root`, while the rest were documentation nothing reads - except
 that `purpose`, `lifecycle` and `origin` were *also* hardcoded by name in
 the validator, so a standard couldn't actually name its own fields.
 
-The distinction is now structural, with the same three names at both
-levels - declaring a namespace, and making up every entry in it:
+An entry is now its documentation fields plus two tables, and each
+namespace declares what may go in the first two:
 
 ```toml
-[paths.doc]                            # free-form: string or list of strings
+[paths.attributes]                     # free-form: string or list of strings
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.group]                          # enum-backed, checked against enums.group.*
+[paths.attributes.group]               # enum-backed, checked against enums.group.*
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
-[paths.rules]                          # control-field defaults, then blanket rules
-allow_missing = false
-
-[paths."area/inv/".doc]
+[paths."area/inv/"]
 purpose = "Inventory tracking"
 
 [paths."area/inv/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."area/inv/".rules]
-allow_missing = true
-
 [[paths."area/inv/".rules.file-extensions-v1]]
 reason = "..."
 ```
 
-The control fields live in `rules` because that is who reads them:
-`allow_missing` decides whether the runner expects a target on disk,
-`outside_root` decides where a fixer may write. They're the tool's own -
-declaring one in `doc.names` or `group.names` is an error - and
-`folders` gets neither, having no single location to describe.
+**No field name is hardcoded anywhere in the package.** Requiredness
+moved into the standard along with the names, and the doc generator's
+Mermaid diagram of the `lifecycle` vocabulary is gone - it recognized a
+user-chosen name and its four expected values, which is exactly the
+coupling this removes. `group`, `rules` and `inherit` are the only names
+an entry can't use for a field of its own. `inherit` names one source
+per part (`doc` / `group` / `rules`, plus `exclude_rules`).
 
-Nothing in the code knows what `purpose` or `lifecycle` mean any more,
-including requiredness, which moved into the standard along with the
-names. `inherit` follows the same three names (`doc` / `group` / `rules`,
-plus `exclude_rules`), each pointing at its own source entry.
+Vocabularies moved from `enums.paths.<field>` to `enums.<kind>.<field>`
+and are shared by both namespaces: one `[enums.group.lifecycle]` serves
+paths and reserved folders alike, since a value set describes the field
+rather than who carries it. `[enums.doc.<field>]` is optional and
+normally absent - a documentation field is prose unless a standard
+chooses to close its value set.
 
-Vocabularies moved from `enums.<namespace>.<field>` to
-`enums.<kind>.<field>` and are shared by both namespaces: one
-`[enums.group.lifecycle]` serves paths and reserved folders alike, since
-a value set describes the field rather than who carries it.
-`[enums.doc.<field>]` is optional and normally absent - a documentation
-field is prose unless a standard chooses to close its value set.
+### `allow_missing` and `outside_root` are gone
 
-The doc generator follows: it renders whatever was declared, in declared
-order - strings as table rows, lists as bullets - and emits a "by
-`<field>`" index per grouping field, which is what separating them is
-for. The enums section lists every vocabulary under its dotted key
-rather than the two it used to know by name.
+Both were flags asking a standard to restate something, and both are
+removed rather than relocated.
 
-Breaking, so `SUPPORTED_SCHEMA_MAJOR` is 2 and both bundled examples move
-to `schema_version = "2.0"`. A 1.x standard stops with one clear version
-error instead of a pile of unknown-field warnings. Migrating an entry:
-move its prose fields into `[<key>.doc]`, its enum-backed ones into
-`[<key>.group]`, and `allow_missing`/`outside_root` into `[<key>.rules]`
-beside the attachments already there.
+A cataloged path that isn't on disk is now simply skipped, silently.
+`allow_missing` defaulted to "must exist", so an absent path failed the
+run unless marked - which made state-via-location schemes depend on
+remembering to mark *both* sides of a pair, since either could be the
+absent one. A catalog says where things go, not which locations exist at
+this instant; "this path should exist" is a question about the
+filesystem, which is what rules are for. No such rule ships yet.
+
+`outside_root` confirmed that a key deliberately named somewhere outside
+`root`. The sharp edge it guarded - `root / "/etc/x"` being `/etc/x` -
+is handled by `path_keys.resolve_key` being the only place a key becomes
+a path, which is where it belonged. A key now names a location and the
+tool goes there, so `path_keys` loses its escape-detection half
+entirely, and the runner loses its missing-path reporting and the exit-1
+that went with it.
+
+Together these also retire standard-wide field defaults
+(`attributes.defaults`): `allow_missing = false` was the only value
+anyone had reason to declare there.
+
+Breaking, so `SUPPORTED_SCHEMA_MAJOR` is 2 and both bundled examples
+move to `schema_version = "2.0"`. A 1.x standard stops with one clear
+version error instead of a pile of unknown-field warnings. Migrating an
+entry: leave its prose fields where they are, move its enum-backed ones
+into `[<key>.group]`, and delete `allow_missing` / `outside_root`.
 
 ### `skipped` - an invocation a fixer outran
 

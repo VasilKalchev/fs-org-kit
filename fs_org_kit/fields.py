@@ -1,38 +1,43 @@
 """
-fs_org_kit.fields - the three tables an entry is made of, and the
-per-namespace declaration that says what may go in two of them.
+fs_org_kit.fields - what a namespace declares its entries may carry.
 
-A `[paths."..."]` or `[folders.reserved."..."]` entry mixes fields that
-mean very different things, and the difference is not visible from the
-value. They live in three sub-tables named for who reads them:
+An entry is its documentation fields, plus two sub-tables:
 
-  <entry>.doc    documentation. Free-form: a string, or a list of
-                 strings. Nothing reads the values; the doc generator
-                 renders whatever is there. Declared in `<ns>.doc.names`.
+    [paths."a/"]                 free-form documentation fields, written
+    whatever = "bla"             directly on the entry. A string, or a
+                                 list of strings. Nothing reads the
+                                 values; the doc generator renders
+                                 whatever is there.
 
-  <entry>.group  grouping. Enum-backed, checked against
-                 `enums.group.<field>`, and used to sort entries into
-                 buckets in the generated docs - a closed vocabulary is
-                 what makes that possible. Declared in
-                 `<ns>.group.names`.
+    [paths."a/".group]           enum-backed values, checked against
+    fruit = "apple"              `enums.group.<field>` and used to sort
+                                 entries into buckets in the generated
+                                 docs - a closed vocabulary is what makes
+                                 that possible.
 
-  <entry>.rules  everything the rule machinery reads: the rule
-                 attachments themselves, plus the CONTROL fields
-                 `allow_missing` and `outside_root`, which decide
-                 whether a target is expected on disk and where a fixer
-                 may write. A fixed set owned by this package, never
-                 declared in a standard.
+    [[paths."a/".rules.rule-a-v1]]   rule attachments.
 
-Which names appear in `doc` and `group` is entirely the user's choice,
-including the ones this project's own template happens to use - nothing
-in the code knows what `purpose` or `lifecycle` mean. The two namespaces
-declare independently, so `folders` can carry a different set of fields
-from `paths`; the vocabularies under `enums` are shared between them,
-since a value set is about the field, not about who carries it.
+The namespace declares the first two in one place:
 
-Parsed once per namespace by the validator, which hands the result to
-the doc generator - the same resolve-once-and-reuse path `rule_catalog`
-and `resolved_paths` already take.
+    [paths.attributes]
+    names = ["whatever"]         valid documentation field names
+    required = ["whatever"]      the ones that may not be left empty
+
+    [paths.attributes.group]
+    names = ["fruit"]
+    multi = []                   fields holding a LIST of values
+    required = ["fruit"]
+
+Every name is the user's: nothing in this package knows what `purpose`
+or `lifecycle` mean, and a standard is free to call its fields anything
+that isn't one of the structural keys below. The two namespaces (`paths`,
+`folders`) declare independently, so they can carry different fields; the
+vocabularies under `enums` are shared, since a value set describes the
+field rather than who carries it.
+
+Parsed once per namespace by the validator, which hands the result to the
+doc generator - the same resolve-once-and-reuse path `rule_catalog` and
+`resolved_paths` already take.
 """
 
 from __future__ import annotations
@@ -44,24 +49,12 @@ DOC = "doc"
 GROUP = "group"
 RULES = "rules"
 
-# The sub-tables an entry is made of, plus `inherit` - everything at the
-# top level of an entry, so anything else there is a mistake.
-ENTRY_TABLES = (DOC, GROUP, RULES)
-STRUCTURAL_KEYS = (*ENTRY_TABLES, "inherit")
+# Keys on an entry that are structure rather than a documentation field.
+# A declared field name may not collide with one.
+STRUCTURAL_KEYS = (GROUP, RULES, "inherit")
 
-# Fields inside an entry's `rules` table that are the tool's own, not
-# rule attachments. `folders` has none: a reserved name isn't one
-# location, so neither "may be missing on disk" nor "points outside
-# root" has anything to apply to.
-CONTROL_FIELDS: dict[str, tuple[str, ...]] = {
-    "paths": ("allow_missing", "outside_root"),
-    "folders": (),
-}
-ALL_CONTROL_FIELDS = tuple(sorted({name for names in CONTROL_FIELDS.values() for name in names}))
-
-# Keys inside a `<ns>.doc` / `<ns>.group` declaration table that describe
-# the declaration rather than name a field.
-DECLARATION_KEYS = ("names", "required", "multi", "defaults")
+# The table a namespace declares its fields in, beside its entries.
+DECLARATION_TABLE = "attributes"
 
 MISSING_GROUPING_ENUM = "missing-grouping-enum"
 
@@ -88,11 +81,6 @@ class FieldSpec:
     group_multi: frozenset[str] = frozenset()
     group_required: frozenset[str] = frozenset()
     group_values: dict[str, frozenset[str]] = field(default_factory=dict)
-    defaults: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    @property
-    def control_names(self) -> tuple[str, ...]:
-        return CONTROL_FIELDS.get(self.namespace, ())
 
     def names(self, kind: str) -> tuple[str, ...]:
         return self.doc_names if kind == DOC else self.group_names
@@ -100,15 +88,16 @@ class FieldSpec:
     def required(self, kind: str) -> frozenset[str]:
         return self.doc_required if kind == DOC else self.group_required
 
-    def values(self, kind: str) -> dict[str, frozenset[str]]:
-        return self.doc_values if kind == DOC else self.group_values
-
     def is_multi(self, name: str) -> bool:
         return name in self.group_multi
 
     @staticmethod
     def enum_location(kind: str, name: str) -> str:
         return f"enums.{kind}.{name}"
+
+    def declaration_location(self, kind: str) -> str:
+        base = f"{self.namespace}.{DECLARATION_TABLE}"
+        return f"{base}.names" if kind == DOC else f"{base}.{GROUP}.names"
 
     def is_declared(self) -> bool:
         """False when a namespace declares no fields at all - the point
@@ -153,8 +142,7 @@ def _table(data: dict[str, Any], *keys: str) -> dict[str, Any]:
 def _vocabulary(enums: dict[str, Any], kind: str, name: str) -> frozenset[str] | None:
     """The declared value set for one field, or None when there isn't
     one. Vocabularies live under `enums.<kind>.<field>` and are shared by
-    both namespaces - a value set describes the field, not who carries
-    it."""
+    both namespaces."""
     table = _table(enums, kind).get(name)
     if not isinstance(table, dict) or not table:
         return None
@@ -166,45 +154,41 @@ def parse_field_spec(data: dict[str, Any], namespace: str) -> tuple[FieldSpec, l
     the DECLARATION itself; checking entry values against it is the
     validator's job."""
     issues: list[FieldIssue] = []
-    control = CONTROL_FIELDS.get(namespace, ())
-    enums = data.get("enums", {})
-    if not isinstance(enums, dict):
-        enums = {}
+    enums = _table(data, "enums")
 
-    doc_table = _table(data, namespace, DOC)
-    doc_names = _string_list(doc_table.get("names"), f"{namespace}.doc.names", issues)
+    declaration = f"{namespace}.{DECLARATION_TABLE}"
+    attributes = _table(data, namespace, DECLARATION_TABLE)
+    doc_names = _string_list(attributes.get("names"), f"{declaration}.names", issues)
     doc_required = _subset(
-        doc_table.get("required"), f"{namespace}.doc.required",
-        doc_names, f"{namespace}.doc.names", issues,
+        attributes.get("required"), f"{declaration}.required",
+        doc_names, f"{declaration}.names", issues,
     )
 
-    group_table = _table(data, namespace, GROUP)
-    group_names = _string_list(group_table.get("names"), f"{namespace}.group.names", issues)
+    group_table = _table(attributes, GROUP)
+    group_names = _string_list(group_table.get("names"), f"{declaration}.group.names", issues)
     group_multi = _subset(
-        group_table.get("multi"), f"{namespace}.group.multi",
-        group_names, f"{namespace}.group.names", issues,
+        group_table.get("multi"), f"{declaration}.group.multi",
+        group_names, f"{declaration}.group.names", issues,
     )
     group_required = _subset(
-        group_table.get("required"), f"{namespace}.group.required",
-        group_names, f"{namespace}.group.names", issues,
+        group_table.get("required"), f"{declaration}.group.required",
+        group_names, f"{declaration}.group.names", issues,
     )
 
-    for kind, names in ((DOC, doc_names), (GROUP, group_names)):
-        for name in names:
-            if name in ALL_CONTROL_FIELDS:
-                issues.append(FieldIssue(
-                    "error", f"{namespace}.{kind}.names",
-                    f"'{name}' is a control field this tool reads itself - it belongs in an entry's "
-                    f"`rules` table and can't be redeclared here",
-                ))
-        if kind == GROUP:
-            for name in names:
-                if name in doc_names:
-                    issues.append(FieldIssue(
-                        "error", f"{namespace}.group.names",
-                        f"'{name}' is also declared in {namespace}.doc.names - a field is either "
-                        f"free-form documentation or an enum-backed grouping field, not both",
-                    ))
+    for name in doc_names:
+        if name in STRUCTURAL_KEYS:
+            issues.append(FieldIssue(
+                "error", f"{declaration}.names",
+                f"'{name}' is one of an entry's structural keys ({', '.join(STRUCTURAL_KEYS)}) - "
+                f"a documentation field can't share the name",
+            ))
+    for name in group_names:
+        if name in doc_names:
+            issues.append(FieldIssue(
+                "error", f"{declaration}.group.names",
+                f"'{name}' is also declared in {declaration}.names - a field is either free-form "
+                f"documentation or an enum-backed grouping field, not both",
+            ))
 
     doc_values: dict[str, frozenset[str]] = {}
     for name in doc_names:
@@ -228,19 +212,6 @@ def parse_field_spec(data: dict[str, Any], namespace: str) -> tuple[FieldSpec, l
         else:
             group_values[name] = vocabulary
 
-    defaults: dict[str, dict[str, Any]] = {
-        DOC: _table(doc_table, "defaults"),
-        GROUP: _table(group_table, "defaults"),
-        # an entry's control fields sit in its `rules` table, so the
-        # namespace-wide default for one sits in the namespace's
-        # `rules` table, beside the blanket attachments
-        RULES: {
-            name: value
-            for name, value in _table(data, namespace, RULES).items()
-            if name in control
-        },
-    }
-
     spec = FieldSpec(
         namespace=namespace,
         doc_names=doc_names,
@@ -250,6 +221,5 @@ def parse_field_spec(data: dict[str, Any], namespace: str) -> tuple[FieldSpec, l
         group_multi=group_multi,
         group_required=group_required,
         group_values=group_values,
-        defaults=defaults,
     )
     return spec, issues

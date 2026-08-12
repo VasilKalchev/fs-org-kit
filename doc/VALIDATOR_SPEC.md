@@ -65,56 +65,36 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
 ### Field declarations
 
 Each namespace (`paths`, `folders`) declares what its entries may carry
-in their `doc` and `group` tables, and the two namespaces are read
-independently - see doc/DESIGN.md.
+in its own `attributes` table, and the two are read independently - see
+doc/DESIGN.md.
 
-- `doc.names`, `doc.required`, `group.names`, `group.multi`,
-  `group.required` must each be a list of strings, with no name listed
-  twice
-- a name in `doc.required` must appear in `doc.names`; a name in
-  `group.multi` / `group.required` must appear in `group.names`
+- `attributes.names`, `attributes.required`, `attributes.group.names`,
+  `attributes.group.multi`, `attributes.group.required` must each be a
+  list of strings, with no name listed twice
+- a name in `attributes.required` must appear in `attributes.names`; a
+  name in `attributes.group.multi` / `.required` must appear in
+  `attributes.group.names`
 - the same name can't be both a documentation and a grouping field
-- neither list may declare a control field (`allow_missing`,
-  `outside_root`) - those live in an entry's `rules` table, are the
-  tool's own, and are never a namespace's to redefine
+- a documentation field can't be named after one of an entry's
+  structural keys (`group`, `rules`, `inherit`)
 - a grouping field with no `enums.group.<field>` table is a warning: it
   still groups, but its values go unchecked
 
 ### Path and folder entries
 
-- a `[paths."..."]` or `[folders.reserved."..."]` entry is made of the
-  `doc`, `group` and `rules` tables plus `inherit`, each of which must
-  be a table; a field written directly on the entry is an error, since
-  nothing would read it
-- a field in an entry's `doc` / `group` table that its namespace never
+- a `[paths."..."]` or `[folders.reserved."..."]` entry carries its
+  documentation fields directly, and its `group`, `rules` and `inherit`
+  keys must each be a table
+- a field on an entry, or in its `group` table, that its namespace never
   declared is flagged
-- every field in `doc.required` / `group.required` must be non-empty,
-  even after inheritance and standard-wide defaults are applied
+- every field in `attributes.required` / `attributes.group.required`
+  must be non-empty, even after inheritance
 - a documentation field must be a string or a list of strings, and its
   values must come from `enums.doc.<field>` if that table exists
 - a grouping field's value must be one of `enums.group.<field>`, or a
-  list of them when the field is declared in `group.multi` (a list
-  where one value is expected, or a bare value where a list is, is an
-  error either way)
-- `allow_missing` / `outside_root`, when present in an entry's `rules`
-  table, must be booleans; either one under a namespace that has no
-  control fields (`folders`) is an error, rather than being read as a
-  rule id
-- a path key that resolves outside `root` - absolute (`/etc/nginx/`),
-  home-relative (`~/.config/`), or walking up (`../sibling/`) - is an
-  error unless that entry's `rules` table declares
-  `outside_root = true`. Joining an
-  absolute key onto `root` silently discards `root`, so this is opt-in
-  rather than implicit (see doc/DESIGN.md)
-- `outside_root = true` on a key that resolves *inside* root is also an
-  error: a flag claiming something untrue misleads the next reader as
-  much as a missing one
-- `outside_root` reaching an entry through `inherit` or the
-  `[paths.rules]` default is an error. Like `reason`, it must be
-  written on the entry it applies to - a flag whose job is to make one
-  thing deliberate is worth nothing if it can arrive from elsewhere
-- `[[paths.cross]]` carries the same flag, covering every path it lists,
-  with the same both-ways checks
+  list of them when the field is declared in `attributes.group.multi`
+  (a list where one value is expected, or a bare value where a list is,
+  is an error either way)
 - a rule attached under `paths."<key>".rules` where `[paths."<key>"]`
   itself was never declared (no own content, no `inherit`) is an
   error - an orphaned attachment, not an under-filled-out entry
@@ -122,8 +102,8 @@ independently - see doc/DESIGN.md.
 
 ### `inherit`
 
-- `inherit`, when present, must be a table, with one key per table it
-  fills (`doc` / `group` / `rules`), plus `exclude_rules`
+- `inherit`, when present, must be a table, with one key per part of
+  the entry it fills (`doc` / `group` / `rules`), plus `exclude_rules`
 - `inherit.doc` / `inherit.group` / `inherit.rules`, when set, must
   reference a key that actually exists in the same namespace (a path can only
   inherit from a path, a reserved folder entry only from another
@@ -150,8 +130,7 @@ independently - see doc/DESIGN.md.
 
 - `root` should end with a trailing slash
 - a path key should end with a trailing slash (`some/path/`, not
-  `some/path`). A key that resolves *outside* root is no longer a lint
-  matter at all - see `outside_root` under Validate.
+  `some/path`)
 - `schema_version` / `standard_version` should look like
   `major.minor` (e.g. `"1.0"`) - malformed values don't break
   anything (the major-compatibility check just silently skips), so
@@ -164,7 +143,7 @@ independently - see doc/DESIGN.md.
 - there should be at least one cataloged path (an empty `[paths]` with
   no entries isn't wrong, just probably not useful yet)
 - a namespace with entries should declare some fields (without
-  `<ns>.doc.names` or `<ns>.group.names`, unknown-field
+  `<ns>.attributes.names` or `<ns>.attributes.group.names`, unknown-field
   checking can't run for its entries and the doc generator has nothing
   to render - worth knowing about, but the file still functions)
 - **path keys, reserved folder names, and abbreviations should be
