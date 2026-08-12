@@ -52,8 +52,8 @@ REF_KEY = "ref"
 # a table reference excludes these from its expanded key list, since
 # they're schema-level config, not entries. Single source of truth:
 # validator.py imports these from here rather than redefining them.
-META_KEYS_UNDER_PATHS = {"purpose", "rules", "cross", "attributes"}
-META_KEYS_UNDER_FOLDERS = {"purpose", "rules", "reserved"}
+META_KEYS_UNDER_PATHS = {"rules", "cross", "attributes"}
+META_KEYS_UNDER_FOLDERS = {"rules", "reserved"}
 META_KEYS_UNDER_RESERVED = {"prefix"}
 
 _META_KEYS_BY_PATH = {

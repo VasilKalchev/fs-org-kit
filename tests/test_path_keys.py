@@ -127,7 +127,6 @@ self = "x"
 [tags]
 [abbreviations]
 [folders]
-purpose = "x"
 [folders.attributes]
 names = []
 [folders.attributes.defaults]

@@ -27,7 +27,6 @@ standard_date = 2026-08-11
 # Paths
 # ===================================================================
 [paths]
-purpose = "The five top-level locations of this PARA tree, plus the shape every individual project folder is expected to have."
 
 [paths.attributes]
 names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
@@ -165,7 +164,6 @@ mode = "allow"
 # patterns (e.g. `_archive`) that mean the same thing wherever they
 # appear. This example needs neither - see fs-org-std.template.toml.
 [folders]
-purpose = "Unused in this example."
 
 
 # ===================================================================

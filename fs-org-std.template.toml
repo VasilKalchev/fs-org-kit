@@ -177,7 +177,8 @@ standard_date = 2026-08-04
 # Paths
 # ===================================================================
 [paths]
-purpose = "Specific, individually documented locations under root - each gets its own [paths.\"...\"] entry describing what it's for, its lifecycle, and its origin."
+# Specific, individually documented locations under root - each gets its own
+# [paths."..."] entry describing what it's for, its lifecycle, and its origin.
 
 # valid field names on a [paths."..."] entry - most have no default
 # since a path's own content is what's supposed to fill them in
@@ -306,7 +307,9 @@ key-a-1 = "custom value"
 # Folders
 # ===================================================================
 [folders]
-purpose = "Rules and definitions that apply without being tied to one cataloged path: blanket rules over every folder under root, and reserved folder-name patterns that apply independent of location."
+# Rules and definitions that apply without being tied to one cataloged path:
+# blanket rules over every folder under root, and reserved folder-name patterns
+# that apply independent of location.
 
 # valid field names on a [folders.reserved."..."] entry - same shape as
 # paths.attributes above, minus allow_missing (a reserved-name pattern
