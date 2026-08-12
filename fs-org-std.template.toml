@@ -174,6 +174,147 @@ standard_date = 2026-08-04
 
 
 # ===================================================================
+# Enums
+# ===================================================================
+[enums]
+purpose = "Validate the specified values."
+
+# -------------------------------------------------------------------
+# Enums > Paths
+# -------------------------------------------------------------------
+[enums.paths.lifecycle]
+transient = "meant to be emptied constantly, nothing lingers"
+temporary = "has a completion condition, then gets archived"
+ongoing = "continuously active/maintained, no end state"
+archival = "already at rest, rarely touched"
+
+[enums.paths.origin]
+self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
+external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
+generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
+
+# `exclude` is a native TOML array of glob strings and needs no enum table.
+# (Whether a rule can be fixed is structural - it's the presence of the
+# -fix.py script file - not manifest-declared.)
+
+
+# ===================================================================
+# Tags
+# ===================================================================
+[tags]
+
+
+
+
+# ===================================================================
+# Abbreviations
+# ===================================================================
+[abbreviations]
+area = "Area of responsibility"
+arch = "Archive"
+app = "Application"
+bkup = "Backup"
+career = "Career information"
+embd = "Embedded"
+fin = "Finance"
+fw = "Firmware"
+inv = "Inventory"
+item = "Individual owned item"
+knwl = "Knowledge"
+lib = "Library"
+lnk = "Link"
+lrn = "Learn"
+med = "Medical"
+ndx = "Index"
+prj = "Project"
+res = "Resource"
+scr = "Script"
+std = "Standard"
+strg = "Storage"
+sys = "System"
+task = "Task"
+tmpl = "Template"
+tool = "Tool"
+vm = "Virtual machine"
+ws = "Workspace"
+
+# ===================================================================
+# Folders
+# ===================================================================
+[folders]
+# Rules and definitions that apply without being tied to one cataloged path:
+# blanket rules over every folder under root, and reserved folder-name patterns
+# that apply independent of location.
+
+# valid field names on a [folders.reserved."..."] entry - same shape as
+# paths.attributes below, minus allow_missing (a reserved-name pattern
+# isn't one location, so "does it exist on disk" doesn't apply the same
+# way). `inherit` works identically here too - see the worked example
+# under [paths."path/a/archived/"] below; the mechanism is namespace-
+# scoped, so a reserved folder entry can only inherit from another
+# reserved folder entry, never from a [paths."..."] entry.
+[folders.attributes]
+names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also"]
+
+[folders.attributes.defaults]
+
+# rules applying to EVERY folder under root, cataloged or not - use this to
+# catch folders that exist on disk but aren't part of the documented standard.
+[[folders.rules.rule-a-v1]]
+reason = "Why is this rule applied to all folders?"
+
+[folders.rules.rule-a-v1.params]
+key-a-1 = "custom value"
+
+
+# -------------------------------------------------------------------
+# Folders > Reserved
+# -------------------------------------------------------------------
+# `prefix` is the naming convention every reserved folder is expected to
+# follow, wherever it appears in the tree - checked by the validator's
+# own reserved-name-prefix lint, and available to rules (as a param,
+# since scripts never see the parsed standard directly) that need to
+# scan the real filesystem for prefix-matching folders, e.g. to find
+# ones that exist on disk but were never cataloged here.
+[folders.reserved]
+prefix = "_"
+
+[folders.reserved."_folder-name"]
+purpose = "Example - describe what this specific reserved folder name means, wherever it appears in the tree."
+notes = "E.g.: caveats..."
+use_for = [
+  "",
+  ""
+]
+not_for = [
+  "",
+  ""
+]
+lifecycle = ""
+origin = []
+
+# Rules attach here exactly as they do on a path, but the target set is
+# a NAME match: the runner invokes this once per folder actually called
+# `_folder-name`, anywhere under root, none of which need to be
+# cataloged as paths. That's the difference from [[folders.rules]]
+# (every folder, once, from root) and from [paths."..."] (one location,
+# or one glob's worth of them).
+# A folder that is both a reserved name and its own [paths."..."] entry
+# gets BOTH sets of rules - they answer different questions ("what
+# _folder-name means anywhere" vs "what this one location is"), the same
+# way a per-path attachment and [[folders.rules]] already coexist.
+# A reserved name matching no folder on disk is not "missing" - nothing
+# says it has to occur - which is why folders.attributes.names has no
+# allow_missing to set.
+[[folders.reserved."_folder-name".rules.rule-a-v1]]
+reason = "Why is this rule applied wherever this name appears?"
+
+[folders.reserved."_folder-name".rules.rule-a-v1.params]
+key-a-1 = "custom value"
+
+
+
+# ===================================================================
 # Paths
 # ===================================================================
 [paths]
@@ -301,145 +442,3 @@ reason = "Why is this rule applied to this set of paths?"
 
 [paths.cross.rules.rule-a-v1.params]
 key-a-1 = "custom value"
-
-
-# ===================================================================
-# Folders
-# ===================================================================
-[folders]
-# Rules and definitions that apply without being tied to one cataloged path:
-# blanket rules over every folder under root, and reserved folder-name patterns
-# that apply independent of location.
-
-# valid field names on a [folders.reserved."..."] entry - same shape as
-# paths.attributes above, minus allow_missing (a reserved-name pattern
-# isn't one location, so "does it exist on disk" doesn't apply the same
-# way). `inherit` works identically here too - see the worked example
-# under [paths."path/a/archived/"] above; the mechanism is namespace-
-# scoped, so a reserved folder entry can only inherit from another
-# reserved folder entry, never from a [paths."..."] entry.
-[folders.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also"]
-
-[folders.attributes.defaults]
-
-# rules applying to EVERY folder under root, cataloged or not - use this to
-# catch folders that exist on disk but aren't part of the documented standard.
-[[folders.rules.rule-a-v1]]
-reason = "Why is this rule applied to all folders?"
-
-[folders.rules.rule-a-v1.params]
-key-a-1 = "custom value"
-
-
-# -------------------------------------------------------------------
-# Folders > Reserved
-# -------------------------------------------------------------------
-# `prefix` is the naming convention every reserved folder is expected to
-# follow, wherever it appears in the tree - checked by the validator's
-# own reserved-name-prefix lint, and available to rules (as a param,
-# since scripts never see the parsed standard directly) that need to
-# scan the real filesystem for prefix-matching folders, e.g. to find
-# ones that exist on disk but were never cataloged here.
-[folders.reserved]
-prefix = "_"
-
-[folders.reserved."_folder-name"]
-purpose = "Example - describe what this specific reserved folder name means, wherever it appears in the tree."
-notes = "E.g.: caveats..."
-use_for = [
-  "",
-  ""
-]
-not_for = [
-  "",
-  ""
-]
-lifecycle = ""
-origin = []
-
-# Rules attach here exactly as they do on a path, but the target set is
-# a NAME match: the runner invokes this once per folder actually called
-# `_folder-name`, anywhere under root, none of which need to be
-# cataloged as paths. That's the difference from [[folders.rules]]
-# (every folder, once, from root) and from [paths."..."] (one location,
-# or one glob's worth of them).
-# A folder that is both a reserved name and its own [paths."..."] entry
-# gets BOTH sets of rules - they answer different questions ("what
-# _folder-name means anywhere" vs "what this one location is"), the same
-# way a per-path attachment and [[folders.rules]] already coexist.
-# A reserved name matching no folder on disk is not "missing" - nothing
-# says it has to occur - which is why folders.attributes.names has no
-# allow_missing to set.
-[[folders.reserved."_folder-name".rules.rule-a-v1]]
-reason = "Why is this rule applied wherever this name appears?"
-
-[folders.reserved."_folder-name".rules.rule-a-v1.params]
-key-a-1 = "custom value"
-
-
-
-# ===================================================================
-# Enums
-# ===================================================================
-[enums]
-purpose = "Validate the specified values."
-
-# -------------------------------------------------------------------
-# Enums > Paths
-# -------------------------------------------------------------------
-[enums.paths.lifecycle]
-transient = "meant to be emptied constantly, nothing lingers"
-temporary = "has a completion condition, then gets archived"
-ongoing = "continuously active/maintained, no end state"
-archival = "already at rest, rarely touched"
-
-[enums.paths.origin]
-self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
-external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
-generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
-
-# `exclude` is a native TOML array of glob strings and needs no enum table.
-# (Whether a rule can be fixed is structural - it's the presence of the
-# -fix.py script file - not manifest-declared.)
-
-
-# ===================================================================
-# Tags
-# ===================================================================
-[tags]
-
-
-
-
-# ===================================================================
-# Abbreviations
-# ===================================================================
-[abbreviations]
-area = "Area of responsibility"
-arch = "Archive"
-app = "Application"
-bkup = "Backup"
-career = "Career information"
-embd = "Embedded"
-fin = "Finance"
-fw = "Firmware"
-inv = "Inventory"
-item = "Individual owned item"
-knwl = "Knowledge"
-lib = "Library"
-lnk = "Link"
-lrn = "Learn"
-med = "Medical"
-ndx = "Index"
-prj = "Project"
-res = "Resource"
-scr = "Script"
-std = "Standard"
-strg = "Storage"
-sys = "System"
-task = "Task"
-tmpl = "Template"
-tool = "Tool"
-vm = "Virtual machine"
-ws = "Workspace"
