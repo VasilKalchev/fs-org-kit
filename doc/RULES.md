@@ -210,14 +210,33 @@ in `params`, declared in your manifest, supplied at the attachment
 site.
 
 A param value in the standard can be `{ref = "dotted.path"}` instead of
-a literal - resolved, before your script ever runs, to the table's keys
-or the list found at that path elsewhere in the standard (see
-`fs_org_kit.param_refs`). This is what lets a param like
-`spelling-abbreviations-v1`'s `abbreviations` point at `[abbreviations]`
-itself instead of the standard's author retyping that list by hand at
-every attachment site. It's resolved by the runner/validator, not by
-your script - your script still only ever sees a plain JSON value, same
-as any other param.
+a literal - substituted, before your script ever runs, with whatever is
+at that path elsewhere in the standard (see `fs_org_kit.param_refs`).
+This is what lets a param like `spelling-abbreviations-v1`'s
+`abbreviations` point at `[abbreviations]` itself instead of the
+standard's author retyping that list by hand at every attachment site.
+It's resolved by the runner/validator, not by your script - your script
+still only ever sees a plain JSON value, same as any other param.
+
+**Nothing is filtered or reshaped on the way through**, so a param that
+can be a ref should accept the shape at the other end. A ref to a table
+arrives as that table, meta keys and all: `spelling-abbreviations-v1`
+reads its keys and ignores the meanings; `uncataloged-reserved-v1` keeps
+the table-valued keys of `[folders.reserved]`, which drops the `prefix`
+sitting beside the entries without either the core or the rule naming
+it. Deciding which parts of a table matter is your rule's job - the core
+doesn't know that table's schema and deliberately doesn't learn it.
+
+The convention that follows: **a rule that takes a vocabulary takes it
+as one table, not as several parallel params.** A tag namespace
+(`[tags."<ns>"]`) is the case this was built for - its values, its
+`multi` flag and each value's meaning arrive together as one object,
+from one declaration in the standard, so nothing can drift apart:
+
+```toml
+[paths."prj/_arch/".rules.<your-rule>-v1.params]
+tags = { ref = "tags.state" }
+```
 
 ### What your script must print
 

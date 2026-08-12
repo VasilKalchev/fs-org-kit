@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks for folders that use the standard's reserved-name prefix (e.g. \"_\") but aren't cataloged under [folders.reserved.\"...\"] - a folder that LOOKS reserved but isn't documented."
 severity = "warn"
 scope = "single"
@@ -19,9 +19,10 @@ exclude = []
 # has to be supplied at the attachment site. Point it at
 # [folders.reserved] itself with a {ref = "..."} value (see
 # fs_org_kit.param_refs) instead of retyping the list by hand and
-# keeping it in sync manually - the runner/validator expand it to
-# [folders.reserved]'s entry names (the `prefix` meta key is excluded
-# automatically) before this script ever sees it:
+# keeping it in sync manually - a ref substitutes that table verbatim,
+# and this script takes its entry names from it (a reserved entry is a
+# sub-table; the schema-level `prefix` beside them is not, so it's
+# skipped):
 #
 #   [[folders.rules.uncataloged-reserved-v1]]
 #   reason = "catch stray reserved-looking folders"

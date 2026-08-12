@@ -92,14 +92,34 @@ name - that would violate "rules define their own semantics for
 params" directly above, and worse, would need extending every time
 some other rule hit the same wall. Instead, `fs_org_kit/param_refs.py`
 lets *any* param value, on *any* rule, be `{ref = "dotted.path"}`
-instead of a literal - resolved to the table's keys (or the list) found
-at that path elsewhere in the standard. The runner still has zero
-rule-specific knowledge: it expands `{ref: ...}` the same way
-regardless of which rule or param it's attached to, exactly like it
-already doesn't care what `exclude` or `recursive` mean semantically.
-This is wire-format sugar applied uniformly to values, not an
-exception to "the runner doesn't interpret params" - the rule script
-still only ever receives a plain resolved JSON value, same as always.
+instead of a literal - substituted with whatever is at that path
+elsewhere in the standard. The runner still has zero rule-specific
+knowledge: it expands `{ref: ...}` the same way regardless of which
+rule or param it's attached to, exactly like it already doesn't care
+what `exclude` or `recursive` mean semantically. This is wire-format
+sugar applied uniformly to values, not an exception to "the runner
+doesn't interpret params" - the rule script still only ever receives a
+plain resolved JSON value, same as always.
+
+**A ref substitutes; it does not project.** The first version resolved
+a table to its *keys*, since that's the shape both rules wanted, and
+kept a `_META_KEYS_BY_PATH` map so `[folders.reserved]`'s `prefix`
+wouldn't be handed over as if it were a reserved-folder name. Both were
+mistakes of the same kind: deciding which parts of a table are entries
+and which are schema-level config is knowledge *about that table*, and
+projecting a table down to a list is interpretation - the exact thing
+the paragraph above says the core doesn't do. A tag namespace made it
+visible, since its value is the whole object (vocabulary, cardinality,
+meanings), not a list of names.
+
+So a ref now yields the value verbatim - table, list, string, number,
+boolean - and the two rules take what they want from it: one reads the
+keys of `[abbreviations]`, the other keeps the table-valued keys of
+`[folders.reserved]`, which drops `prefix` without either the core or
+the rule naming it. The alternative considered was an opt-in projection
+(`{ref = "...", as = "value"}`), rejected because it leaves the core
+with a mode to choose between and a rule's expectations still encoded
+at the attachment site. Deleting a branch beat adding one.
 
 Resolution happens once (validator confirms every reference resolves
 before the runner ever touches the filesystem; the runner then expands
@@ -175,6 +195,16 @@ Grouping is separate from documentation because a closed vocabulary is what make
 Nothing in the code knows what `purpose` or `lifecycle` mean - including the ones this project's own template ships with. A standard that wants `sensitivity` and `owner` instead gets the same validation and the same rendering; `group`, `rules` and `inherit` are the only names an entry can't use for a field. Requiredness moved into the standard along with the names: a validator that no longer knows `purpose` exists can't insist on it either.
 
 Field lists are per namespace, so `folders` can carry a different set from `paths`. Vocabularies are not: `enums.group.lifecycle` is one table both namespaces read, because a value set describes the field, not who carries it.
+
+### Tags declare a vocabulary, never a value
+
+`[tags."<ns>"]` and `enums.group.<field>` are both closed value sets, and the difference between them is who carries the value. A grouping field's value is written in the standard and describes the cataloged entry. A tag's value is carried by each item *under* one - every archived project has its own state; `prj/_arch/` doesn't have one at all. So a tag namespace can't be another field: the standard would have to record what's on disk, and it would be wrong the moment anything moved.
+
+The standard therefore declares which vocabulary exists and where it applies, and nothing more. What each item currently carries is a question for the filesystem, answered by a rule at run time - the same division as [a cataloged path that isn't on disk](#a-cataloged-path-that-isnt-on-disk-is-skipped-not-reported).
+
+**Tags have no attachment syntax of their own.** A namespace is declared once and reaches a checking rule as one param, via `{ref = "tags.state"}`; which rule runs where stays an ordinary rule attachment, with its `reason`. The alternative - `[<entry>.tags.<ns>]` attachments, a fourth `inherit` part, a `uses_tags` manifest flag feeding the rule a `--tags` payload the way `uses_cache` feeds `--cache-dir` - buys one thing the ref approach can't: a doc generator that renders which tags apply to which path. It was rejected as the wrong fix for that, because the general version is better - *every* applied rule is documentation, so the doc generator should render rule attachments' params (see Deferred Decisions), which covers tags along with everything else.
+
+How a tag is stored is never the standard's business either. xattr, a sidecar file, TMSU, a name suffix - each is a different rule, and the `state/complete` spelling is one rule's separator param, not a declaration here.
 
 ### Nothing keyed on a field's name, including in the doc generator
 
@@ -386,6 +416,10 @@ The audit-hook harness above is a soft guard, and can't be made into anything mo
 ### Recursive rule invocation on folders
 
 `[[folders.rules]]` attachments pass root to the rule once, and the rule's own params control recursion and exclusion. No attempt is made to enumerate child directories or handle recursion in the runner itself - that's the rule's job.
+
+### Rendering rule attachments in the generated docs
+
+Every applied rule is documentation: its `reason` says why it's there, and its params say what it will accept. The doc generator currently renders neither, so anything expressed as a rule param - which tags apply under a path, which extensions are allowed, how stale is too stale - is invisible in the generated Markdown even though it's the enforceable half of the standard. Rendering attachments generally is deferred, and is the reason [tags](#tags-declare-a-vocabulary-never-a-value) got no attachment syntax of their own: a tags-shaped fix would have solved one case of it.
 
 ## Packaging and CLI Commands
 

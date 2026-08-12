@@ -31,6 +31,13 @@
 #               (e.g. "rule-a-v1"), since that's the compatibility unit:
 #               a breaking change to a rule is a new directory, not an
 #               edit to the old one.
+#   tags      - closed value sets for metadata carried by things ON DISK
+#               under a path (e.g. an archived project's state), one
+#               table per namespace. Declared once here and handed to a
+#               checking rule whole, as one param, via {ref = "..."} -
+#               there is no separate tag-attachment syntax. The standard
+#               declares which vocabulary exists, never which value
+#               something currently has. See that section below.
 #   enums     - closed value sets, one per field that has one, grouped by
 #               the KIND of field they belong to (enums.group.<field>,
 #               enums.attributes.<field>) and shared by both namespaces.
@@ -160,10 +167,10 @@ root = "~/usr/"
 [meta]
 description = ""
 
-schema_version = "2.0"     # version of this TOML *structure* (the grammar/spec)
+schema_version = "2.1"     # version of this TOML *structure* (the grammar/spec)
 schema_date = 2026-08-12
 
-standard_version = "2.0"   # version of the *content* of the standard
+standard_version = "2.1"   # version of the *content* of the standard
 standard_date = 2026-08-12
 
 
@@ -348,13 +355,17 @@ reason = "Why is this rule applied to this path?"
 
 [paths."path/a/".rules.rule-a-v1.params]
 key-a-1 = "custom value"
-# A param value can be {ref = "dotted.path"} instead of a literal -
-# expanded by the runner/validator to the table's keys (or the list)
-# found at that path elsewhere in this file, e.g.:
-#   key-a-2 = { ref = "abbreviations" }         # -> [abbreviations]'s keys
-#   key-a-3 = { ref = "folders.reserved" }      # -> [folders.reserved]'s entry names
-# Use this instead of retyping a list that's already declared elsewhere
-# in this file by hand - see fs_org_kit.param_refs and doc/DESIGN.md.
+# A param value can be {ref = "dotted.path"} instead of a literal - the
+# runner/validator substitute whatever is at that path elsewhere in this
+# file, verbatim, e.g.:
+#   key-a-2 = { ref = "abbreviations" }         # -> the whole [abbreviations] table
+#   key-a-3 = { ref = "folders.reserved" }      # -> the whole [folders.reserved] table
+#   key-a-4 = { ref = "tags.tag-namespace" }    # -> one tag namespace
+# Use this instead of retyping by hand something already declared
+# elsewhere in this file. Nothing is projected or filtered on the way
+# through - the rule receives the value as-is and takes what it needs
+# (e.g. spelling-abbreviations-v1 reads the keys of [abbreviations] and
+# ignores the meanings) - see fs_org_kit.param_refs and doc/DESIGN.md.
 
 
 # -------------------------------------------------------------------
@@ -438,7 +449,41 @@ key-a-1 = "custom value"
 # ===================================================================
 # Tags
 # ===================================================================
+# Closed vocabularies for metadata carried by things ON DISK, one table
+# per namespace. The difference from `enums` is where a value ends up:
+# an enum value is written in this file and describes a cataloged entry;
+# a tag value is carried by each item under one (every archived project
+# has its own state, the archive folder itself doesn't). So this section
+# declares what may be used, never what currently is - the standard
+# stays a specification, not a record of filesystem state.
+#
+# Nothing here is attached to a path directly. A tag namespace reaches
+# a checking rule as one param, via {ref = "..."}:
+#
+#   [paths."prj/_arch/".rules.<tag-rule>-v1.params]
+#   tags     = { ref = "tags.state" }   # the whole table below
+#   required = true                     # this rule's own param
+#
+# How a tag is actually stored - xattr, a sidecar file, a name suffix -
+# is that rule's business, including how it spells `state` + `complete`
+# (the "state/complete" form is one rule's separator param, not
+# something declared here). Which rule runs where stays visible as an
+# ordinary rule attachment.
+#
+# The section is optional; omit it entirely if nothing is tagged.
 [tags]
+
+[tags.tag-namespace]
+description = "What this namespace is for, rendered in the generated docs."
+multi = false             # false: exactly one of the values below applies
+                          # at a time. true: several may apply at once.
+
+# The vocabulary itself, in its own sub-table so `multi` and
+# `description` above have somewhere to live that isn't a tag value.
+# Kept alphabetical; the validator lints for it.
+[tags.tag-namespace.values]
+value-a = "what this value means"
+value-b = "what this value means"
 
 
 

@@ -42,10 +42,10 @@ root = "~/usr/"
 [meta]
 description = "Personal filesystem standard for ~/usr/ - a PARA-style split (area/prj/task/res/knwl) with state carried by folder location and `_`-prefixed reserved names."
 
-schema_version = "2.0"     # version of this TOML *structure* (the grammar/spec)
+schema_version = "2.1"     # version of this TOML *structure* (the grammar/spec)
 schema_date = 2026-08-12
 
-standard_version = "2.0"   # version of the *content* of the standard
+standard_version = "2.1"   # version of the *content* of the standard
 standard_date = 2026-08-12
 
 
@@ -1201,8 +1201,22 @@ generated = "produced automatically by a tool, script, or model - not hand-autho
 # =====================================================================
 #  TAGS
 # =====================================================================
-# Unused so far. Nothing in this standard reads it yet.
+# Vocabularies for metadata carried by things on disk. Declared here,
+# handed to a checking rule as one param with { ref = "tags.<name>" };
+# nothing attaches a tag to a path directly. No rule points at `state`
+# yet - the vocabulary is declared first so that when one does, it
+# isn't retyped at the attachment site.
 [tags]
+
+[tags.state]
+description = "Where a unit of work stands once it has left the active tree - the four cases prj/_arch/ and task/_arch/ already describe in prose."
+multi = false
+
+[tags.state.values]
+abandoned = "stopped deliberately, will not be resumed"
+complete = "finished, nothing further planned"
+obsolete = "superseded by something else, kept only for reference"
+paused = "intended to resume, blocked or set aside for now"
 
 
 

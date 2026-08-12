@@ -572,15 +572,49 @@ def render_abbreviations(b: DocBuilder, data: dict[str, Any]) -> None:
 
 
 def render_tags(b: DocBuilder, data: dict[str, Any]) -> None:
+    """One table per tag namespace, rendered like the enums section it
+    resembles - both are closed vocabularies. The difference is where a
+    value ends up: an enum value is written in this standard, a tag value
+    is carried by something on disk, so this documents what may be used
+    and never what currently is."""
     tags = data.get("tags", {})
     if not isinstance(tags, dict) or not tags:
         return
+
+    namespaces = [
+        (name, declaration) for name, declaration in tags.items()
+        if isinstance(declaration, dict)
+    ]
+    if not namespaces:
+        return
+
     b.heading(2, "Tags", slug_for("section", "tags"))
-    b.line("| Tag | Meaning |")
-    b.line("|---|---|")
-    for k in sorted(tags.keys(), key=str.lower):
-        b.line(f"| `{k}` | {tags[k]} |")
-    b.line()
+
+    for name, declaration in namespaces:
+        b.line(f"**`tags.{name}`:**")
+        b.line()
+        description = declaration.get("description")
+        if isinstance(description, str) and description:
+            b.line(description)
+            b.line()
+        b.line(
+            "Multiple values may apply at once."
+            if declaration.get("multi")
+            else "Exactly one value applies at a time."
+        )
+        b.line()
+
+        values = declaration.get("values")
+        if not isinstance(values, dict) or not values:
+            b.line("*No values declared.*")
+            b.line()
+            continue
+
+        b.line("| Value | Meaning |")
+        b.line("|---|---|")
+        for value, meaning in values.items():
+            b.line(f"| `{value}` | {meaning} |")
+        b.line()
 
 
 # ---------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # usr - fs-org-std
 
-> Generated from `fs-org-std.toml` - standard v2.0, schema v2.0
+> Generated from `fs-org-std.toml` - standard v2.1, schema v2.1
 
 ## Table of Contents
 
@@ -70,14 +70,15 @@
   - [`uncataloged-reserved-v1`](#rule-uncataloged-reserved-v1)
 - [Enums](#section-enums)
 - [Abbreviations](#section-abbreviations)
+- [Tags](#section-tags)
 
 <a id="section-overview"></a>
 ## Overview
 
 - **Root**: `~/usr/`
 - Personal filesystem standard for ~/usr/ - a PARA-style split (area/prj/task/res/knwl) with state carried by folder location and `_`-prefixed reserved names.
-- **Schema version**: 2.0 (2026-08-12)
-- **Standard version**: 2.0 (2026-08-12)
+- **Schema version**: 2.1 (2026-08-12)
+- **Standard version**: 2.1 (2026-08-12)
 - **Cataloged paths**: 42
 - **Cross-path sets**: 1
 - **Reserved folders**: 4
@@ -1619,7 +1620,7 @@ Checks that words in file/folder names are either spelled correctly or are known
 | | |
 |---|---|
 | Tier | bundled |
-| Version | 1.0 |
+| Version | 1.1 |
 | Severity | `warn` |
 | Scope | `single` |
 | Fixable | no |
@@ -1730,7 +1731,7 @@ Checks for folders that use the standard's reserved-name prefix (e.g. "_") but a
 | | |
 |---|---|
 | Tier | bundled |
-| Version | 1.0 |
+| Version | 1.1 |
 | Severity | `warn` |
 | Scope | `single` |
 | Fixable | no |
@@ -1811,4 +1812,20 @@ Checks for folders that use the standard's reserved-name prefix (e.g. "_") but a
 | `vid` | Video |
 | `vm` | Virtual machine |
 | `ws` | Workspace |
+
+<a id="section-tags"></a>
+## Tags
+
+**`tags.state`:**
+
+Where a unit of work stands once it has left the active tree - the four cases prj/_arch/ and task/_arch/ already describe in prose.
+
+Exactly one value applies at a time.
+
+| Value | Meaning |
+|---|---|
+| `abandoned` | stopped deliberately, will not be resumed |
+| `complete` | finished, nothing further planned |
+| `obsolete` | superseded by something else, kept only for reference |
+| `paused` | intended to resume, blocked or set aside for now |
 

@@ -4,16 +4,16 @@ another location in the standard, instead of a hand-typed literal.
 
 The problem this solves: a rule script never sees the parsed standard
 directly (deliberately - see doc/RULES.md) - only a location and its
-own `params`. Two bundled rules need a list that's already declared
+own `params`. Several rules need something that's already declared
 elsewhere in the standard (uncataloged-reserved-v1's `cataloged` wants
-[folders.reserved]'s entry names; spelling-abbreviations-v1's
-`abbreviations` wants [abbreviations]'s keys). Without this module, the
-only option was retyping that list by hand at every attachment site,
-kept in sync manually - a real, documented limitation (see those rules'
-manifests). Special-casing the runner per rule was rejected as a fix
+[folders.reserved]; spelling-abbreviations-v1's `abbreviations` wants
+[abbreviations]; a tag-checking rule wants a [tags."..."] namespace).
+Without this module, the only option was retyping that data by hand at
+every attachment site, kept in sync manually - a real, documented
+limitation. Special-casing the runner per rule was rejected as a fix
 (see doc/DESIGN.md) - this module is the generic alternative: ANY
-param, on ANY rule, can reference ANY table or list elsewhere in the
-standard, with zero rule-specific code in the runner or validator.
+param, on ANY rule, can reference ANY value elsewhere in the standard,
+with zero rule-specific code in the runner or validator.
 
 Syntax: a param value that's a one-key TOML inline table, {ref = "..."},
 is a reference rather than a literal - e.g.:
@@ -22,17 +22,19 @@ is a reference rather than a literal - e.g.:
     cataloged = { ref = "folders.reserved" }
 
 `dotted.path` walks plain, unquoted top-level keys - it can reach
-`folders.reserved` or `abbreviations`, but not a `[paths."some/path/"]`
+`folders.reserved` or `tags.state`, but not a `[paths."some/path/"]`
 entry, whose key contains characters a dotted path can't express (if
 you need that, the runner-generated blanket mechanisms - paths.rules,
 folders.rules - are almost certainly what you actually want instead).
 
-Resolved value:
-  - a table -> the list of its keys, with known schema-level meta keys
-    (folders.reserved's `prefix`, etc. - see _META_KEYS_BY_PATH)
-    excluded, since those describe the table itself, not an entry in it
-  - a list  -> the list itself, unchanged
-  - anything else, or a path that doesn't resolve at all -> an error
+A ref expands to **whatever is at that path, verbatim** - a table, a
+list, a string, a number, a boolean. It is substitution, not
+interpretation: this module never projects a table down to its keys or
+strips anything out of it, because deciding which parts of
+[folders.reserved] are entries and which are schema-level config is
+knowledge about that table, and the core doesn't own it. The rule
+receiving the value does, and takes what it needs. The only failure is
+a path that doesn't resolve at all.
 
 Resolution happens once and flows into both consumers that need it -
 the validator (to catch a broken reference before the runner ever
@@ -46,21 +48,6 @@ from __future__ import annotations
 from typing import Any
 
 REF_KEY = "ref"
-
-# Mirrors the meta keys the validator's own checks already know about
-# for these exact namespaces (see fs-org-std.template.toml's grammar) -
-# a table reference excludes these from its expanded key list, since
-# they're schema-level config, not entries. Single source of truth:
-# validator.py imports these from here rather than redefining them.
-META_KEYS_UNDER_PATHS = {"attributes", "rules", "cross"}
-META_KEYS_UNDER_FOLDERS = {"attributes", "rules", "reserved"}
-META_KEYS_UNDER_RESERVED = {"prefix"}
-
-_META_KEYS_BY_PATH = {
-    "paths": META_KEYS_UNDER_PATHS,
-    "folders": META_KEYS_UNDER_FOLDERS,
-    "folders.reserved": META_KEYS_UNDER_RESERVED,
-}
 
 _MISSING = object()
 
@@ -89,12 +76,7 @@ def expand_param_value(value: Any, data: dict[str, Any]) -> tuple[Any, str | Non
 
     if target is _MISSING:
         return value, f'ref "{dotted_path}" does not resolve to anything in the standard'
-    if isinstance(target, dict):
-        exclude = _META_KEYS_BY_PATH.get(dotted_path, set())
-        return [k for k in target if k not in exclude], None
-    if isinstance(target, list):
-        return target, None
-    return value, f'ref "{dotted_path}" resolves to a {type(target).__name__}, not a table or list'
+    return target, None
 
 
 def expand_params(params: dict[str, Any], data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:

@@ -33,10 +33,12 @@ class TestExpandParamValue:
         assert value == ["jpg", "png"]
         assert err is None
 
-    def test_table_ref_expands_to_sorted_keys(self):
+    def test_table_ref_expands_to_the_whole_table(self):
+        """Substitution, not projection - the keys AND the values. The
+        rule receiving it decides which half it wants."""
         data = {"abbreviations": {"arch": "Archive", "bkup": "Backup"}}
         value, err = expand_param_value({"ref": "abbreviations"}, data)
-        assert set(value) == {"arch", "bkup"}
+        assert value == {"arch": "Archive", "bkup": "Backup"}
         assert err is None
 
     def test_list_ref_expands_to_the_list_itself(self):
@@ -45,19 +47,29 @@ class TestExpandParamValue:
         assert value == ["a", "b", "c"]
         assert err is None
 
-    def test_folders_reserved_excludes_the_prefix_meta_key(self):
+    def test_nested_table_ref_keeps_its_own_structure(self):
+        """A tag namespace is the case this matters for: its vocabulary,
+        its cardinality and its prose arrive as one object."""
+        data = {"tags": {"state": {"multi": False, "values": {"complete": "done"}}}}
+        value, err = expand_param_value({"ref": "tags.state"}, data)
+        assert value == {"multi": False, "values": {"complete": "done"}}
+        assert err is None
+
+    def test_meta_keys_are_not_stripped_out(self):
+        """[folders.reserved]'s `prefix` sits beside the entries and is
+        passed straight through - deciding it isn't an entry is knowledge
+        about that table, which belongs to the rule reading it, not here."""
         data = {
             "folders": {
                 "reserved": {
                     "prefix": "_",
                     "_archive": {"purpose": "p", "lifecycle": "archival", "origin": ["self"]},
-                    "_inbox": {"purpose": "p", "lifecycle": "transient", "origin": ["self"]},
                 }
             }
         }
         value, err = expand_param_value({"ref": "folders.reserved"}, data)
-        assert set(value) == {"_archive", "_inbox"}
-        assert "prefix" not in value
+        assert value == data["folders"]["reserved"]
+        assert "prefix" in value
         assert err is None
 
     def test_unresolvable_path_is_an_error(self):
@@ -65,11 +77,11 @@ class TestExpandParamValue:
         assert err is not None
         assert "no.such.path" in err
 
-    def test_ref_to_a_scalar_is_an_error(self):
-        data = {"root": "~/usr/"}
-        value, err = expand_param_value({"ref": "root"}, data)
-        assert err is not None
-        assert "not a table or list" in err
+    def test_ref_to_a_scalar_resolves_to_that_scalar(self):
+        for stored in ("~/usr/", 3, True):
+            value, err = expand_param_value({"ref": "some_key"}, {"some_key": stored})
+            assert value == stored
+            assert err is None
 
     def test_partial_path_missing_is_an_error(self):
         data = {"abbreviations": {"arch": "Archive"}}
@@ -83,7 +95,7 @@ class TestExpandParams:
         data = {"abbreviations": {"arch": "Archive"}}
         params = {"abbreviations": {"ref": "abbreviations"}, "language": ["en"]}
         expanded, errors = expand_params(params, data)
-        assert expanded["abbreviations"] == ["arch"]
+        assert expanded["abbreviations"] == {"arch": "Archive"}
         assert expanded["language"] == ["en"]
         assert errors == []
 

@@ -135,7 +135,7 @@ Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
 | `meta` | `schema_version` / `standard_version`, each `major.minor`, plus their dates |
 | `paths` | specific, individually documented locations, keyed by path relative to `root` (e.g. `"area/inv/"`) |
 | `folders` | rules/definitions that apply *without* being tied to one cataloged path - blanket rules over every folder under root, and reserved folder-**name** patterns (e.g. `_archive`) independent of location |
-| `tags` | metadata tagging paths/folders for organization and cross-cutting concerns |
+| `tags` | closed vocabularies for metadata carried by things *on disk* (e.g. an archived project's state), one table per namespace, handed to a checking rule whole via `{ref = "..."}` |
 | `abbreviations` | local shorthand definitions used throughout the standard |
 | `enums` | one closed value set per field that has one, as `enums.group.<field>` (or `enums.attributes.<field>`), shared by both namespaces |
 

@@ -160,10 +160,15 @@ class TestCollectInvocations:
         assert len(invocations) == 1
         assert invocations[0].target_path == tmp_path
 
-    def test_param_ref_expanded_to_table_keys(self, tmp_path, catalog):
-        """{ref = "folders.reserved"} in a rule's params must reach the
-        invocation as the actual list of reserved-folder names, not the
-        raw ref table - and the `prefix` meta key must not leak in."""
+    def test_param_ref_expanded_to_the_whole_table(self, tmp_path, catalog):
+        """{ref = "folders.reserved"} must reach the invocation as that
+        table itself - meta keys and all - not the raw ref table and not
+        some projection of it. Sorting the entries from the rest is the
+        receiving rule's job."""
+        reserved = {
+            "prefix": "_",
+            "_archive": {"purpose": "p"},
+        }
         data = {
             "paths": {},
             "folders": {
@@ -172,24 +177,37 @@ class TestCollectInvocations:
                         {"reason": "r", "params": {"cataloged": {"ref": "folders.reserved"}}}
                     ]
                 },
-                "reserved": {
-                    "prefix": "_",
-                    "_archive": {"purpose": "p"},
-                },
+                "reserved": reserved,
             },
         }
         invocations = collect_invocations(data, tmp_path, catalog, {})
         assert len(invocations) == 1
-        assert invocations[0].params["cataloged"] == ["_archive"]
+        assert invocations[0].params["cataloged"] == reserved
 
     def test_param_ref_to_list_expanded_verbatim(self, tmp_path, catalog):
         data = {
             "paths": {},
-            "tags": {"media": {"paths": ["a/", "b/"]}},
-            "folders": {"rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": {"ref": "tags.media.paths"}}}]}},
+            "media": {"paths": ["a/", "b/"]},
+            "folders": {"rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": {"ref": "media.paths"}}}]}},
         }
         invocations = collect_invocations(data, tmp_path, catalog, {})
         assert invocations[0].params["allowed"] == ["a/", "b/"]
+
+    def test_param_ref_to_a_tag_namespace_arrives_whole(self, tmp_path, catalog):
+        """The case tags are declared for: vocabulary, cardinality and
+        the per-value meanings reach the script as one object, from one
+        declaration."""
+        namespace = {
+            "multi": False,
+            "values": {"complete": "finished", "paused": "set aside"},
+        }
+        data = {
+            "paths": {},
+            "tags": {"state": namespace},
+            "folders": {"rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": {"ref": "tags.state"}}}]}},
+        }
+        invocations = collect_invocations(data, tmp_path, catalog, {})
+        assert invocations[0].params["allowed"] == namespace
 
     def test_a_cataloged_path_absent_from_disk_contributes_nothing(self, tmp_path, catalog):
         data = {
