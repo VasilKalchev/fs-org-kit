@@ -11,6 +11,17 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `collect-v1` moved out of the bundled tier
+
+The sweep rule is off main and parked on the `collect-rule` branch,
+which holds it exactly as it stood. Nothing in the core changed: it was
+a rule directory, and removing one is removing a directory.
+
+The open question it was shelved over is whether a fixer's destination
+has to be an opaque param. `unrestricted_writes` stays a documented
+capability either way - the destination-from-config shape isn't unique
+to this rule.
+
 ### `examples/`
 
 `examples/para/` - a toy PARA tree, a standard governing it, and a

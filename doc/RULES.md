@@ -276,11 +276,9 @@ than silently granting nothing.
 
 **Say why in a comment.** A reviewer reads this table before trusting
 your rule, and `unrestricted_writes = true` with no explanation is
-indistinguishable from carelessness. Only two rules in this repo declare
-anything at all, and both are worth reading as examples:
-`basename-sync-v1` delegates every file operation to a user-provided
-script, and `collect-v1`'s destination comes from the standard, so the
-core can't know it ahead of time.
+indistinguishable from carelessness. `basename-sync-v1` is the example
+worth reading: it delegates every file operation to a user-provided
+script, and its manifest says so.
 
 Two things worth knowing while developing:
 

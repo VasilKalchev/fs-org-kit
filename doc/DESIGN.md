@@ -212,7 +212,7 @@ Two decisions shaped it:
 
 **The policy is built in the parent, never derived in the child.** Anything the child worked out after installing the hook would have to be exempted from the hook, which is a hole. So the runner computes the writable set from the manifest's declarations plus the invocation's own targets, and passes it in.
 
-**Capabilities are declared in the manifest, not special-cased in the runner.** `basename-sync-v1`'s fixer shells out to a user-provided script, so it declares `[sandbox] subprocess = true`; `collect-v1`'s destination is a user-configured path the core can't know in advance, so it declares `unrestricted_writes`. This is the same shape as `uses_cache`: the rule states a need, the core grants it uniformly, and the runner keeps no per-rule knowledge. It also puts the grant somewhere a reviewer reads before trusting a rule.
+**Capabilities are declared in the manifest, not special-cased in the runner.** `basename-sync-v1`'s fixer shells out to a user-provided script, so it declares `[sandbox] subprocess = true`; a fixer whose destination is a user-configured path the core can't know in advance declares `unrestricted_writes`. This is the same shape as `uses_cache`: the rule states a need, the core grants it uniformly, and the runner keeps no per-rule knowledge. It also puts the grant somewhere a reviewer reads before trusting a rule.
 
 The writable set is `{cache, temp}` for a checker, and additionally `{root} ∪ {targets}` for a fixer. Targets are listed separately from root because a path may be outside root - that's what `outside_root` declares, and this is one of the things it declares it *for*.
 

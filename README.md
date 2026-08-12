@@ -8,7 +8,7 @@ maintaining - and a set of small scripts check whether it actually is,
 and where possible, fix it.
 
 > **Status: 0.1 complete.** Validator, rule discovery, runner, and doc
-> generator are all functional, with twenty bundled rules. For what
+> generator are all functional, with nineteen bundled rules. For what
 > changed and when, see [doc/CHANGELOG.md](doc/CHANGELOG.md). For
 > important design decisions and architectural details, see
 > [doc/DESIGN.md](doc/DESIGN.md). For a guide to writing your own rules,
