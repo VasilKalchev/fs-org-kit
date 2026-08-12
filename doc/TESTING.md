@@ -159,15 +159,18 @@ what did or didn't happen on disk.
 - **Cache-dir wiring**: a rule declaring `uses_cache` is handed `--cache-dir` and really writes into `<root>/rules/<rule-id>/`; a rule that doesn't declare it never receives the flag (which is what keeps the change additive - every existing rule's argparse would reject an unknown flag) and causes no cache root to be created at all; an unusable cache location still produces the correct verdict
 - **Full integration through `main()`**: clean run exits 0, a violation exits 1, a cataloged path that isn't on disk exits 0, an invalid standard exits 2, a fixer that archives a folder leaves the per-folder check already planned against its old location reporting `skipped` rather than `broken` and the run still exiting 0, and the core PARA scenario end-to-end - moving a real folder on disk between two inheritance-linked locations needs zero standard edits and the run stays clean before and after
 
-### Doc generator tests (41 tests, `tests/test_doc.py`)
+### Doc generator tests (25 tests, `tests/test_doc.py`)
 
-- **Helpers**: slug generation (`/` becomes `-`, special characters stripped, empty falls back), value formatting for booleans/strings/lists
+A minimal, unconfigurable baseline by design - no section/diagram filtering,
+no grouping index, no rule-catalog detail table, nothing per-field marked
+as inherited. Every present section always renders in a fixed order; this
+is the clean state configurability gets built up from later.
+
+- **Helpers**: slug generation matches a renderer's own heading-anchor algorithm (backticks stripped, case folded, whitespace percent-encoded for Obsidian, slashes kept)
 - **Validate first**: an invalid or missing standard exits 2 and generates nothing; warnings don't block
-- **Sections**: all present sections by default, `--sections`/`--exclude-sections` filtering, an unknown section name errors, an empty section is omitted rather than emitted blank
-- **Diagrams**: `--no-diagrams`, `--diagrams` filtering, the tree reflects real nesting, the 40-node guard, and Mermaid-breaking characters in a path key are sanitized
-- **ToC**: present by default, `--no-toc`, and every link has a matching anchor
-- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued field becomes bullets rather than reaching the table as a Python repr, a string-valued one becomes a table row, one holding only empty placeholders is omitted, an undeclared field is never rendered at all, and a grouping value links to its vocabulary
-- **Grouping index**: one bucket list per grouping field, entries listed under their value, a multi-valued field listing an entry under each of its values, and no index at all when a standard declares no grouping fields
+- **Sections**: all present sections render by default; an empty section is omitted rather than emitted blank
+- **ToC**: present by default, paths nest by directory depth with only the leaf segment shown, and every link resolves to a real heading
+- **Rendering**: an inherited field shows its resolved value; the rules section lists every attachment site; a list-valued field becomes bullets rather than reaching the table as a Python repr, a string-valued one becomes a table row, one holding only empty placeholders is omitted, an undeclared field is never rendered at all, and a grouping value links to the enums section
 - **Tags**: a namespace renders its description and a row per value, cardinality is stated either way, several namespaces each get their own table, and an empty `[tags]` emits no section
 - **Output style**: generated Markdown contains no em dashes
 

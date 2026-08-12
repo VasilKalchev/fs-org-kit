@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from fs_org_kit.doc import _format_value, _slugify, main
+from fs_org_kit.doc import main, slug_for
 
 
 BOILERPLATE = '''root = "{root}/"
@@ -54,35 +54,19 @@ def write_standard(tmp_path, body: str) -> "Path":
     return std
 
 
-class TestSlugify:
+class TestSlugFor:
+    """slug_for() must reproduce exactly what a renderer computes from a
+    heading's visible text - a mismatch here means a ToC link silently
+    stops working. Backticks are code-span syntax, not rendered text."""
 
     def test_basic(self):
-        assert _slugify("Hello World") == "hello-world"
+        assert slug_for("Hello World") == "hello%20world"
 
-    def test_slashes_become_hyphens(self):
-        assert _slugify("active/project-x/") == "active-project-x"
+    def test_backticks_stripped_slash_kept(self):
+        assert slug_for("`area/`") == "area/"
 
-    def test_special_chars_stripped(self):
-        assert _slugify('weird[name]"quoted"') == "weirdnamequoted"
-
-    def test_empty_falls_back(self):
-        assert _slugify("") == "section"
-        assert _slugify("///") == "section"
-
-
-class TestFormatValue:
-
-    def test_booleans_are_lowercase(self):
-        assert _format_value(True) == "true"
-        assert _format_value(False) == "false"
-
-    def test_strings_quoted(self):
-        assert _format_value("hello") == '"hello"'
-        assert _format_value("") == '""'
-
-    def test_lists(self):
-        assert _format_value(["a", "b"]) == '["a", "b"]'
-        assert _format_value([]) == "[]"
+    def test_case_folded(self):
+        assert slug_for("`Downloads/`") == "downloads/"
 
 
 class TestValidateFirst:
@@ -138,23 +122,6 @@ origin = ["self"]
         out = capsys.readouterr().out
         assert "## Overview" in out
         assert "## Paths" in out
-
-    def test_sections_filter(self, tmp_path, capsys):
-        main([str(self._std(tmp_path)), "--sections", "overview"])
-        out = capsys.readouterr().out
-        assert "## Overview" in out
-        assert "## Paths" not in out
-
-    def test_exclude_sections(self, tmp_path, capsys):
-        main([str(self._std(tmp_path)), "--exclude-sections", "overview"])
-        out = capsys.readouterr().out
-        assert "## Overview" not in out
-        assert "## Paths" in out
-
-    def test_unknown_section_errors(self, tmp_path, capsys):
-        exit_code = main([str(self._std(tmp_path)), "--sections", "bogus"])
-        assert exit_code == 2
-        assert "unknown value" in capsys.readouterr().err
 
     def test_empty_sections_omitted(self, tmp_path, capsys):
         """No paths.cross in the fixture - the section shouldn't appear at all."""
@@ -234,81 +201,6 @@ complete = "finished"
         assert "## Tags" not in self._render(tmp_path, capsys, "")
 
 
-class TestDiagrams:
-
-    def _std_with_paths(self, tmp_path):
-        return write_standard(tmp_path, '''
-[paths."a/"]
-purpose = "A"
-
-[paths."a/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-
-[paths."a/aa/"]
-purpose = "AA"
-
-[paths."a/aa/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-''')
-
-    def test_no_diagrams_flag(self, tmp_path, capsys):
-        main([str(self._std_with_paths(tmp_path)), "--no-diagrams"])
-        out = capsys.readouterr().out
-        assert "```mermaid" not in out
-
-    def test_diagrams_filter(self, tmp_path, capsys):
-        main([str(self._std_with_paths(tmp_path)), "--diagrams", "tree"])
-        out = capsys.readouterr().out
-        assert out.count("```mermaid") == 1
-
-    def test_tree_reflects_nesting(self, tmp_path, capsys):
-        main([str(self._std_with_paths(tmp_path)), "--sections", "overview", "--diagrams", "tree"])
-        out = capsys.readouterr().out
-        assert 'n0["a/"]' in out or 'n1["a/"]' in out
-        assert "-->" in out
-
-    def test_node_limit_guard(self, tmp_path, capsys):
-        body_parts = []
-        for i in range(45):
-            body_parts.append(
-                f'[paths."item{i}/"]\npurpose = "x"\n'
-                f'[paths."item{i}/".group]\nlifecycle = "ongoing"\norigin = ["self"]\n'
-            )
-        std = write_standard(tmp_path, "\n".join(body_parts))
-        main([str(std), "--sections", "overview"])
-        out = capsys.readouterr().out
-        assert "```mermaid" not in out
-        assert "skipped" in out
-
-    def test_mermaid_special_chars_sanitized(self, tmp_path, capsys):
-        std = write_standard(tmp_path, '''
-[paths."weird[name]/"]
-purpose = "has \\"quotes\\" and [brackets]"
-
-[paths."weird[name]/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-''')
-        exit_code = main([str(std), "--sections", "overview", "--diagrams", "tree"])
-        assert exit_code == 0
-        out = capsys.readouterr().out
-        assert "```mermaid" in out
-        start = out.index("```mermaid")
-        end = out.index("```", start + 3)
-        mermaid_block = out[start:end]
-        # a raw " or [ inside a node's ["label"] would break mermaid's own
-        # syntax - check node-label lines specifically, not the whole
-        # block (the block legitimately contains [" and "] as delimiters)
-        node_lines = [line for line in mermaid_block.splitlines() if '["' in line]
-        assert node_lines, "expected at least one node label line to check"
-        for line in node_lines:
-            label = line.split('["', 1)[1].rsplit('"]', 1)[0]
-            assert '"' not in label
-            assert "[" not in label and "]" not in label
-
-
 class TestTableOfContents:
 
     def test_toc_present_by_default(self, tmp_path, capsys):
@@ -323,7 +215,7 @@ origin = ["self"]
         main([str(std)])
         assert "Table of Contents" in capsys.readouterr().out
 
-    def test_no_toc_flag(self, tmp_path, capsys):
+    def test_paths_nest_by_depth_and_show_only_the_leaf(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
@@ -331,11 +223,30 @@ purpose = "A"
 [paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-''')
-        main([str(std), "--no-toc"])
-        assert "Table of Contents" not in capsys.readouterr().out
 
-    def test_every_link_has_a_matching_anchor(self, tmp_path, capsys):
+[paths."a/b/"]
+purpose = "AB"
+
+[paths."a/b/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[paths."a/b/c/"]
+purpose = "ABC"
+
+[paths."a/b/c/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        main([str(std)])
+        out = capsys.readouterr().out
+        assert "  - [`a/`](#a/)" in out
+        assert "    - [`b/`](#a/b/)" in out
+        assert "      - [`c/`](#a/b/c/)" in out
+        toc, _, _ = out.partition("## Paths")
+        assert "[`a/b/c/`]" not in toc
+
+    def test_every_link_resolves_to_a_real_heading(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
@@ -355,10 +266,11 @@ allowed = ["jpg"]
         assert exit_code == 0
         out = capsys.readouterr().out
         assert len(out) > 0
-        anchors = set(re.findall(r'<a id="([^"]+)"></a>', out))
+        headings = re.findall(r"^#{2,3} (.+)$", out, re.MULTILINE)
+        heading_slugs = {slug_for(h) for h in headings}
         links = set(re.findall(r"\]\(#([^)]+)\)", out))
         assert links, "expected at least one link to actually test something"
-        assert links <= anchors
+        assert links <= heading_slugs
 
 
 class TestAttributeTable:
@@ -382,7 +294,7 @@ purpose = "B"
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         out = capsys.readouterr().out
         assert "**See also:**" in out
         assert "- b/" in out and "- c/" in out
@@ -398,7 +310,7 @@ see_also = "b/"
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         assert "| See also | b/ |" in capsys.readouterr().out
 
     def test_field_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
@@ -411,7 +323,7 @@ see_also = [""]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         assert "See also" not in capsys.readouterr().out
 
     def test_an_undeclared_field_name_is_not_rendered(self, tmp_path, capsys):
@@ -426,7 +338,7 @@ undeclared = "should not be rendered"
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         assert "should not be rendered" not in capsys.readouterr().out
 
     def test_a_grouping_field_links_to_its_vocabulary(self, tmp_path, capsys):
@@ -438,87 +350,14 @@ purpose = "A"
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         out = capsys.readouterr().out
-        assert "| Lifecycle | [`ongoing`](#section-enums) |" in out
-
-
-class TestGroupingIndex:
-    """Grouping fields exist to sort entries into buckets - the index is
-    what that separation is for."""
-
-    def _std(self, tmp_path):
-        return write_standard(tmp_path, '''
-[paths."a/"]
-purpose = "A"
-
-[paths."a/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-
-[paths."b/"]
-purpose = "B"
-
-[paths."b/".group]
-lifecycle = "archival"
-origin = ["self"]
-''')
-
-    def test_one_bucket_list_per_grouping_field(self, tmp_path, capsys):
-        main([str(self._std(tmp_path)), "--sections", "paths"])
-        out = capsys.readouterr().out
-        assert "**By `lifecycle`:**" in out
-        assert "**By `origin`:**" in out
-
-    def test_entries_are_listed_under_their_value(self, tmp_path, capsys):
-        main([str(self._std(tmp_path)), "--sections", "paths"])
-        out = capsys.readouterr().out
-        assert "- `archival` - [`b/`](#path-b)" in out
-        assert "- `ongoing` - [`a/`](#path-a)" in out
-
-    def test_a_multi_valued_field_lists_an_entry_under_each_value(self, tmp_path, capsys):
-        std = write_standard(tmp_path, '''
-[paths."a/"]
-purpose = "A"
-
-[paths."a/".group]
-lifecycle = "ongoing"
-origin = ["self", "external"]
-''')
-        main([str(std), "--sections", "paths"])
-        out = capsys.readouterr().out
-        assert "- `external` - [`a/`](#path-a)" in out
-        assert "- `self` - [`a/`](#path-a)" in out
-
-    def test_no_grouping_fields_declared_means_no_index(self, tmp_path, capsys):
-        std = tmp_path / "fs-org-std.toml"
-        std.write_text(f'''root = "{tmp_path}/"
-
-[meta]
-schema_version = "2.0"
-schema_date = "2026-01-01"
-standard_version = "2.0"
-standard_date = "2026-01-01"
-
-[paths.attributes]
-names = ["purpose"]
-required = ["purpose"]
-
-[paths."a/"]
-purpose = "A"
-
-[enums]
-[tags]
-[abbreviations]
-[folders]
-''')
-        main([str(std), "--sections", "paths"])
-        assert "**By `" not in capsys.readouterr().out
+        assert "| Lifecycle | [`ongoing`](#enums) |" in out
 
 
 class TestInheritanceRendering:
 
-    def test_inherited_field_shown_and_marked(self, tmp_path, capsys):
+    def test_inherited_field_shown_at_its_resolved_value(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."active/x/"]
 purpose = "Active X"
@@ -534,10 +373,9 @@ lifecycle = "archival"
 attributes = "active/x/"
 group = "active/x/"
 ''')
-        main([str(std), "--sections", "paths"])
+        main([str(std)])
         out = capsys.readouterr().out
         assert "Active X" in out
-        assert "inherited from" in out
 
 
 class TestRuleReverseIndex:
@@ -570,7 +408,7 @@ reason = "reason B"
 [paths."b/".rules.file-extensions-v1.params]
 allowed = ["png"]
 ''')
-        exit_code = main([str(std), "--sections", "rules"])
+        exit_code = main([str(std)])
         assert exit_code == 0
         out = capsys.readouterr().out
         assert "reason A" in out

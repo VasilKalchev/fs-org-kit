@@ -11,6 +11,38 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Doc generator: ToC links, footer, path nesting, and a strip-down to a minimal baseline
+
+Generated docs' ToC links now resolve in Obsidian, the renderer these
+docs are actually read in - an explicit `<a id="...">` before each
+heading, linked to by a prefixed slug scheme, turned out not to be
+honored there. `slug_for()` now computes the anchor Obsidian itself
+derives from a heading's visible text: lowercased, backticks (code-span
+syntax) stripped, whitespace percent-encoded as `%20` rather than
+hyphenated. Heading-anchor generation isn't part of CommonMark, so this
+is inherently renderer-specific - GitHub and most static-site
+generators hyphenate spaces instead, and there's no anchor string that
+satisfies both. Obsidian is the default target for now; a configurable
+target is planned. The `> Generated from ...` line moved from a
+blockquote right under the title to an italic footer at the end of the
+document, so it doesn't compete with the actual content for attention.
+The Paths section of the ToC now nests entries by directory depth
+instead of listing every cataloged path flat, and shows only the final
+path segment per line - the indentation already conveys the ancestry.
+
+Beyond that, the doc generator was stripped down to a minimal,
+unconfigurable baseline in preparation for making it configurable:
+gone are Mermaid diagrams (`tree`/`rules`/`cross`, the 40-node guard,
+`--diagrams`/`--no-diagrams`), `--sections`/`--exclude-sections`
+filtering (every present section always renders now), the grouping
+index (`**By `<field>`:**` bucket lists), per-field inherited/default
+markers in attribute tables, and the Rules section's rule-catalog
+detail table (purpose/tier/version/severity/scope/fixable/params) -
+it now just lists each rule's attachment sites and their reasons. An
+inherited field still renders at its resolved value; it's just no
+longer annotated as inherited. `--no-toc` is also gone - the ToC is
+unconditional now, alongside everything else.
+
 ### The `alphabetical-order` lint is gone
 
 The validator no longer requires `[paths]`, `[folders.reserved]`,

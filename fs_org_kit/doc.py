@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """
 doc.py - validates a populated standard, then generates Markdown
-documentation from it: table of contents, one section per part of the
-standard, and (optionally) Mermaid diagrams.
+documentation from it: a table of contents and one section per part of
+the standard.
 
 Usage:
     python -m fs_org_kit.doc path/to/your-file.toml
     python -m fs_org_kit.doc path/to/your-file.toml --output docs/standard.md
-    python -m fs_org_kit.doc path/to/your-file.toml --sections overview,paths,rules
-    python -m fs_org_kit.doc path/to/your-file.toml --no-diagrams
-    python -m fs_org_kit.doc path/to/your-file.toml --diagrams tree,rules
 
 Documents the RESOLVED standard, not the raw TOML - an inherited
-`purpose` shows up with its actual value, marked as inherited, not
-blank. This reuses fs_org_kit.validator directly (its resolved_paths /
-resolved_folders / rule_catalog), the same way the runner does, rather
-than re-parsing inheritance or re-running discovery itself.
+`purpose` shows up with its actual value. This reuses fs_org_kit.validator
+directly (its resolved_paths / resolved_folders), the same way the
+runner does, rather than re-parsing inheritance or re-running discovery
+itself.
 
 Validates first and aborts on any validation error (exit 2) - same
 stance the runner takes. Documenting a standard that doesn't validate
@@ -34,67 +31,47 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fs_org_kit.discovery import RuleEntry
 from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec
-from fs_org_kit.inherit import ResolvedEntry, RuleAttachment, own_fields
+from fs_org_kit.inherit import ResolvedEntry
 from fs_org_kit.validator import StandardLoadError, Validator, build_validator, load_standard
-
-ALL_SECTIONS = ("overview", "paths", "cross", "folders", "rules", "enums", "abbreviations", "tags")
-ALL_DIAGRAMS = ("tree", "rules", "cross")
-MERMAID_NODE_LIMIT = 40
 
 
 # ---------------------------------------------------------------------
 # Slugs / anchors
 #
-# Explicit <a id="..."> anchors are emitted before every heading rather
-# than relying on a renderer's auto-slugify of heading text - that way
-# ToC links work identically everywhere (GitHub, VS Code preview, a
-# plain markdown-to-html pipeline), not just renderers that happen to
-# slugify the same way GitHub does.
+# Explicit <a id="..."> anchors placed before each heading, linked to by
+# a prefixed slug scheme, turned out not to be honored by the renderers
+# this is actually read in - a plain link to the anchor a renderer
+# auto-generates from the heading text does work. So slug_for() computes
+# exactly that: the same transform the renderer applies to a heading's
+# visible text (backticks are code-span syntax, not part of the
+# rendered text, so they're stripped before lowercasing). Every call
+# site MUST pass the exact text that appears in the corresponding
+# heading, or the two will diverge.
 #
-# Because anchors are explicit, there's no need to mimic GitHub's exact
-# slug algorithm either. Every anchor is prefixed by its section kind
-# (slug_for("path", key) -> "path-..."), which makes collisions between
-# DIFFERENT sections structurally impossible, and within one section
-# collisions are already rare (path keys, rule ids, and folder names
-# are each unique within their own namespace). A residual, very unlikely
-# case - two path keys that both slugify to the same string once
-# slashes/punctuation are stripped - isn't defended against with a
-# dedup counter; this is documentation, not a safety-critical index, and
-# doing so would require a two-pass registry to keep cross-references
-# correct regardless of render order. Noted here rather than silently
-# assumed away.
+# Heading-anchor generation isn't part of CommonMark - every renderer
+# invents its own, and they disagree on whitespace specifically: GitHub
+# and most static-site generators hyphenate it, Obsidian percent-encodes
+# it as %20. There's no anchor string that satisfies both. Obsidian is
+# the default target since that's what these docs are actually read in;
+# this is expected to become a configurable target rather than a
+# hardcoded choice.
+#
+# This also gives up the prior scheme's structural guarantee against
+# collisions between different sections (a rule id and a path could in
+# principle slugify to the same anchor) - acceptable since this is
+# documentation, not a safety-critical index, and matching what the
+# renderer actually does is what makes the links work at all.
 # ---------------------------------------------------------------------
 
-def _slugify(text: str) -> str:
+def slug_for(title: str) -> str:
+    text = title.strip().strip("`")
     text = text.lower()
-    text = re.sub(r"[/_\s]+", "-", text)
-    text = re.sub(r"[^a-z0-9-]", "", text)
-    text = re.sub(r"-+", "-", text).strip("-")
-    return text or "section"
-
-
-def slug_for(prefix: str, name: str) -> str:
-    return _slugify(f"{prefix}-{name}")
-
-
-def _format_value(v: Any) -> str:
-    """Render a Python value (from parsed TOML) the way it would look
-    written in TOML, not Python's repr - a reader of the generated docs
-    is also a reader of the actual TOML file, so `true`/`[]` matches
-    what they already know, where `True`/Py-repr would look foreign."""
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, str):
-        return f'"{v}"' if v else '""'
-    if isinstance(v, list):
-        return "[" + ", ".join(_format_value(x) for x in v) + "]"
-    return str(v)
+    return re.sub(r"\s+", "%20", text)
 
 
 def link(text: str, slug: str | None) -> str:
@@ -111,8 +88,6 @@ class RuleAttachmentSite:
     location_label: str
     location_slug: str | None
     reason: str
-    params: dict[str, Any]
-    origin_key: str | None = None
 
 
 def collect_rule_sites(
@@ -122,9 +97,9 @@ def collect_rule_sites(
 ) -> dict[str, list[RuleAttachmentSite]]:
     sites: dict[str, list[RuleAttachmentSite]] = {}
 
-    def add(rule_id: str, label: str, slug: str | None, inst: dict[str, Any], origin_key: str | None = None) -> None:
+    def add(rule_id: str, label: str, slug: str | None, inst: dict[str, Any]) -> None:
         sites.setdefault(rule_id, []).append(
-            RuleAttachmentSite(rule_id, label, slug, inst.get("reason", ""), inst.get("params", {}), origin_key)
+            RuleAttachmentSite(rule_id, label, slug, inst.get("reason", ""))
         )
 
     def add_raw_table(table: Any, label: str, slug: str | None) -> None:
@@ -140,96 +115,23 @@ def collect_rule_sites(
     for key, resolved in resolved_paths.items():
         for rule_id, attachments in resolved.rules.items():
             for a in attachments:
-                add(rule_id, key, slug_for("path", key), a.instance, a.origin_key)
+                add(rule_id, key, slug_for(f"`{key}`"), a.instance)
 
     paths = data.get("paths", {})
     add_raw_table(paths.get("rules"), "every cataloged path (blanket)", None)
 
     for i, cross in enumerate(paths.get("cross", [])):
         if isinstance(cross, dict):
-            add_raw_table(cross.get("rules"), f"Cross-Path Set {i + 1}", slug_for("cross", str(i + 1)))
+            add_raw_table(cross.get("rules"), f"Cross-Path Set {i + 1}", slug_for(f"Set {i + 1}"))
 
     for name, resolved in resolved_folders.items():
         for rule_id, attachments in resolved.rules.items():
             for a in attachments:
-                add(rule_id, f"folders.reserved.\"{name}\"", slug_for("folder", name), a.instance, a.origin_key)
+                add(rule_id, f"folders.reserved.\"{name}\"", slug_for(f"`{name}`"), a.instance)
 
     add_raw_table(data.get("folders", {}).get("rules"), "every folder under root (blanket)", None)
 
     return sites
-
-
-# ---------------------------------------------------------------------
-# Mermaid diagrams
-# ---------------------------------------------------------------------
-
-def _mermaid_escape(text: str) -> str:
-    return text.replace('"', "'").replace("[", "(").replace("]", ")")
-
-
-def _path_parent_key(key: str) -> str:
-    trimmed = key.rstrip("/")
-    if "/" not in trimmed:
-        return ""
-    return trimmed.rsplit("/", 1)[0] + "/"
-
-
-def build_tree_diagram(resolved_paths: dict[str, ResolvedEntry]) -> str | None:
-    keys = sorted(resolved_paths.keys())
-    if not keys or len(keys) > MERMAID_NODE_LIMIT:
-        return None
-
-    node_id = {k: f"n{i}" for i, k in enumerate(keys)}
-    lines = ["```mermaid", "graph TD", '    root["(root)"]']
-    for k in keys:
-        lines.append(f'    {node_id[k]}["{_mermaid_escape(k)}"]')
-    for k in keys:
-        parent = _path_parent_key(k)
-        target = node_id.get(parent, "root")
-        lines.append(f"    {target} --> {node_id[k]}")
-    lines.append("```")
-    return "\n".join(lines)
-
-
-def build_rules_diagram(sites_by_rule: dict[str, list[RuleAttachmentSite]]) -> str | None:
-    if not sites_by_rule:
-        return None
-    rule_ids = sorted(sites_by_rule.keys())
-    unique_sites = sorted({s.location_label for sites in sites_by_rule.values() for s in sites})
-    if len(rule_ids) + len(unique_sites) > MERMAID_NODE_LIMIT:
-        return None
-
-    rule_node = {r: f"r{i}" for i, r in enumerate(rule_ids)}
-    site_node = {s: f"s{i}" for i, s in enumerate(unique_sites)}
-    lines = ["```mermaid", "graph LR"]
-    for r in rule_ids:
-        lines.append(f'    {rule_node[r]}["{_mermaid_escape(r)}"]')
-    for s in unique_sites:
-        lines.append(f'    {site_node[s]}("{_mermaid_escape(s)}")')
-
-    seen = set()
-    for rid in rule_ids:
-        for site in sites_by_rule[rid]:
-            edge = (rule_node[rid], site_node[site.location_label])
-            if edge not in seen:
-                seen.add(edge)
-                lines.append(f"    {rule_node[rid]} --- {site_node[site.location_label]}")
-    lines.append("```")
-    return "\n".join(lines)
-
-
-def build_cross_diagram(cross: dict[str, Any], index: int) -> str | None:
-    members = cross.get("paths", [])
-    if not isinstance(members, list) or not members:
-        return None
-    lines = ["```mermaid", "graph LR", f'    cs["Set {index + 1}"]']
-    for i, m in enumerate(members):
-        if not isinstance(m, str):
-            continue
-        lines.append(f'    m{i}["{_mermaid_escape(m)}"]')
-        lines.append(f"    cs --- m{i}")
-    lines.append("```")
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------
@@ -242,11 +144,16 @@ class DocBuilder:
         self.toc_entries: list[tuple[int, str, str]] = []
 
     def heading(self, level: int, title: str, slug: str, in_toc: bool = True) -> None:
-        self.lines.append(f'<a id="{slug}"></a>')
         self.lines.append(f"{'#' * level} {title}")
         self.lines.append("")
         if in_toc:
             self.toc_entries.append((level, title, slug))
+
+    def toc_entry(self, level: int, title: str, slug: str) -> None:
+        """Add a ToC line not backed by a heading of its own - used to
+        nest path entries by directory depth (see _add_path_toc_tree)
+        rather than one flat entry per heading level."""
+        self.toc_entries.append((level, title, slug))
 
     def line(self, text: str = "") -> None:
         self.lines.append(text)
@@ -267,8 +174,8 @@ class DocBuilder:
 # Section renderers
 # ---------------------------------------------------------------------
 
-def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict, diagrams: set[str]) -> None:
-    b.heading(2, "Overview", slug_for("section", "overview"))
+def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict) -> None:
+    b.heading(2, "Overview", slug_for("Overview"))
     meta = data.get("meta", {})
     root = data.get("root", "")
 
@@ -284,17 +191,6 @@ def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict, d
     reserved_count = len([k for k in reserved if k != "prefix"]) if isinstance(reserved, dict) else 0
     b.line(f"- **Reserved folders**: {reserved_count}")
     b.line()
-
-    if "tree" in diagrams:
-        diagram = build_tree_diagram(resolved_paths)
-        if diagram:
-            b.line("**Path hierarchy:**")
-            b.line()
-            b.line(diagram)
-            b.line()
-        elif len(resolved_paths) > MERMAID_NODE_LIMIT:
-            b.line(f"*(path hierarchy diagram skipped - {len(resolved_paths)} paths exceeds the {MERMAID_NODE_LIMIT}-node readability limit)*")
-            b.line()
 
 
 def _field_label(name: str) -> str:
@@ -314,36 +210,27 @@ def _string_values(value: Any) -> list[str]:
     return []
 
 
-def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[str, Any], spec: FieldSpec) -> None:
+def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, spec: FieldSpec) -> None:
     """Renders whatever the standard declared, in the order it declared
     it: single-valued fields as table rows, list-valued ones as bullets
     below. Grouping values link to the vocabulary that defines them."""
-    inherit = raw.get("inherit", {}) if isinstance(raw.get("inherit"), dict) else {}
-
-    def marker(kind: str, field_name: str) -> str:
-        """An inherited value is worth marking as such; one the entry
-        writes itself is not."""
-        source = inherit.get(kind)
-        written_here = field_name in own_fields(raw, kind)
-        return f" *(inherited from `{source}`)*" if source and not written_here else ""
-
     rows: list[tuple[str, str]] = []
-    bullet_lists: list[tuple[str, list[str], str]] = []
+    bullet_lists: list[tuple[str, list[str]]] = []
 
     for name in spec.attribute_names:
         value = resolved.attributes.get(name)
         if isinstance(value, str) and value:
-            rows.append((_field_label(name), value + marker(ATTRIBUTES, name)))
+            rows.append((_field_label(name), value))
             continue
         values = _string_values(value)
         if values:
-            bullet_lists.append((_field_label(name), values, marker(ATTRIBUTES, name)))
+            bullet_lists.append((_field_label(name), values))
 
     for name in spec.group_names:
         values = _string_values(resolved.group.get(name))
         if values:
-            linked = ", ".join(f"[`{v}`](#{slug_for('section', 'enums')})" for v in values)
-            rows.append((_field_label(name), linked + marker(GROUP, name)))
+            linked = ", ".join(f"[`{v}`](#{slug_for('Enums')})" for v in values)
+            rows.append((_field_label(name), linked))
 
     if rows:
         b.line("| Field | Value |")
@@ -352,94 +239,81 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
             b.line(f"| {label} | {value} |")
         b.line()
 
-    for label, values, mark in bullet_lists:
-        b.line(f"**{label}:**{mark}")
+    for label, values in bullet_lists:
+        b.line(f"**{label}:**")
         b.line()
         for v in values:
             b.line(f"- {v}")
         b.line()
 
 
-def render_grouping_index(b: DocBuilder, entries: dict[str, ResolvedEntry], spec: FieldSpec, kind: str) -> None:
-    """One bucket list per grouping field - the reason grouping fields are
-    declared apart from free-form documentation ones. Entries with no
-    value for a field simply don't appear under it."""
-    for name in spec.group_names:
-        buckets: dict[str, list[str]] = {}
-        for key in sorted(entries):
-            for value in _string_values(entries[key].group.get(name)):
-                buckets.setdefault(value, []).append(key)
-        if not buckets:
-            continue
-        b.line(f"**By `{name}`:**")
-        b.line()
-        for value in sorted(buckets):
-            members = ", ".join(link(f"`{k}`", slug_for(kind, k)) for k in buckets[value])
-            b.line(f"- `{value}` - {members}")
-        b.line()
-
-
-def _render_rule_table(b: DocBuilder, rows: list[tuple[str, str, dict[str, Any], str]]) -> None:
-    """The `| Rule | Reason | Params |` table shared by a resolved
-    (path/folder) entry's attachments and a `paths.cross` set's - each
-    just gets there from a different rules-table shape, normalized to
-    (rule_id, reason, params, origin_note) rows before it does."""
+def _render_rule_table(b: DocBuilder, rows: list[tuple[str, str]]) -> None:
+    """The `| Rule | Reason |` table shared by a resolved (path/folder)
+    entry's attachments and a `paths.cross` set's - each just gets there
+    from a different rules-table shape, normalized to (rule_id, reason)
+    rows before it does."""
     if not rows:
         return
     b.line("**Attached rules:**")
     b.line()
-    b.line("| Rule | Reason | Params |")
-    b.line("|---|---|---|")
-    for rule_id, reason, params, origin_note in rows:
-        rule_slug = slug_for("rule", rule_id)
-        params_str = ", ".join(f"`{k}={_format_value(v)}`" for k, v in params.items()) if params else ""
-        b.line(f"| {link(f'`{rule_id}`', rule_slug)}{origin_note} | {reason} | {params_str} |")
+    b.line("| Rule | Reason |")
+    b.line("|---|---|")
+    for rule_id, reason in rows:
+        rule_slug = slug_for(f"`{rule_id}`")
+        b.line(f"| {link(f'`{rule_id}`', rule_slug)} | {reason} |")
     b.line()
 
 
 def _render_rule_attachments(b: DocBuilder, resolved: ResolvedEntry) -> None:
     rows = [
-        (rule_id, a.instance.get("reason", ""), a.instance.get("params", {}),
-         f" *(inherited from `{a.origin_key}`)*" if a.origin_key else "")
+        (rule_id, a.instance.get("reason", ""))
         for rule_id, attachments in sorted(resolved.rules.items())
         for a in attachments
     ]
     _render_rule_table(b, rows)
 
 
+def _add_path_toc_tree(b: DocBuilder, keys: list[str]) -> None:
+    """Nest the ToC under Paths by directory depth instead of listing
+    every key flat - a reader scanning the ToC sees the same tree shape
+    as the filesystem. Only the final path segment is shown as the link
+    text; the ancestry is already conveyed by the indentation, so
+    repeating the full path on every line would just be noise."""
+    for key in sorted(keys):
+        trimmed = key.rstrip("/")
+        depth = trimmed.count("/")
+        leaf = trimmed.rsplit("/", 1)[-1] if "/" in trimmed else trimmed
+        label = f"`{leaf}/`" if key.endswith("/") else f"`{leaf}`"
+        b.toc_entry(3 + depth, label, slug_for(f"`{key}`"))
+
+
 def render_paths(b: DocBuilder, resolved_paths: dict[str, ResolvedEntry], spec: FieldSpec) -> None:
     if not resolved_paths:
         return
-    b.heading(2, "Paths", slug_for("section", "paths"))
-    render_grouping_index(b, resolved_paths, spec, "path")
+    b.heading(2, "Paths", slug_for("Paths"))
     for key in sorted(resolved_paths.keys()):
         resolved = resolved_paths[key]
-        b.heading(3, f"`{key}`", slug_for("path", key))
-        _render_attribute_table(b, resolved, resolved.raw, spec)
+        b.heading(3, f"`{key}`", slug_for(f"`{key}`"), in_toc=False)
+        _render_attribute_table(b, resolved, spec)
         _render_rule_attachments(b, resolved)
+    _add_path_toc_tree(b, list(resolved_paths.keys()))
 
 
-def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> None:
+def render_cross(b: DocBuilder, data: dict[str, Any]) -> None:
     paths = data.get("paths", {})
     cross_sets = paths.get("cross", [])
     if not isinstance(cross_sets, list) or not cross_sets:
         return
-    b.heading(2, "Cross-Path Sets", slug_for("section", "cross"))
+    b.heading(2, "Cross-Path Sets", slug_for("Cross-Path Sets"))
     for i, cross in enumerate(cross_sets):
         if not isinstance(cross, dict):
             continue
-        b.heading(3, f"Set {i + 1}", slug_for("cross", str(i + 1)))
+        b.heading(3, f"Set {i + 1}", slug_for(f"Set {i + 1}"))
         members = cross.get("paths", [])
         if members:
-            member_links = ", ".join(link(f"`{m}`", slug_for("path", m)) for m in members)
+            member_links = ", ".join(link(f"`{m}`", slug_for(f"`{m}`")) for m in members)
             b.line(f"**Members**: {member_links}")
             b.line()
-
-        if "cross" in diagrams:
-            diagram = build_cross_diagram(cross, i)
-            if diagram:
-                b.line(diagram)
-                b.line()
 
         rules_table = cross.get("rules", {})
         if isinstance(rules_table, dict) and rules_table:
@@ -449,77 +323,38 @@ def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
                     instances = [instances]
                 for inst in instances:
                     if isinstance(inst, dict):
-                        rows.append((rule_id, inst.get("reason", ""), inst.get("params", {}), ""))
+                        rows.append((rule_id, inst.get("reason", "")))
             _render_rule_table(b, rows)
 
 
-def render_folders(
-    b: DocBuilder, data: dict[str, Any], resolved_folders: dict[str, ResolvedEntry], spec: FieldSpec
-) -> None:
+def render_folders(b: DocBuilder, data: dict[str, Any], resolved_folders: dict[str, ResolvedEntry], spec: FieldSpec) -> None:
     if not resolved_folders:
         return
-    b.heading(2, "Reserved Folders", slug_for("section", "folders"))
+    b.heading(2, "Reserved Folders", slug_for("Reserved Folders"))
     reserved = data.get("folders", {}).get("reserved", {})
     prefix = reserved.get("prefix", "_") if isinstance(reserved, dict) else "_"
     b.line(f"Reserved-name prefix: `{prefix}`")
     b.line()
-    render_grouping_index(b, resolved_folders, spec, "folder")
     for name in sorted(resolved_folders.keys()):
         resolved = resolved_folders[name]
-        b.heading(3, f"`{name}`", slug_for("folder", name))
-        _render_attribute_table(b, resolved, resolved.raw, spec)
+        b.heading(3, f"`{name}`", slug_for(f"`{name}`"))
+        _render_attribute_table(b, resolved, spec)
         _render_rule_attachments(b, resolved)
 
 
-def render_rules(b: DocBuilder, rule_catalog: dict[str, RuleEntry], sites_by_rule: dict[str, list[RuleAttachmentSite]], diagrams: set[str]) -> None:
+def render_rules(b: DocBuilder, sites_by_rule: dict[str, list[RuleAttachmentSite]]) -> None:
     attached_ids = sorted(sites_by_rule.keys())
     if not attached_ids:
         return
-    b.heading(2, "Rules", slug_for("section", "rules"))
-
-    if "rules" in diagrams:
-        diagram = build_rules_diagram(sites_by_rule)
-        if diagram:
-            b.line(diagram)
-            b.line()
+    b.heading(2, "Rules", slug_for("Rules"))
 
     for rule_id in attached_ids:
-        b.heading(3, f"`{rule_id}`", slug_for("rule", rule_id))
-        entry = rule_catalog.get(rule_id)
-        if entry is None:
-            b.line("*(not found in the discovered rule catalog)*")
-            b.line()
-            continue
-
-        b.line(f"{entry.purpose}" if entry.purpose else "*(no purpose documented)*")
-        b.line()
-        b.line("| | |")
-        b.line("|---|---|")
-        b.line(f"| Tier | {entry.tier.value} |")
-        b.line(f"| Version | {entry.version} |")
-        b.line(f"| Severity | `{entry.severity}` |")
-        b.line(f"| Scope | `{entry.scope}` |")
-        b.line(f"| Fixable | {'yes' if entry.has_fixer else 'no'} |")
-        b.line()
-
-        if entry.params_names:
-            b.line("**Params:**")
-            b.line()
-            b.line("| Name | Default | Required |")
-            b.line("|---|---|---|")
-            for pname in entry.params_names:
-                has_default = pname in entry.params_defaults
-                default_str = f"`{_format_value(entry.params_defaults[pname])}`" if has_default else ""
-                required = "no" if has_default else "yes"
-                b.line(f"| `{pname}` | {default_str} | {required} |")
-            b.line()
-
+        b.heading(3, f"`{rule_id}`", slug_for(f"`{rule_id}`"))
         sites = sites_by_rule[rule_id]
         b.line(f"**Attached at {len(sites)} location(s):**")
         b.line()
         for site in sorted(sites, key=lambda s: s.location_label):
-            origin_note = f" *(inherited from `{site.origin_key}`)*" if site.origin_key else ""
-            b.line(f"- {link(f'`{site.location_label}`', site.location_slug)}{origin_note} - {site.reason}")
+            b.line(f"- {link(f'`{site.location_label}`', site.location_slug)} - {site.reason}")
         b.line()
 
 
@@ -544,7 +379,7 @@ def render_enums(b: DocBuilder, data: dict[str, Any]) -> None:
     if not vocabularies:
         return
 
-    b.heading(2, "Enums", slug_for("section", "enums"))
+    b.heading(2, "Enums", slug_for("Enums"))
 
     for kind, name, values in vocabularies:
         b.line(f"**`enums.{kind}.{name}`:**")
@@ -560,7 +395,7 @@ def render_abbreviations(b: DocBuilder, data: dict[str, Any]) -> None:
     abbreviations = data.get("abbreviations", {})
     if not isinstance(abbreviations, dict) or not abbreviations:
         return
-    b.heading(2, "Abbreviations", slug_for("section", "abbreviations"))
+    b.heading(2, "Abbreviations", slug_for("Abbreviations"))
     b.line("| Abbreviation | Meaning |")
     b.line("|---|---|")
     for k in sorted(abbreviations.keys(), key=str.lower):
@@ -585,7 +420,7 @@ def render_tags(b: DocBuilder, data: dict[str, Any]) -> None:
     if not namespaces:
         return
 
-    b.heading(2, "Tags", slug_for("section", "tags"))
+    b.heading(2, "Tags", slug_for("Tags"))
 
     for name, declaration in namespaces:
         b.line(f"**`tags.{name}`:**")
@@ -618,14 +453,7 @@ def render_tags(b: DocBuilder, data: dict[str, Any]) -> None:
 # Assembly
 # ---------------------------------------------------------------------
 
-def generate(
-    data: dict[str, Any],
-    validator: Validator,
-    sections: set[str],
-    diagrams: set[str],
-    title: str | None,
-    include_toc: bool,
-) -> str:
+def generate(data: dict[str, Any], validator: Validator, title: str | None) -> str:
     b = DocBuilder()
 
     meta = data.get("meta", {})
@@ -633,57 +461,35 @@ def generate(
 
     sites_by_rule = collect_rule_sites(data, validator.resolved_paths, validator.resolved_folders)
 
-    # rendered in this fixed order regardless of `sections` filtering,
-    # so cross-references are always to a section that's either already
-    # rendered above, or will exist below - order itself doesn't matter
-    # for correctness (anchors are computed, not registered - see the
-    # slug/anchor note above), only for reading flow
-    if "overview" in sections:
-        render_overview(b, data, validator.resolved_paths, diagrams)
-    if "paths" in sections:
-        render_paths(b, validator.resolved_paths, validator.path_fields)
-    if "cross" in sections:
-        render_cross(b, data, diagrams)
-    if "folders" in sections:
-        render_folders(b, data, validator.resolved_folders, validator.folder_fields)
-    if "rules" in sections:
-        render_rules(b, validator.rule_catalog, sites_by_rule, diagrams)
-    if "enums" in sections:
-        render_enums(b, data)
-    if "abbreviations" in sections:
-        render_abbreviations(b, data)
-    if "tags" in sections:
-        render_tags(b, data)
+    # rendered in this fixed order so cross-references are always to a
+    # section that's either already rendered above, or will exist below
+    render_overview(b, data, validator.resolved_paths)
+    render_paths(b, validator.resolved_paths, validator.path_fields)
+    render_cross(b, data)
+    render_folders(b, data, validator.resolved_folders, validator.folder_fields)
+    render_rules(b, sites_by_rule)
+    render_enums(b, data)
+    render_abbreviations(b, data)
+    render_tags(b, data)
 
     body = "\n".join(b.lines)
-    toc = "\n".join(b.render_toc()) if include_toc else ""
+    toc = "\n".join(b.render_toc())
 
-    parts = [
-        f"# {doc_title}",
-        "",
-        f"> Generated from `fs-org-std.toml` - standard v{meta.get('standard_version', '?')}, "
-        f"schema v{meta.get('schema_version', '?')}",
-        "",
-    ]
+    parts = [f"# {doc_title}", ""]
     if toc:
         parts.append(toc)
     parts.append(body)
+    parts.append("---")
+    parts.append(
+        f"*Generated from `fs-org-std.toml` - standard v{meta.get('standard_version', '?')}, "
+        f"schema v{meta.get('schema_version', '?')}*"
+    )
     return "\n".join(parts) + "\n"
 
 
 # ---------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------
-
-def _parse_list_arg(value: str | None, valid: tuple[str, ...]) -> set[str]:
-    if value is None:
-        return set(valid)
-    requested = {v.strip() for v in value.split(",") if v.strip()}
-    unknown = requested - set(valid)
-    if unknown:
-        raise ValueError(f"unknown value(s) {sorted(unknown)} - valid options: {', '.join(valid)}")
-    return requested
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -692,25 +498,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("path", type=Path, help="path to a populated fs-org-std.toml")
     parser.add_argument("--output", type=Path, default=None, help="write to a file instead of stdout")
-    parser.add_argument("--sections", default=None, help=f"comma-separated: {','.join(ALL_SECTIONS)} (default: all)")
-    parser.add_argument("--exclude-sections", default=None, help="comma-separated section names to drop after --sections is applied")
-    parser.add_argument("--diagrams", default=None, help=f"comma-separated: {','.join(ALL_DIAGRAMS)} (default: all)")
-    parser.add_argument("--no-diagrams", action="store_true", help="disable all Mermaid diagrams")
-    parser.add_argument("--no-toc", action="store_true", help="skip the table of contents")
     parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
     parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
     parser.add_argument("--title", default=None, help="override the document title")
     args = parser.parse_args(argv)
-
-    try:
-        sections = _parse_list_arg(args.sections, ALL_SECTIONS)
-        if args.exclude_sections:
-            exclude = _parse_list_arg(args.exclude_sections, ALL_SECTIONS)
-            sections -= exclude
-        diagrams = set() if args.no_diagrams else _parse_list_arg(args.diagrams, ALL_DIAGRAMS)
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 2
 
     try:
         raw_text, data = load_standard(args.path)
@@ -736,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     if warnings:
         print(f"note: {len(warnings)} validation warning(s) - docs generated anyway (see the validator for details)", file=sys.stderr)
 
-    markdown = generate(data, validator, sections, diagrams, args.title, not args.no_toc)
+    markdown = generate(data, validator, args.title)
 
     if args.output:
         args.output.write_text(markdown, encoding="utf-8")
