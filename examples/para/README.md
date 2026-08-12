@@ -96,6 +96,7 @@ Summary
       fixed  0
   unfixable  0
      broken  0
+    skipped  0
 
 7 invocation(s) total
 ```
@@ -164,15 +165,16 @@ paths."projects/".rules.staleness-v1[0]: [VIOLATION] staleness-v1 (tree/projects
 ```console
 $ fs-org-run fs-org-std.toml --fix
 paths."projects/".rules.staleness-v1[0]: [FIXED] staleness-v1 (tree/projects): 1 item(s) moved to .../tree/archive
-paths."projects/*/".rules.required-content-v1[0]: [BROKEN] required-content-v1 (tree/projects/website-redesign): error: --path is not a directory: .../tree/projects/website-redesign
+paths."projects/*/".rules.required-content-v1[0]: [SKIPPED] required-content-v1 (tree/projects/website-redesign): no longer exists (moved or removed during this run)
 ```
 
-The project is now in `tree/archive/`. The `[BROKEN]` line is a
-consequence of moving a folder mid-run: every invocation is planned up
-front from the tree as it was, and `projects/*/` had already matched a
-folder that no longer exists by the time its turn came. **Run it again**
-for the true state — the moved project is now matched by `archive/*/`
-instead, still checked for its README, and passing.
+The project is now in `tree/archive/`. The `[SKIPPED]` line follows from
+moving a folder mid-run: every invocation is planned up front from the
+tree as it was, and `projects/*/` had already matched a folder that was
+gone by the time its turn came. Skipping doesn't count as a failure — a
+run whose only oddity is a skip still exits 0. **Run it again** for the
+true state: the moved project is now matched by `archive/*/` instead,
+still checked for its README, and passing.
 
 Rules without a fixer still run their checker under `--fix`; they just
 report.

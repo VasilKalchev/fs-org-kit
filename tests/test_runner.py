@@ -4,7 +4,9 @@ tests/test_runner.py - unit tests for fs_org_kit.runner
 Run with: python -m pytest tests/test_runner.py -v
 """
 
+import os
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -281,6 +283,109 @@ class TestInvokeScript:
         assert result.status == "ok"
 
 
+class TestStalePlanIsSkipped:
+    """Targets are expanded once, up front, so a fixer can move or delete
+    a folder a later invocation was already planned against. That's the
+    fixer working, so it must not surface as `broken` - the signal
+    reserved for a rule that's genuinely misconfigured."""
+
+    def test_vanished_target_is_skipped(self, tmp_path, catalog):
+        gone = tmp_path / "gone"
+        gone.mkdir()
+        entry = catalog["file-extensions-v1"]
+        inv = Invocation("file-extensions-v1", entry, "loc", "reason", {"allowed": ["jpg"]}, target_path=gone)
+        gone.rmdir()   # as if a fixer earlier in the same pass moved it
+        result = run_invocation(inv, fix_requested=False)
+        assert result.status == "skipped"
+        assert "no longer exists" in result.message
+
+    def test_target_replaced_by_a_file_is_skipped(self, tmp_path, catalog):
+        target = tmp_path / "swapped"
+        target.mkdir()
+        entry = catalog["file-extensions-v1"]
+        inv = Invocation("file-extensions-v1", entry, "loc", "reason", {"allowed": ["jpg"]}, target_path=target)
+        target.rmdir()
+        target.touch()
+        result = run_invocation(inv, fix_requested=False)
+        assert result.status == "skipped"
+        assert "no longer a directory" in result.message
+
+    def test_one_vanished_target_skips_a_cross_invocation(self, tmp_path, catalog):
+        a, b = tmp_path / "a", tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        entry = catalog["basename-sync-v1"]
+        inv = Invocation("basename-sync-v1", entry, "loc", "reason", {}, target_paths=[a, b])
+        b.rmdir()
+        result = run_invocation(inv, fix_requested=False)
+        assert result.status == "skipped"
+        assert str(b) in result.message
+
+    def test_target_absent_when_planned_is_still_broken(self, tmp_path, capsys):
+        """A path that was never there is a misconfigured attachment, not
+        a fixer's doing - it must still reach the script. paths.cross
+        resolves its references directly instead of through the
+        exists-on-disk filter, so this is the shape that can produce one."""
+        real = tmp_path / "real"
+        real.mkdir()
+        (real / "a.jpg").touch()
+        std_path = tmp_path / "fs-org-std.toml"
+        std_path.write_text(f'''root = "{tmp_path}/"
+
+[meta]
+schema_version = "1.0"
+standard_version = "1.0"
+schema_date = "2026-01-01"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = ["purpose", "lifecycle", "origin", "allow_missing"]
+[paths.attributes.defaults]
+allow_missing = false
+
+[paths."real/"]
+purpose = "Real"
+lifecycle = "ongoing"
+origin = ["self"]
+
+[[paths.cross]]
+paths = ["real/", "never-existed/"]
+
+[[paths.cross.rules.basename-sync-v1]]
+reason = "r"
+
+[paths.cross.rules.basename-sync-v1.params]
+mode = "shared"
+
+[enums.paths.lifecycle]
+ongoing = "x"
+archival = "x"
+[enums.paths.origin]
+self = "x"
+[tags]
+[abbreviations]
+[folders]
+purpose = "x"
+[folders.attributes]
+names = []
+[folders.attributes.defaults]
+[folders.reserved]
+''')
+        exit_code = main([str(std_path), "--no-color"])
+        out = capsys.readouterr().out
+        assert "BROKEN" in out
+        assert "SKIPPED" not in out
+        assert exit_code == 1
+
+    def test_invoke_script_still_reports_broken(self, tmp_path, catalog):
+        # The guard belongs to run_invocation (should this run at all?),
+        # not invoke_script (run it) - handed a bad path directly, the
+        # script is still what reports the problem.
+        entry = catalog["file-extensions-v1"]
+        inv = Invocation("file-extensions-v1", entry, "loc", "reason", {"allowed": ["jpg"]}, target_path=tmp_path / "nope")
+        assert invoke_script(entry.check_script, inv, is_fix=False).status == "broken"
+
+
 class TestCacheDirWiring:
     """The core owns where a rule caches - the rule is handed a
     ready-made directory, it never resolves one itself."""
@@ -471,6 +576,51 @@ rules = "active/proj/"
         (tmp_path / "active" / "proj").rename(tmp_path / "archive" / "proj")
 
         assert main([str(std_path), "--no-color"]) == 0
+
+    def test_fixer_moving_a_folder_skips_its_own_later_invocation(self, tmp_path, capsys):
+        """The scenario from examples/para: staleness-v1 archives a
+        project, and the per-project check already planned against its
+        old location reports skipped, not broken."""
+        (tmp_path / "projects" / "old").mkdir(parents=True)
+        (tmp_path / "projects" / "old" / "a.jpg").touch()
+        (tmp_path / "archive").mkdir()
+
+        stale = time.time() - 200 * 86400
+        os.utime(tmp_path / "projects" / "old" / "a.jpg", (stale, stale))
+
+        std_path = self._write_standard(tmp_path, '''
+[paths."projects/"]
+purpose = "Projects"
+lifecycle = "ongoing"
+origin = ["self"]
+
+[[paths."projects/".rules.staleness-v1]]
+reason = "r"
+
+[paths."projects/".rules.staleness-v1.params]
+mode = "stale"
+threshold = "90d"
+destination = "archive"
+
+[paths."projects/*/"]
+purpose = "One project"
+lifecycle = "ongoing"
+origin = ["self"]
+allow_missing = true
+
+[[paths."projects/*/".rules.file-extensions-v1]]
+reason = "r"
+
+[paths."projects/*/".rules.file-extensions-v1.params]
+allowed = ["jpg"]
+''')
+        exit_code = main([str(std_path), "--fix", "--no-color"])
+        out = capsys.readouterr().out
+
+        assert (tmp_path / "archive" / "old").is_dir()   # the fixer did move it
+        assert "SKIPPED" in out
+        assert "BROKEN" not in out
+        assert exit_code == 0                            # skipped is not a failure
 
 
 if __name__ == "__main__":

@@ -407,6 +407,11 @@ using whichever of the four statuses actually happened:
 Exit codes follow the same convention as a checker: `0` = ran fine,
 read stdout; nonzero = the fixer itself is broken, reason on stderr.
 
+If your fixer moves or removes a folder, invocations already planned
+against its old location report `skipped` and don't run. That status is
+the runner's own - no script returns it, and there's nothing to handle
+in yours. Their targets get checked on the next run, not this one.
+
 ### If a rule has no fixer
 
 Rules without a fixer are invoked normally (as checkers) even when the

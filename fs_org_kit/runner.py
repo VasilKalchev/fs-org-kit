@@ -76,8 +76,16 @@ contract. A rule with no fixer still runs its checker normally in --fix
 mode; fix mode doesn't skip rules that can't be fixed, it just can't fix
 them.
 
+Targets are expanded once, up front, so a fixer can move or delete a
+folder that a later invocation in the same pass was already planned
+against. Such an invocation is reported `skipped` rather than run - the
+status is the runner's alone, never something a script can return, and it
+doesn't affect the exit code. Its target isn't re-checked in that pass:
+the plan was fixed before the move, so wherever the folder landed was
+expanded before it arrived. Run again for the settled state.
+
 Exit codes:
-    0  every invocation came back ok or fixed (or there was nothing to run)
+    0  every invocation came back ok, fixed, or skipped (or there was nothing to run)
     1  at least one violation, unfixable, or broken invocation
     2  the standard could not be read, or had structural validation errors
 """
@@ -114,6 +122,7 @@ _COLOR = {
     "unfixable": "\033[31m",
     "broken": "\033[31m",
     "fixed": "\033[32m",
+    "skipped": "\033[2m",
     "reset": "\033[0m",
     "dim": "\033[2m",
 }
@@ -132,6 +141,13 @@ class Invocation:
     params: dict[str, Any]
     target_path: Path | None = None
     target_paths: list[Path] | None = None
+    # which targets were really on disk when the plan was built, stamped
+    # by collect_invocations. Distinguishes "a fixer moved this" (skip)
+    # from "this was never here" (a misconfigured attachment, which must
+    # still reach the script and be reported broken). None means the
+    # Invocation was built outside collect_invocations (tests), where
+    # there's no snapshot to compare against.
+    present_at_plan: frozenset[Path] | None = None
     # carried per-invocation so the sandbox can tell a fixer which tree it
     # was pointed at; None only when an Invocation is built outside the
     # normal collect_invocations path (tests), where root is unknowable
@@ -153,7 +169,7 @@ class Invocation:
 @dataclass
 class RunResult:
     invocation: Invocation
-    status: str      # "ok" | "violation" | "fixed" | "unfixable" | "broken"
+    status: str      # "ok" | "violation" | "fixed" | "unfixable" | "broken" | "skipped"
     message: str = ""
 
 
@@ -339,6 +355,12 @@ def collect_invocations(
     for inv in invocations:
         inv.params, _ = expand_params(inv.params, data)
         inv.root_dir = root_dir
+        # one snapshot of what the plan was built against, so a target
+        # that disappears later can be told apart from one that was
+        # never there (see _stale_target). Path-derived targets are
+        # already filtered to what exists; paths.cross resolves its
+        # references directly, so this is the only check they get.
+        inv.present_at_plan = frozenset(p for p in inv.targets if p.is_dir())
 
     return invocations, missing
 
@@ -412,12 +434,45 @@ def invoke_script(
     return RunResult(invocation, status, payload.get("message", ""))
 
 
+def _stale_target(invocation: Invocation) -> str | None:
+    """Why this invocation's plan no longer matches disk, or None if it
+    still does.
+
+    collect_invocations expands every target up front, from one snapshot,
+    so a fixer running earlier in the same pass can move or delete a
+    folder that a later invocation was already planned against - moving a
+    stale project into archive/ is a fixer doing its job, not a mistake.
+    Handing the vanished path to the script anyway makes it exit nonzero,
+    which the protocol reads as "the script itself is broken": the one
+    signal reserved for a rule that's genuinely misconfigured. Checking
+    here keeps that signal meaning what it says."""
+    targets = invocation.targets
+    present = invocation.present_at_plan
+    for p in targets:
+        if p.is_dir():
+            continue
+        if present is not None and p not in present:
+            # absent when the plan was built too, so nothing moved it -
+            # an attachment naming somewhere that isn't there. Let the
+            # script run and report it broken, exactly as before.
+            continue
+        what = "is no longer a directory" if p.exists() else "no longer exists"
+        # the report line already names a single target - saying which one
+        # only adds anything when several share the one invocation
+        where = f"{p} " if len(targets) > 1 else ""
+        return f"{where}{what} (moved or removed during this run)"
+    return None
+
+
 def run_invocation(
     invocation: Invocation,
     fix_requested: bool,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     sandboxed: bool = True,
 ) -> RunResult:
+    stale = _stale_target(invocation)
+    if stale is not None:
+        return RunResult(invocation, "skipped", stale)
     entry = invocation.entry
     if fix_requested and entry.has_fixer:
         return invoke_script(entry.fix_script, invocation, is_fix=True, timeout=timeout, sandboxed=sandboxed)
@@ -445,12 +500,12 @@ def _format_result(result: RunResult, standard_dir: Path, color: bool) -> str:
 
 
 def _print_summary(results: list[RunResult], color: bool) -> None:
-    counts = {"ok": 0, "violation": 0, "fixed": 0, "unfixable": 0, "broken": 0}
+    counts = {"ok": 0, "violation": 0, "fixed": 0, "unfixable": 0, "broken": 0, "skipped": 0}
     for r in results:
         counts[r.status] = counts.get(r.status, 0) + 1
 
     print("Summary")
-    for status in ("ok", "violation", "fixed", "unfixable", "broken"):
+    for status in ("ok", "violation", "fixed", "unfixable", "broken", "skipped"):
         n = counts[status]
         label = status.rjust(9)
         if color and status in _COLOR and n:

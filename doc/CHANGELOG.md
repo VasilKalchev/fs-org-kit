@@ -11,6 +11,27 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `skipped` - an invocation a fixer outran
+
+Targets are expanded once, up front, so a fixer moving a folder left
+later invocations pointed at where it used to be. Those exited nonzero
+and were reported `broken` - the signal meaning a rule is misconfigured -
+for a fixer doing exactly its job, and held the run at exit 1.
+
+The runner now checks a target still exists immediately before invoking
+and reports `skipped` instead, which doesn't affect the exit code. Not a
+fifth script status: no rule can return it and the protocol in
+`rule.template.toml` is unchanged. Only a target that was really there
+when the plan was built can be skipped - one that never existed is a
+misconfigured attachment and still reports `broken`, which is reachable
+through `paths.cross`, the one shape that resolves its references
+without the exists-on-disk filter. Re-expanding glob keys after each fix
+would also re-check the moved folder in the same pass, but makes the
+invocation list mutate mid-run; it's checked on the next run instead.
+
+Surfaced by `examples/para`, where `staleness-v1` archives a project that
+`projects/*/` was queued against.
+
 ### `collect-v1` moved out of the bundled tier
 
 The sweep rule is off main and parked on the `collect-rule` branch,

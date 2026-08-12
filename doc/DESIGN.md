@@ -202,6 +202,18 @@ This design:
 2. Makes it clear that a fixer owns the full problem-solving, not the runner
 3. Simplifies the runner's logic - just invoke once, read status
 
+### `skipped` - the runner's own status, for a plan a fixer outran
+
+Targets are expanded once, up front, from a single snapshot (one discovery/resolution pass, the pattern used everywhere here). So a fixer can move or delete a folder that a later invocation in the same pass was already planned against - `staleness-v1` archiving a project the per-project checks were queued for is the ordinary case, not an edge one.
+
+Handing the vanished path to the script anyway makes it exit nonzero, which the protocol reads as *the script itself is broken*. That is the one signal meaning "this rule is misconfigured, go look at it", and spending it on a fixer doing its job trains people to ignore it - and holds the run at exit 1.
+
+So the runner checks a target still exists immediately before invoking, and reports `skipped` instead. It is deliberately **not** a fifth script status: no rule can return it, and `rule.template.toml`'s contract is unchanged. It doesn't affect the exit code.
+
+Absence alone isn't enough to justify skipping, though - "a fixer moved this" and "this was never here" look identical at that moment, and the second is a misconfigured attachment that must still be reported. So `collect_invocations` stamps each invocation with the targets that really existed when the plan was built, and only those can go on to be skipped. This matters for `paths.cross`, which resolves its references directly rather than through the exists-on-disk filter every path-derived target passes: it's the one attachment shape that can name somewhere that never existed.
+
+The alternative was re-expanding glob keys after each `fixed` result. That fixes more - the moved folder would also get checked at its new location in the same pass - but makes the invocation list mutate mid-run, and raises ordering questions (does a re-expansion that produces new targets re-run rules already run?) that a plain existence check doesn't. The moved folder is simply checked on the next run.
+
 ### Scripts run inside an audit-hook harness
 
 Rule scripts run under `sys.addaudithook` (`fs_org_kit/sandbox.py`), which blocks network access, starting other processes, native/ctypes calls, and writes outside what the invocation is entitled to touch. `--no-sandbox` turns it off.
@@ -233,7 +245,7 @@ The runner's first step is to reuse the validator. If validation fails, the runn
 
 ### Exit codes are meaningful
 
-- **0** - Everything ran and produced no violations (or there was nothing to run)
+- **0** - Everything ran and produced no violations (or there was nothing to run); `skipped` invocations don't change this
 - **1** - At least one rule returned `violation`, `unfixable`, or `broken`
 - **2** - The standard itself is invalid (unreadable TOML, validation errors, etc.)
 
