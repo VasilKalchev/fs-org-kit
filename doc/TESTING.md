@@ -99,7 +99,7 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Namespaces are independent**: `folders` reads its own field lists
 - **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a field named after one of an entry's structural keys (`group`/`rules`/`inherit`); one name declared as both kinds; a name listed twice
 
-### Validator tests (45 tests, `tests/test_validator.py`)
+### Validator tests (43 tests, `tests/test_validator.py`)
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
@@ -108,7 +108,7 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Entry fields**: an attribute may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
 - **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against the shared `enums.group.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered
 - **Param refs**: a `{ref = "..."}` value to `folders.reserved` or `abbreviations` resolves with no errors, a broken ref is an error naming the bad path, a ref satisfies a required-param-with-no-default check the same as a literal would
-- **Tags**: a well-formed namespace is clean and the whole `[tags]` table is optional (absent and empty are both fine); the pre-2.1 flat `state = "meaning"` form is an error naming itself rather than a bare type error; a namespace key nothing reads warns, a namespace with no values warns, a non-boolean `multi` and a non-string value meaning are errors; namespaces and values are each linted for alphabetical order; and a namespace reaches a rule's params whole, with its cardinality and meanings intact
+- **Tags**: a well-formed namespace is clean and the whole `[tags]` table is optional (absent and empty are both fine); the pre-2.1 flat `state = "meaning"` form is an error naming itself rather than a bare type error; a namespace key nothing reads warns, a namespace with no values warns, a non-boolean `multi` and a non-string value meaning are errors; and a namespace reaches a rule's params whole, with its cardinality and meanings intact
 - **Discovery options**: `include_external` threaded through to the rule catalog used for validation
 
 ### Param refs tests (16 tests, `tests/test_param_refs.py`)

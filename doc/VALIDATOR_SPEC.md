@@ -146,11 +146,6 @@ doc/DESIGN.md.
   `<ns>.attributes.names` or `<ns>.attributes.group.names`, unknown-field
   checking can't run for its entries and the doc generator has nothing
   to render - worth knowing about, but the file still functions)
-- **path keys, reserved folder names, and abbreviations should be
-  declared in alphabetical order** - makes scanning and diffing the
-  file predictable. Checked against each table's *declaration order in
-  the source file*, not case-sensitively exact byte order - see
-  implementation notes below.
 
 ---
 
@@ -163,9 +158,3 @@ doc/DESIGN.md.
   today, but they're tracked separately (`Issue.kind` vs `Issue.level`)
   because that alignment isn't a hard rule the code enforces, just how
   every check has been written so far.
-- Alphabetical order is checked by comparing a table's key iteration
-  order (which `tomllib` preserves as source declaration order) against
-  `sorted()` of the same keys, case-insensitively. A single
-  out-of-order key produces one warning naming both the key and what it
-  should sort after, rather than one warning per key that's out of
-  place - re-sorting the whole table clears it in one pass either way.

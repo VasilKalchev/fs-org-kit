@@ -107,17 +107,10 @@ reason = "r"
 
     def test_warnings_do_not_block(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."z/"]
-purpose = "Z"
-
-[paths."z/".group]
-lifecycle = "ongoing"
-origin = ["self"]
-
-[paths."a/"]
+[paths."a"]
 purpose = "A"
 
-[paths."a/".group]
+[paths."a".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')

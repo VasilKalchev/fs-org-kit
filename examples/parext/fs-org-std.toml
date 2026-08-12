@@ -27,8 +27,7 @@
 #
 # CONVENTIONS THIS FILE FOLLOWS
 #
-#   - path keys are relative to `root`, with a trailing slash, and the
-#     catalog is kept alphabetical (the validator lints for both)
+#   - path keys are relative to `root`, with a trailing slash
 #   - `_`-prefixed folder names are reserved and mean the same thing
 #     wherever they appear - see [folders.reserved]
 #   - the accepted `lifecycle` and `origin` values are listed once, in
@@ -1229,7 +1228,6 @@ paused = "intended to resume, blocked or set aside for now"
 # `{ ref = "abbreviations" }`, so a name is accepted when it spells a
 # real word OR appears here - adding a folder abbreviation means adding
 # it here, in one place.
-# Kept alphabetical; the validator lints for it.
 [abbreviations]
 3dp = "3D printing"
 app = "Application"

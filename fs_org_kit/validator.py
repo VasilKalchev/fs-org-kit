@@ -296,7 +296,6 @@ WARNING_CODES = {
     "unknown-param":               ("validation", "an attachment passes a param not declared in the rule manifest"),
     "rule-discovery-warning":      ("validation", "non-fatal issue found during rule discovery (collision, suspicious flag)"),
     "inherit-issue":               ("validation", "non-fatal issue resolving `inherit` (dead exclude_rules entry, etc.)"),
-    "alphabetical-order":          ("lint",       "table entries aren't declared in alphabetical order"),
     "unknown-tag-field":           ("validation", "a tag namespace declares a key nothing reads"),
     "empty-tag-vocabulary":        ("validation", "a tag namespace declares no values"),
 }
@@ -375,7 +374,6 @@ class Validator:
         self._check_paths()
         self._check_folders()
         self._check_tags()
-        self._check_abbreviations()
         return self.issues
 
     def _schema_major_supported(self) -> bool:
@@ -657,21 +655,6 @@ class Validator:
             return False
         return any(inherit.get(source) == pattern for source in (ATTRIBUTES, GROUP, RULES))
 
-    # -- alphabetical order (lint) ------------------------------------------
-
-    def _check_alphabetical_order(self, keys: list[str], loc: str) -> None:
-        """One warning naming the first out-of-order pair, not one per
-        misplaced key - re-sorting the whole table clears it in one pass
-        either way, so there's no value in enumerating every offender."""
-        for i in range(len(keys) - 1):
-            if keys[i].lower() > keys[i + 1].lower():
-                self.warning(
-                    loc,
-                    f"'{keys[i]}' should come after '{keys[i + 1]}', not before - entries aren't in alphabetical order",
-                    "alphabetical-order",
-                )
-                return
-
     def _check_paths(self) -> None:
         paths = self.data.get("paths", {})
 
@@ -679,8 +662,6 @@ class Validator:
         self.known_path_keys = set(ordered_path_keys)
         if not self.known_path_keys:
             self.warning("paths", "no standardized path entries found", "no-paths")
-        else:
-            self._check_alphabetical_order(ordered_path_keys, "paths")
 
         self._check_pattern_overlaps(ordered_path_keys, paths)
 
@@ -765,7 +746,6 @@ class Validator:
                 "(folders.attributes.names / folders.attributes.group.names)",
                 "missing-path-attribute-list",
             )
-        self._check_alphabetical_order(reserved_names, "folders.reserved")
         for name in reserved_names:
             entry = reserved[name]
             loc = f'folders.reserved."{name}"'
@@ -784,13 +764,6 @@ class Validator:
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
 
-    # -- abbreviations (lint) ------------------------------------------------
-
-    def _check_abbreviations(self) -> None:
-        abbreviations = self.data.get("abbreviations", {})
-        if isinstance(abbreviations, dict):
-            self._check_alphabetical_order(list(abbreviations.keys()), "abbreviations")
-
     # -- tags ----------------------------------------------------------------
 
     def _check_tags(self) -> None:
@@ -807,8 +780,6 @@ class Validator:
         if not isinstance(tags, dict):
             self.error("tags", "expected a table of tag namespaces")
             return
-
-        self._check_alphabetical_order(list(tags.keys()), "tags")
 
         for namespace, declaration in tags.items():
             loc = f"tags.{namespace}"
@@ -851,7 +822,6 @@ class Validator:
             for value, meaning in values.items():
                 if not isinstance(meaning, str):
                     self.error(f"{loc}.values.{value}", "must be a string describing what the value means")
-            self._check_alphabetical_order(list(values.keys()), f"{loc}.values")
 
     # -- inherit table shape ------------------------------------------------
 

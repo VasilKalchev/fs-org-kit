@@ -480,7 +480,6 @@ multi = false             # false: exactly one of the values below applies
 
 # The vocabulary itself, in its own sub-table so `multi` and
 # `description` above have somewhere to live that isn't a tag value.
-# Kept alphabetical; the validator lints for it.
 [tags.tag-namespace.values]
 value-a = "what this value means"
 value-b = "what this value means"

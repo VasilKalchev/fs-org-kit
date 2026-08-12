@@ -11,6 +11,13 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### The `alphabetical-order` lint is gone
+
+The validator no longer requires `[paths]`, `[folders.reserved]`,
+`[abbreviations]`, or `[tags]` entries to be declared in alphabetical
+order. `_check_abbreviations` had nothing left to do once its only
+check was removed, so it's gone too.
+
 ### `transfer-v1` — cross-scope move/copy/sync
 
 Twentieth bundled rule. Moves, copies, or syncs non-excluded entries

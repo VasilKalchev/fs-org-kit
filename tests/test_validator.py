@@ -960,26 +960,6 @@ complete = 3
         errors = [i for i in issues if i.level == "error"]
         assert [i.location for i in errors] == ["tags.state.values.complete"]
 
-    def test_namespaces_out_of_alphabetical_order_lint(self, tmp_path):
-        issues, _ = self._std('''
-[tags.state.values]
-complete = "finished"
-
-[tags.priority.values]
-high = "now"
-''', tmp_path)
-        warnings = [i for i in issues if i.code == "alphabetical-order"]
-        assert [i.location for i in warnings] == ["tags"]
-
-    def test_values_out_of_alphabetical_order_lint(self, tmp_path):
-        issues, _ = self._std('''
-[tags.state.values]
-complete = "finished"
-abandoned = "stopped deliberately"
-''', tmp_path)
-        warnings = [i for i in issues if i.code == "alphabetical-order"]
-        assert [i.location for i in warnings] == ["tags.state.values"]
-
     def test_a_namespace_reaches_a_rule_whole(self, tmp_path):
         """The point of the section: one ref, no retyping, and the
         vocabulary arrives with its cardinality and its meanings."""
