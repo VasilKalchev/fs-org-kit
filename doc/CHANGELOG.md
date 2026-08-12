@@ -11,6 +11,50 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Entry fields split into three kinds - schema 2.0
+
+`purpose` and `allow_missing` used to sit in the same
+`paths.attributes.names` list, reading as the same kind of thing. Only
+one of them was: the tool acts on `allow_missing` and `outside_root`,
+while the rest are documentation nothing reads - except that `purpose`,
+`lifecycle` and `origin` were *also* hardcoded by name in the validator,
+so a standard couldn't actually name its own fields.
+
+A namespace now declares them separately:
+
+```toml
+[paths.attributes]                     # free-form, string or list of strings
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
+
+[paths.grouping]                       # enum-backed, checked against enums.paths.*
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
+```
+
+`allow_missing` and `outside_root` appear in neither list - they're the
+tool's, always allowed on a path entry, and declaring one is now an
+error. Nothing in the code knows what `purpose` or `lifecycle` mean any
+more, including requiredness, which had to move into the standard along
+with the names. `folders` declares its own two lists and its own
+vocabularies under `enums.folders.*`; a vocabulary is never shared
+across namespaces, so `folders` grouping by `lifecycle` needs
+`[enums.folders.lifecycle]` of its own.
+
+The doc generator follows: it renders whatever was declared, in declared
+order - strings as table rows, lists as bullets - and emits a "by
+`<field>`" index per grouping field, which is what separating them is
+for. The enums section lists every vocabulary under its dotted key
+rather than the two it used to know by name.
+
+Breaking, so `SUPPORTED_SCHEMA_MAJOR` is 2 and both bundled examples
+move to `schema_version = "2.0"`. A 1.x standard stops with one clear
+version error instead of a pile of unknown-field warnings. Migrating:
+split `names` into `attributes.names` + `grouping.names`, drop the two
+control fields from it, and add `required` where the old hardcoded
+`purpose`/`lifecycle`/`origin` checks were doing the work.
+
 ### `skipped` - an invocation a fixer outran
 
 Targets are expanded once, up front, so a fixer moving a folder left

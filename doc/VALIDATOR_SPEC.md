@@ -62,18 +62,38 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
   flagged (an unknown key in a schema-defined table - a structural
   concern, not a formatting one)
 
+### Field declarations
+
+Each namespace (`paths`, `folders`) declares what its entries may carry,
+and the two are read independently - see doc/DESIGN.md for the three
+kinds of field.
+
+- `attributes.names`, `attributes.required`, `grouping.names`,
+  `grouping.multi`, `grouping.required` must each be a list of strings,
+  with no name listed twice
+- a name in `attributes.required` must appear in `attributes.names`;
+  a name in `grouping.multi` / `grouping.required` must appear in
+  `grouping.names`
+- the same name can't be both a documentation and a grouping field
+- neither list may declare a control field (`allow_missing`,
+  `outside_root`) - those are the tool's, always allowed on a path
+  entry, and never a namespace's to redefine
+- a grouping field with no `enums.<namespace>.<field>` table is a
+  warning: it still groups, but its values go unchecked
+
 ### Path and folder entries
 
 - a `[paths."..."]` or `[folders.reserved."..."]` entry must be a
   table
-- a field on an entry not declared in the namespace's
-  `attributes.names` is flagged
-- `purpose` and `lifecycle` must be non-empty, even after inheritance
-  and standard-wide defaults are applied
-- `lifecycle` must be one of `enums.paths.lifecycle`
-- `origin` must be a non-empty list of strings, each one of
-  `enums.paths.origin`
-- `use_for` / `not_for`, when present, must be lists
+- a field on an entry that its namespace never declared is flagged
+- every field in `attributes.required` / `grouping.required` must be
+  non-empty, even after inheritance and standard-wide defaults are
+  applied
+- a documentation field must be a string or a list of strings
+- a grouping field's value must be one of `enums.<namespace>.<field>`,
+  or a list of them when the field is declared in `grouping.multi` (a
+  list where one value is expected, or a bare value where a list is,
+  is an error either way)
 - `allow_missing`, when present, must be a boolean
 - `outside_root`, when present, must be a boolean
 - a path key that resolves outside `root` - absolute (`/etc/nginx/`),
@@ -132,14 +152,15 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
   this is a format nitpick, not a validate-level failure
 - reserved folder names should start with the standard's reserved
   prefix (`_` by default - see `[folders.reserved]`'s `prefix` field)
-- `use_for` / `not_for` shouldn't contain leftover empty placeholder
-  entries (`""`) - the list itself is structurally fine, this just
-  means some entries were never filled in
+- a list-valued documentation field shouldn't contain leftover empty
+  placeholder entries (`""`) - the list itself is structurally fine,
+  this just means some entries were never filled in
 - there should be at least one cataloged path (an empty `[paths]` with
   no entries isn't wrong, just probably not useful yet)
-- `paths.attributes.names` shouldn't be empty (without it, unknown-field
-  checking can't run for any path entry - worth knowing about, but the
-  file still functions)
+- a namespace with entries should declare some fields (without
+  `<ns>.attributes.names` or `<ns>.grouping.names`, unknown-field
+  checking can't run for its entries and the doc generator has nothing
+  to render - worth knowing about, but the file still functions)
 - **path keys, reserved folder names, and abbreviations should be
   declared in alphabetical order** - makes scanning and diffing the
   file predictable. Checked against each table's *declaration order in

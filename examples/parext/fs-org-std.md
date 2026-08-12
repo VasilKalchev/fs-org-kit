@@ -1,6 +1,6 @@
 # usr - fs-org-std
 
-> Generated from `fs-org-std.toml` - standard v1.0, schema v1.0
+> Generated from `fs-org-std.toml` - standard v2.0, schema v2.0
 
 ## Table of Contents
 
@@ -52,6 +52,7 @@
   - [Set 1](#cross-1)
 - [Reserved Folders](#section-folders)
   - [`_arch`](#folder-arch)
+  - [`_inbox`](#folder-inbox)
   - [`_unsorted`](#folder-unsorted)
   - [`_util`](#folder-util)
 - [Rules](#section-rules)
@@ -75,16 +76,29 @@
 
 - **Root**: `~/usr/`
 - Personal filesystem standard for ~/usr/ - a PARA-style split (area/prj/task/res/knwl) with state carried by folder location and `_`-prefixed reserved names.
-- **Schema version**: 1.0 (2026-08-05)
-- **Standard version**: 1.0 (2026-08-12)
+- **Schema version**: 2.0 (2026-08-12)
+- **Standard version**: 2.0 (2026-08-12)
 - **Cataloged paths**: 42
 - **Cross-path sets**: 1
-- **Reserved folders**: 3
+- **Reserved folders**: 4
 
 *(path hierarchy diagram skipped - 42 paths exceeds the 40-node readability limit)*
 
 <a id="section-paths"></a>
 ## Paths
+
+**By `lifecycle`:**
+
+- `archival` - [`prj/_arch/`](#path-prj-arch), [`strg/`](#path-strg), [`strg/app/`](#path-strg-app), [`strg/bkup/`](#path-strg-bkup), [`strg/driver/`](#path-strg-driver), [`strg/game/`](#path-strg-game), [`strg/unk/`](#path-strg-unk), [`task/_arch/`](#path-task-arch)
+- `ongoing` - [`area/`](#path-area), [`area/3dp/`](#path-area-3dp), [`area/fin/`](#path-area-fin), [`area/infra/`](#path-area-infra), [`area/inv/`](#path-area-inv), [`area/inv/item/`](#path-area-inv-item), [`area/paper/`](#path-area-paper), [`area/rc/`](#path-area-rc), [`area/std/`](#path-area-std), [`knwl/`](#path-knwl), [`media/`](#path-media), [`media/book/`](#path-media-book), [`media/cam/`](#path-media-cam), [`media/music/`](#path-media-music), [`media/pic/`](#path-media-pic), [`media/vid/`](#path-media-vid), [`res/`](#path-res), [`sys/`](#path-sys), [`sys/lnk/`](#path-sys-lnk), [`sys/lnk/cur/`](#path-sys-lnk-cur), [`sys/lnk/nav/`](#path-sys-lnk-nav), [`sys/lnk/os/`](#path-sys-lnk-os), [`sys/prog/`](#path-sys-prog), [`sys/scr/`](#path-sys-scr), [`sys/vm/`](#path-sys-vm), [`ws/`](#path-ws), [`ws/lib/`](#path-ws-lib), [`ws/tmpl/`](#path-ws-tmpl), [`ws/tool/`](#path-ws-tool)
+- `temporary` - [`area/lrn/`](#path-area-lrn), [`prj/`](#path-prj), [`task/`](#path-task)
+- `transient` - [`inbox/`](#path-inbox), [`tmp/`](#path-tmp)
+
+**By `origin`:**
+
+- `external` - [`area/`](#path-area), [`area/3dp/`](#path-area-3dp), [`area/fin/`](#path-area-fin), [`area/inv/item/`](#path-area-inv-item), [`area/lrn/`](#path-area-lrn), [`area/paper/`](#path-area-paper), [`inbox/`](#path-inbox), [`media/`](#path-media), [`media/book/`](#path-media-book), [`media/cam/`](#path-media-cam), [`media/music/`](#path-media-music), [`media/pic/`](#path-media-pic), [`media/vid/`](#path-media-vid), [`res/`](#path-res), [`strg/`](#path-strg), [`strg/app/`](#path-strg-app), [`strg/bkup/`](#path-strg-bkup), [`strg/driver/`](#path-strg-driver), [`strg/unk/`](#path-strg-unk), [`sys/`](#path-sys), [`sys/prog/`](#path-sys-prog), [`sys/scr/`](#path-sys-scr), [`sys/vm/`](#path-sys-vm), [`task/`](#path-task), [`tmp/`](#path-tmp), [`ws/`](#path-ws), [`ws/lib/`](#path-ws-lib), [`ws/tmpl/`](#path-ws-tmpl), [`ws/tool/`](#path-ws-tool)
+- `generated` - [`area/3dp/`](#path-area-3dp), [`area/inv/`](#path-area-inv), [`strg/unk/`](#path-strg-unk), [`sys/lnk/cur/`](#path-sys-lnk-cur), [`sys/lnk/nav/`](#path-sys-lnk-nav), [`tmp/`](#path-tmp)
+- `self` - [`area/`](#path-area), [`area/3dp/`](#path-area-3dp), [`area/fin/`](#path-area-fin), [`area/infra/`](#path-area-infra), [`area/inv/`](#path-area-inv), [`area/lrn/`](#path-area-lrn), [`area/rc/`](#path-area-rc), [`area/std/`](#path-area-std), [`knwl/`](#path-knwl), [`media/`](#path-media), [`media/cam/`](#path-media-cam), [`prj/`](#path-prj), [`prj/_arch/`](#path-prj-arch), [`strg/`](#path-strg), [`strg/bkup/`](#path-strg-bkup), [`strg/game/`](#path-strg-game), [`sys/`](#path-sys), [`sys/lnk/`](#path-sys-lnk), [`sys/lnk/cur/`](#path-sys-lnk-cur), [`sys/lnk/nav/`](#path-sys-lnk-nav), [`sys/lnk/os/`](#path-sys-lnk-os), [`sys/scr/`](#path-sys-scr), [`task/`](#path-task), [`task/_arch/`](#path-task-arch), [`tmp/`](#path-tmp), [`ws/`](#path-ws), [`ws/lib/`](#path-ws-lib), [`ws/tmpl/`](#path-ws-tmpl), [`ws/tool/`](#path-ws-tool)
 
 <a id="path-area"></a>
 ### `area/`
@@ -94,16 +108,22 @@
 | Purpose | Long-lived areas of responsibility, ownership, or interest. |
 | Notes | Areas require maintenance but do not have a fixed completion date. If it can be finished, it is a project or a task. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external`, `self` |
-| See also | ['prj/', 'task/'] |
+| Origin | [`external`](#section-enums), [`self`](#section-enums) |
 
 **Use for:**
+
 - long-term responsibilities
 - hobbies
 
 **Not for:**
+
 - storing referential materials
 - projects or tasks
+
+**See also:**
+
+- prj/
+- task/
 
 <a id="path-area-3dp"></a>
 ### `area/3dp/`
@@ -112,16 +132,22 @@
 |---|---|
 | Purpose | 3D printing hobby and its associated files. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external`, `generated` |
-| See also | ['prj/', 'knwl/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - printable models and print-related records
 - 3D printing activity and results
 
 **Not for:**
+
 - active design projects
 - general 3D printing knowledge
+
+**See also:**
+
+- prj/
+- knwl/
 
 <a id="path-area-fin"></a>
 ### `area/fin/`
@@ -130,10 +156,10 @@
 |---|---|
 | Purpose | Personal financial administration. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['area/paper/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - bank documents
 - investment documents
 - tax documents
@@ -141,7 +167,12 @@
 - invoices
 
 **Not for:**
+
 - shopping
+
+**See also:**
+
+- area/paper/
 
 **Attached rules:**
 
@@ -157,17 +188,22 @@
 | Purpose | Infrastructure documentation. |
 | Notes | Separated by system. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['sys/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - documentation
 - records
 - documentation of how systems work together
 
 **Not for:**
+
 - files consumed by the system
 - technical reference material
+
+**See also:**
+
+- sys/
 
 <a id="path-area-inv"></a>
 ### `area/inv/`
@@ -177,15 +213,20 @@
 | Purpose | Inventory of owned items. |
 | Notes | Indexes describing collections of items. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `generated` |
-| See also | ['area/inv/item/'] |
+| Origin | [`self`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - inventory indexes
 
 **Not for:**
+
 - reference materials unrelated to owned items
 - shopping materials
+
+**See also:**
+
+- area/inv/item/
 
 <a id="path-area-inv-item"></a>
 ### `area/inv/item/`
@@ -195,10 +236,10 @@
 | Purpose | Information belonging to individual owned items. |
 | Notes | Separated by item. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['area/inv/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - manuals
 - warranties
 - photos
@@ -206,8 +247,13 @@
 - configuration information
 
 **Not for:**
+
 - indexes of multiple items
 - general items information
+
+**See also:**
+
+- area/inv/
 
 <a id="path-area-lrn"></a>
 ### `area/lrn/`
@@ -217,18 +263,24 @@
 | Purpose | Active learning subjects. |
 | Notes | Similar to projects, but the output is knowledge rather than a product. |
 | Lifecycle | [`temporary`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['res/', 'knwl/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - study notes
 - exercises
 - learning plans
 - links to resources
 
 **Not for:**
+
 - finished distilled knowledge
 - storing resources
+
+**See also:**
+
+- res/
+- knwl/
 
 <a id="path-area-paper"></a>
 ### `area/paper/`
@@ -237,16 +289,21 @@
 |---|---|
 | Purpose | Official documents that are retained as records. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['area/fin/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - scanned documents
 - electronic documents
 
 **Not for:**
+
 - unofficial documents
 - actively managed domains
+
+**See also:**
+
+- area/fin/
 
 <a id="path-area-rc"></a>
 ### `area/rc/`
@@ -256,17 +313,26 @@
 | Purpose | RC hobby and its associated working material. |
 | Notes | Should include links to RC related folders. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['prj/', 'res/', 'knwl/', 'area/inv/', 'media/cam/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - RC hobby activity and experiments
 - RC-specific working material and test results
 
 **Not for:**
+
 - photos/videos related to RC
 - personal firmware/PCB projects
 - general technical material
+
+**See also:**
+
+- prj/
+- res/
+- knwl/
+- area/inv/
+- media/cam/
 
 <a id="path-area-std"></a>
 ### `area/std/`
@@ -276,19 +342,25 @@
 | Purpose | Personal standards and conventions. |
 | Notes | This file's own home. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['sys/scr/', 'area/infra/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - infrastructure conventions
 - naming conventions
 - workflow standards
 - filesystem organization standards
 
 **Not for:**
+
 - configuration files
 - transient notes
 - documentation
+
+**See also:**
+
+- sys/scr/
+- area/infra/
 
 <a id="path-inbox"></a>
 ### `inbox/`
@@ -298,21 +370,28 @@
 | Purpose | Temporary location for files that have not yet been classified. |
 | Notes | Files must eventually be moved to their final location, deleted, transformed into knowledge, or archived. |
 | Lifecycle | [`transient`](#section-enums) |
-| Origin | `external` |
-| See also | ['tmp/', '_unsorted'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - newly acquired files
 
 **Not for:**
+
 - permanent files
+
+**See also:**
+
+- tmp/
+- _inbox
+- _unsorted
 
 **Attached rules:**
 
 | Rule | Reason | Params |
 |---|---|---|
 | [`empty-v1`](#rule-empty-v1) | a zero-byte file here is a failed transfer, not something waiting to be filed | `check_folders=false` |
-| [`staleness-v1`](#rule-staleness-v1) | an arrival that survives a month in the inbox is being avoided, not triaged | `mode="stale"`, `threshold="1m"`, `destination="inbox/_unsorted"`, `exclude=["_*", ".*"]` |
+| [`staleness-v1`](#rule-staleness-v1) | an arrival that survives a month in the inbox is being avoided, not triaged | `mode="stale"`, `threshold="1m"`, `destination="inbox/_unsorted"`, `create_destination=true`, `exclude=["_*", ".*"]` |
 
 <a id="path-knwl"></a>
 ### `knwl/`
@@ -322,19 +401,25 @@
 | Purpose | Personal distilled knowledge. |
 | Notes | Used with Obsidian. A completed note must not exist simultaneously with its source in res/ - enforced by the cross-path rule at the end of this section. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['res/', 'area/lrn/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - self-written notes
 - distilled references
 - personal cheat sheets
 - processed external information
 
 **Not for:**
+
 - raw downloaded references
 - manuals
 - unprocessed documents
+
+**See also:**
+
+- res/
+- area/lrn/
 
 <a id="path-media"></a>
 ### `media/`
@@ -343,18 +428,23 @@
 |---|---|
 | Purpose | Entertainment media. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['res/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - leisure books
 - downloaded videos
 - pictures and wallpapers
 - personal photos
 
 **Not for:**
+
 - technical literature
 - video courses
+
+**See also:**
+
+- res/
 
 <a id="path-media-book"></a>
 ### `media/book/`
@@ -364,19 +454,24 @@
 | Purpose | Books intended for leisure reading. |
 | Notes | Separated by genre. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['res/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - fiction
 - popular science
 - philosophy
 - biographies
 
 **Not for:**
+
 - technical references
 - manuals
 - datasheets
+
+**See also:**
+
+- res/
 
 <a id="path-media-cam"></a>
 ### `media/cam/`
@@ -386,16 +481,21 @@
 | Purpose | Personal photos and video. |
 | Notes | Separated by year and optionally date. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['area/inv/item/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - personal photography
 - personal videography
 
 **Not for:**
+
 - project photos
 - inventory photos
+
+**See also:**
+
+- area/inv/item/
 
 **Attached rules:**
 
@@ -413,12 +513,14 @@
 | Purpose | Music collection. |
 | Notes | Separated primarily by artist. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - songs
 
 **Not for:**
+
 - sounds
 - ringtones
 
@@ -429,17 +531,22 @@
 |---|---|
 | Purpose | Pictures. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['media/cam/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - wallpapers
 - pictures
 - funny images
 
 **Not for:**
+
 - general personal photos
 - general project photos
+
+**See also:**
+
+- media/cam/
 
 <a id="path-media-vid"></a>
 ### `media/vid/`
@@ -448,19 +555,24 @@
 |---|---|
 | Purpose | Videos. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['media/cam/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - general videos
 - ambient videos
 - home theater demos
 
 **Not for:**
+
 - movies
 - series
 - courses
 - personal videography
+
+**See also:**
+
+- media/cam/
 
 <a id="path-prj"></a>
 ### `prj/`
@@ -470,23 +582,29 @@
 | Purpose | Active projects. |
 | Notes | A project is a transient effort which produces an outcome based on defined goals. |
 | Lifecycle | [`temporary`](#section-enums) |
-| Origin | `self` |
-| See also | ['task/', 'prj/_arch/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - software/firmware projects
 - PCB projects
 - other multi-session efforts
 
 **Not for:**
+
 - small tasks
 - reusable resources
+
+**See also:**
+
+- task/
+- prj/_arch/
 
 **Attached rules:**
 
 | Rule | Reason | Params |
 |---|---|---|
-| [`staleness-v1`](#rule-staleness-v1) | a project untouched for half a year is finished or abandoned; leaving it in prj/ hides the ones that aren't | `mode="stale"`, `threshold="6m"`, `destination="prj/_arch"`, `exclude=["_*", ".*"]` |
+| [`staleness-v1`](#rule-staleness-v1) | a project untouched for half a year is finished or abandoned; leaving it in prj/ hides the ones that aren't | `mode="stale"`, `threshold="6m"`, `destination="prj/_arch/%Y"`, `create_destination=true`, `exclude=["_*", ".*"]` |
 
 <a id="path-prj-arch"></a>
 ### `prj/_arch/`
@@ -496,18 +614,24 @@
 | Purpose | Inactive projects. |
 | Notes | Separated by year. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self` |
-| See also | ['prj/', '_arch'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - completed projects
 - abandoned projects
 - paused projects
 - obsolete projects
 
 **Not for:**
+
 - active projects
 - backups
+
+**See also:**
+
+- prj/
+- _arch
 
 **Attached rules:**
 
@@ -523,10 +647,10 @@
 | Purpose | External knowledge materials. |
 | Notes | Organized by subject. Must mirror knwl/'s structure. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['knwl/', 'area/lrn/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - datasheets
 - application notes
 - technical literature
@@ -535,9 +659,15 @@
 - cheat-sheets
 
 **Not for:**
+
 - distilled knowledge
 - device manuals
 - project files
+
+**See also:**
+
+- knwl/
+- area/lrn/
 
 <a id="path-strg"></a>
 ### `strg/`
@@ -546,17 +676,22 @@
 |---|---|
 | Purpose | Long-term storage for files that are rarely accessed but need to be preserved. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['sys/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - backups
 - installers
 - game saves
 
 **Not for:**
+
 - backup scripts
 - game reference materials
+
+**See also:**
+
+- sys/
 
 <a id="path-strg-app"></a>
 ### `strg/app/`
@@ -566,17 +701,22 @@
 | Purpose | Application installers. |
 | Notes | Separated by platform. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `external` |
-| See also | ['sys/prog/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - applications
 - games
 
 **Not for:**
+
 - installed applications/games
 - application/games configuration
 - game saves
+
+**See also:**
+
+- sys/prog/
 
 <a id="path-strg-bkup"></a>
 ### `strg/bkup/`
@@ -585,18 +725,23 @@
 |---|---|
 | Purpose | Recovery data. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['sys/scr/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - system backups
 - device backups
 - configuration backups
 - binary dumps used for restoration
 
 **Not for:**
+
 - scripts
 - active files
+
+**See also:**
+
+- sys/scr/
 
 <a id="path-strg-driver"></a>
 ### `strg/driver/`
@@ -606,16 +751,21 @@
 | Purpose | Hardware drivers. |
 | Notes | Separated by platform. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `external` |
-| See also | ['strg/app/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - vendor driver packages
 - hardware support packages
 
 **Not for:**
+
 - applications
 - hardware documentation
+
+**See also:**
+
+- strg/app/
 
 <a id="path-strg-game"></a>
 ### `strg/game/`
@@ -624,15 +774,20 @@
 |---|---|
 | Purpose | Game saves. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self` |
-| See also | ['strg/app/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - saves
 
 **Not for:**
+
 - game reference
 - game clips
+
+**See also:**
+
+- strg/app/
 
 <a id="path-strg-unk"></a>
 ### `strg/unk/`
@@ -642,15 +797,20 @@
 | Purpose | Unknown files that might be important. |
 | Notes | A holding pen, not a destination: anything identified here moves to where it belongs. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `external`, `generated` |
-| See also | ['inbox/'] |
+| Origin | [`external`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - unknown encryption keys
 - unknown binaries
 
 **Not for:**
+
 - files with known purpose
+
+**See also:**
+
+- inbox/
 
 <a id="path-sys"></a>
 ### `sys/`
@@ -659,18 +819,24 @@
 |---|---|
 | Purpose | Files consumed by this system and specific to it. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['area/infra/', 'ws/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - machine specific scripts
 - virtual machines
 - portable programs
 - virtual views
 
 **Not for:**
+
 - project dependencies
 - documentation
+
+**See also:**
+
+- area/infra/
+- ws/
 
 <a id="path-sys-lnk"></a>
 ### `sys/lnk/`
@@ -680,16 +846,23 @@
 | Purpose | Curated navigation spaces. |
 | Notes | Nothing is stored here; every leaf points somewhere else. The two rules below apply to the whole subtree, so cur/, nav/ and os/ declare none of their own. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['sys/lnk/cur/', 'sys/lnk/nav/', 'sys/lnk/os/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - navigation links
 - custom views of the filesystem
 
 **Not for:**
+
 - canonical file storage
 - machine-specific files unrelated to navigation
+
+**See also:**
+
+- sys/lnk/cur/
+- sys/lnk/nav/
+- sys/lnk/os/
 
 **Attached rules:**
 
@@ -706,15 +879,23 @@
 | Purpose | Links to files and folders currently being worked on or used. |
 | Notes | Contents change as current work and interests change. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `generated` |
-| See also | ['prj/', 'task/', 'res/', 'knwl/'] |
+| Origin | [`self`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - current projects, tasks, and other work
 - currently used books and resources
 
 **Not for:**
+
 - long-term navigation links
+
+**See also:**
+
+- prj/
+- task/
+- res/
+- knwl/
 
 <a id="path-sys-lnk-nav"></a>
 ### `sys/lnk/nav/`
@@ -724,15 +905,20 @@
 | Purpose | Curated navigation view of frequently accessed locations. |
 | Notes | Organized for navigation rather than by the purpose of the linked files. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `generated` |
-| See also | ['sys/lnk/cur/'] |
+| Origin | [`self`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - frequently accessed locations
 - convenient groupings of locations
 
 **Not for:**
+
 - temporary current-work links
+
+**See also:**
+
+- sys/lnk/cur/
 
 <a id="path-sys-lnk-os"></a>
 ### `sys/lnk/os/`
@@ -741,14 +927,19 @@
 |---|---|
 | Purpose | Links to OS specific locations. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
-| See also | ['area/infra/'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - special OS locations with configuration files
 
 **Not for:**
+
 - general purpose OS locations
+
+**See also:**
+
+- area/infra/
 
 <a id="path-sys-prog"></a>
 ### `sys/prog/`
@@ -757,18 +948,24 @@
 |---|---|
 | Purpose | Installed programs. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['ws/tool/', 'strg/app/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - portable programs
 - AppImages
 - manually installed applications
 - Wine prefixes
 
 **Not for:**
+
 - installers
 - project tools
+
+**See also:**
+
+- ws/tool/
+- strg/app/
 
 <a id="path-sys-scr"></a>
 ### `sys/scr/`
@@ -777,18 +974,24 @@
 |---|---|
 | Purpose | Machine-specific scripts. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/', 'area/std/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - system helper scripts
 - startup scripts
 - maintenance scripts
 - automation scripts
 
 **Not for:**
+
 - project scripts
 - snippets
+
+**See also:**
+
+- prj/
+- area/std/
 
 <a id="path-sys-vm"></a>
 ### `sys/vm/`
@@ -797,15 +1000,20 @@
 |---|---|
 | Purpose | Virtual machines. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `external` |
-| See also | ['strg/bkup/'] |
+| Origin | [`external`](#section-enums) |
 
 **Use for:**
+
 - VM images
 - VM configurations
 
 **Not for:**
+
 - VM backups
+
+**See also:**
+
+- strg/bkup/
 
 <a id="path-task"></a>
 ### `task/`
@@ -815,10 +1023,10 @@
 | Purpose | Small tasks with defined goals. |
 | Notes | Tasks are smaller than projects in regards to effort and complexity. |
 | Lifecycle | [`temporary`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/', 'task/_arch/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - writing scripts
 - measurements
 - investigations
@@ -826,14 +1034,20 @@
 - one-off activities
 
 **Not for:**
+
 - creating distilled knowledge
 - complex scripts
+
+**See also:**
+
+- prj/
+- task/_arch/
 
 **Attached rules:**
 
 | Rule | Reason | Params |
 |---|---|---|
-| [`staleness-v1`](#rule-staleness-v1) | a task open for a quarter has outgrown being a task; archive it or promote it to a project | `mode="stale"`, `threshold="3m"`, `destination="task/_arch"`, `exclude=["_*", ".*"]` |
+| [`staleness-v1`](#rule-staleness-v1) | a task open for a quarter has outgrown being a task; archive it or promote it to a project | `mode="stale"`, `threshold="3m"`, `destination="task/_arch/%Y"`, `create_destination=true`, `exclude=["_*", ".*"]` |
 
 <a id="path-task-arch"></a>
 ### `task/_arch/`
@@ -843,17 +1057,23 @@
 | Purpose | Inactive tasks. |
 | Notes | Separated by year. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self` |
-| See also | ['task/', '_arch'] |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - completed tasks
 - abandoned tasks
 - paused tasks
 - obsolete tasks
 
 **Not for:**
+
 - active tasks
+
+**See also:**
+
+- task/
+- _arch
 
 **Attached rules:**
 
@@ -869,16 +1089,22 @@
 | Purpose | Transient files. |
 | Notes | Separated by activity or collection. A sub-folder name may identify a deletion trigger. |
 | Lifecycle | [`transient`](#section-enums) |
-| Origin | `self`, `external`, `generated` |
-| See also | ['inbox/', 'task/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums), [`generated`](#section-enums) |
 
 **Use for:**
+
 - files that are known to be disposable
 - temporary collections associated with an activity or event
 
 **Not for:**
+
 - files whose destination has not yet been decided
 - files that may need to be retained indefinitely
+
+**See also:**
+
+- inbox/
+- task/
 
 **Attached rules:**
 
@@ -894,16 +1120,22 @@
 | Purpose | Reusable assets and building blocks. |
 | Notes | Primarily for projects, but not specific to one project. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/', 'sys/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - libraries and SDKs
 - development tools
 - templates
 
 **Not for:**
+
 - project-specific dependencies
+
+**See also:**
+
+- prj/
+- sys/
 
 <a id="path-ws-lib"></a>
 ### `ws/lib/`
@@ -912,17 +1144,22 @@
 |---|---|
 | Purpose | Libraries and dependencies. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - reusable libraries
 - vendor libraries
 - SDKs
 
 **Not for:**
+
 - frozen dependencies
 - project-specific libraries
+
+**See also:**
+
+- prj/
 
 <a id="path-ws-tmpl"></a>
 ### `ws/tmpl/`
@@ -931,16 +1168,21 @@
 |---|---|
 | Purpose | Reusable starting points. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - project templates
 - configuration templates
 
 **Not for:**
+
 - projects
 - directly usable files
+
+**See also:**
+
+- prj/
 
 <a id="path-ws-tool"></a>
 ### `ws/tool/`
@@ -949,16 +1191,21 @@
 |---|---|
 | Purpose | Tools that support projects. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['sys/prog/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - development utilities
 - helper programs
 - CLI tools
 
 **Not for:**
+
 - general applications
+
+**See also:**
+
+- sys/prog/
 
 <a id="section-cross"></a>
 ## Cross-Path Sets
@@ -988,6 +1235,17 @@ graph LR
 
 Reserved-name prefix: `_`
 
+**By `lifecycle`:**
+
+- `archival` - [`_arch`](#folder-arch)
+- `ongoing` - [`_util`](#folder-util)
+- `transient` - [`_inbox`](#folder-inbox), [`_unsorted`](#folder-unsorted)
+
+**By `origin`:**
+
+- `external` - [`_arch`](#folder-arch), [`_inbox`](#folder-inbox), [`_unsorted`](#folder-unsorted), [`_util`](#folder-util)
+- `self` - [`_arch`](#folder-arch), [`_unsorted`](#folder-unsorted), [`_util`](#folder-util)
+
 <a id="folder-arch"></a>
 ### `_arch`
 
@@ -996,17 +1254,55 @@ Reserved-name prefix: `_`
 | Purpose | Archive of inactive information/containers. |
 | Notes | Indicates that contents are no longer part of the active workflow. Exception to the principle of tagging state rather than moving things. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['prj/_arch/', 'task/_arch/', 'strg/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - projects/tasks that are no longer active
 - domains that are no longer maintained
 - non-versioned but obsolete files
 
 **Not for:**
+
 - general archival
 - backups
+
+**See also:**
+
+- prj/_arch/
+- task/_arch/
+- strg/
+
+<a id="folder-inbox"></a>
+### `_inbox`
+
+| Field | Value |
+|---|---|
+| Purpose | Local landing zone for arrivals belonging to the parent directory. |
+| Notes | The inline counterpart to inbox/: something arrived for this area specifically, but where it goes inside it hasn't been decided. Distinct from _unsorted, where the destination IS known and only the shelf isn't. |
+| Lifecycle | [`transient`](#section-enums) |
+| Origin | [`external`](#section-enums) |
+
+**Use for:**
+
+- newly acquired files that clearly belong to this area
+- downloads collected during one activity
+
+**Not for:**
+
+- files whose area hasn't been decided at all
+- files already known to belong somewhere specific here
+
+**See also:**
+
+- inbox/
+- _unsorted
+
+**Attached rules:**
+
+| Rule | Reason | Params |
+|---|---|---|
+| [`empty-v1`](#rule-empty-v1) | a zero-byte file here is a failed transfer, not something waiting to be filed | `check_folders=false` |
 
 <a id="folder-unsorted"></a>
 ### `_unsorted`
@@ -1014,20 +1310,26 @@ Reserved-name prefix: `_`
 | Field | Value |
 |---|---|
 | Purpose | Local unsorted files. |
-| Notes | Files that belong under the parent directory but need additional classification. Unlike inbox/, the destination is already known - only the shelf isn't. |
+| Notes | Files that belong under the parent directory but need additional classification. Unlike _inbox, the destination is already known - only the shelf isn't. |
 | Lifecycle | [`transient`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['inbox/', 'tmp/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - files awaiting classification
 - transient holding area during organization
 - files returned from original organization
 
 **Not for:**
+
 - general transient files
 - long-term storage
 - archived information
+
+**See also:**
+
+- inbox/
+- tmp/
 
 <a id="folder-util"></a>
 ### `_util`
@@ -1037,18 +1339,31 @@ Reserved-name prefix: `_`
 | Purpose | Frequently used utilities related to the parent directory. |
 | Notes | Contains links to utilities that are commonly used with the parent directory. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
-| See also | ['sys/scr/', 'sys/prog/', 'ws/tool/'] |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - links to applications
 - scripts
 - directory-specific workflows
 
 **Not for:**
+
 - general applications
 - general scripts
 - installers
+
+**See also:**
+
+- sys/scr/
+- sys/prog/
+- ws/tool/
+
+**Attached rules:**
+
+| Rule | Reason | Params |
+|---|---|---|
+| [`link-integrity-v1`](#rule-link-integrity-v1) | a shortcut to a utility outlives the utility, and nothing about the folder looks wrong when it does | `recursive=true` |
 
 <a id="section-rules"></a>
 ## Rules
@@ -1070,30 +1385,34 @@ graph LR
     s0("Cross-Path Set 1")
     s1("area/fin/")
     s2("every folder under root (blanket)")
-    s3("inbox/")
-    s4("media/cam/")
-    s5("prj/")
-    s6("prj/_arch/")
-    s7("sys/lnk/")
-    s8("task/")
-    s9("task/_arch/")
-    s10("tmp/")
+    s3("folders.reserved.'_inbox'")
+    s4("folders.reserved.'_util'")
+    s5("inbox/")
+    s6("media/cam/")
+    s7("prj/")
+    s8("prj/_arch/")
+    s9("sys/lnk/")
+    s10("task/")
+    s11("task/_arch/")
+    s12("tmp/")
     r0 --- s0
-    r1 --- s4
+    r1 --- s6
+    r2 --- s5
     r2 --- s3
     r3 --- s1
-    r4 --- s7
-    r5 --- s7
-    r6 --- s6
-    r6 --- s9
+    r4 --- s9
+    r4 --- s4
+    r5 --- s9
+    r6 --- s8
+    r6 --- s11
     r6 --- s2
     r7 --- s2
-    r8 --- s3
     r8 --- s5
-    r8 --- s8
+    r8 --- s7
     r8 --- s10
-    r9 --- s4
-    r10 --- s4
+    r8 --- s12
+    r9 --- s6
+    r10 --- s6
     r11 --- s2
 ```
 
@@ -1176,8 +1495,9 @@ Reports zero-byte files and empty folders under a path - leftovers from an inter
 | `exclude` | `[]` | no |
 | `folder_empty_means` | `"no_entries"` | no |
 
-**Attached at 1 location(s):**
+**Attached at 2 location(s):**
 
+- [`folders.reserved."_inbox"`](#folder-inbox) - a zero-byte file here is a failed transfer, not something waiting to be filed
 - [`inbox/`](#path-inbox) - a zero-byte file here is a failed transfer, not something waiting to be filed
 
 <a id="rule-file-extensions-v1"></a>
@@ -1229,8 +1549,9 @@ Reports links whose target no longer exists - symlinks, XDG .desktop entries, Wi
 | `foreign_links` | `"skip"` | no |
 | `follow_chains` | `true` | no |
 
-**Attached at 1 location(s):**
+**Attached at 2 location(s):**
 
+- [`folders.reserved."_util"`](#folder-util) - a shortcut to a utility outlives the utility, and nothing about the folder looks wrong when it does
 - [`sys/lnk/`](#path-sys-lnk) - a dangling entry in a navigation space is worse than a missing one - it looks navigable
 
 <a id="rule-link-policy-v1"></a>
@@ -1328,7 +1649,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 | | |
 |---|---|
 | Tier | bundled |
-| Version | 1.0 |
+| Version | 1.1 |
 | Severity | `warn` |
 | Scope | `single` |
 | Fixable | yes |
@@ -1341,6 +1662,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 | `threshold` |  | yes |
 | `basis` | `"mtime"` | no |
 | `destination` |  | yes |
+| `create_destination` | `false` | no |
 | `exclude` | `[]` | no |
 
 **Attached at 4 location(s):**
@@ -1429,7 +1751,7 @@ Checks for folders that use the standard's reserved-name prefix (e.g. "_") but a
 <a id="section-enums"></a>
 ## Enums
 
-**Lifecycle:**
+**`enums.paths.lifecycle`:**
 
 | Value | Meaning |
 |---|---|
@@ -1449,7 +1771,24 @@ graph LR
     l2 --> l3
 ```
 
-**Origin:**
+**`enums.paths.origin`:**
+
+| Value | Meaning |
+|---|---|
+| `self` | authored directly by you - nothing to re-fetch or resync from elsewhere |
+| `external` | sourced from outside this system - downloaded, received, or otherwise not authored by you |
+| `generated` | produced automatically by a tool, script, or model - not hand-authored, not fetched externally |
+
+**`enums.folders.lifecycle`:**
+
+| Value | Meaning |
+|---|---|
+| `transient` | meant to be emptied constantly, nothing lingers |
+| `temporary` | has a completion condition, then gets archived |
+| `ongoing` | continuously active/maintained, no end state |
+| `archival` | already at rest, rarely touched |
+
+**`enums.folders.origin`:**
 
 | Value | Meaning |
 |---|---|

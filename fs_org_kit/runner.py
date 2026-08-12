@@ -387,7 +387,7 @@ def collect_invocations(
     # reserved name that matches nothing on disk simply contributes no
     # invocations - unlike a cataloged path, a name that doesn't happen to
     # occur anywhere isn't missing, so allow_missing has no counterpart
-    # here (and isn't in folders.attributes.names).
+    # here (and the folders namespace carries no control fields at all).
     if resolved_folders:
         with_rules = {name: r for name, r in resolved_folders.items() if r.rules}
         for name, matches in _find_reserved_folders(root_dir, set(with_rules)).items():

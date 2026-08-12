@@ -21,6 +21,7 @@ pytest -k "scope_mismatch"          # run a single test by name
 - `tests/test_cache.py` - tests for `fs_org_kit.cache`
 - `tests/test_discovery.py` - tests for `fs_org_kit.discovery`
 - `tests/test_doc.py` - tests for `fs_org_kit.doc`
+- `tests/test_fields.py` - tests for `fs_org_kit.fields`
 - `tests/test_inherit.py` - tests for `fs_org_kit.inherit`
 - `tests/test_param_refs.py` - tests for `fs_org_kit.param_refs`
 - `tests/test_path_keys.py` - tests for `fs_org_kit.path_keys`
@@ -95,13 +96,22 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Rule inheritance**: `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `attributes` and `rules` inheriting from different sources
 - **Errors and cycles**: undefined references, 2- and 3-level cycles, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
 
-### Validator tests (24 tests, `tests/test_validator.py`)
+### Field declaration tests (19 tests, `tests/test_fields.py`)
+
+`parse_field_spec` reads what one namespace declares its entries may carry; checking values against that is the validator's job, tested below.
+
+- **Parsing**: the three kinds stay apart, declared order is preserved (the doc generator renders in it), `required` spans both kinds with documentation fields first, `multi` and the enum vocabulary are read from the declaration, and a namespace that declares nothing still knows its control fields
+- **Namespaces are independent**: `folders` reads its own lists and its own `enums.folders.*`, has no control fields at all, and a vocabulary declared for `paths` does *not* reach a same-named `folders` grouping field
+- **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a control field claimed as a documentation or grouping field; one name declared as both kinds; a name listed twice; a grouping field with no vocabulary (a warning - it still groups)
+
+### Validator tests (36 tests, `tests/test_validator.py`)
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
 - **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.attributes`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
 - **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment, `allow_missing` must be a boolean
-- **folders.attributes**: unknown-field checking on `folders.reserved.*` entries
+- **Entry fields**: a documentation field may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a control field needs no declaration; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
+- **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against its own `enums.folders.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered
 - **Param refs**: a `{ref = "..."}` value to `folders.reserved` or `abbreviations` resolves with no errors, a broken ref is an error naming the bad path, a ref satisfies a required-param-with-no-default check the same as a literal would
 - **Discovery options**: `include_external` threaded through to the rule catalog used for validation
 
@@ -153,14 +163,15 @@ what did or didn't happen on disk.
 - **Cache-dir wiring**: a rule declaring `uses_cache` is handed `--cache-dir` and really writes into `<root>/rules/<rule-id>/`; a rule that doesn't declare it never receives the flag (which is what keeps the change additive - every existing rule's argparse would reject an unknown flag) and causes no cache root to be created at all; an unusable cache location still produces the correct verdict
 - **Full integration through `main()`**: clean run exits 0, a violation exits 1, a missing path with/without `allow_missing` exits 1/0, an invalid standard exits 2, a fixer that archives a folder leaves the per-folder check already planned against its old location reporting `skipped` rather than `broken` and the run still exiting 0, and the core PARA scenario end-to-end - moving a real folder on disk between two `allow_missing`-marked, inheritance-linked locations needs zero standard edits and the run stays clean before and after
 
-### Doc generator tests (31 tests, `tests/test_doc.py`)
+### Doc generator tests (38 tests, `tests/test_doc.py`)
 
 - **Helpers**: slug generation (`/` becomes `-`, special characters stripped, empty falls back), value formatting for booleans/strings/lists
 - **Validate first**: an invalid or missing standard exits 2 and generates nothing; warnings don't block
 - **Sections**: all present sections by default, `--sections`/`--exclude-sections` filtering, an unknown section name errors, an empty section is omitted rather than emitted blank
 - **Diagrams**: `--no-diagrams`, `--diagrams` filtering, the tree reflects real nesting, the 40-node guard, the lifecycle diagram appears only for the known vocabulary, and Mermaid-breaking characters in a path key are sanitized
 - **ToC**: present by default, `--no-toc`, and every link has a matching anchor
-- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued `see_also` is joined into readable Markdown rather than reaching the table as a Python repr, a bare-string one passes through, and one holding only empty placeholders is omitted
+- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued field becomes bullets rather than reaching the table as a Python repr, a string-valued one becomes a table row, one holding only empty placeholders is omitted, an undeclared field is never rendered at all, a grouping value links to its vocabulary, and a control field renders as a sentence
+- **Grouping index**: one bucket list per grouping field, entries listed under their value, a multi-valued field listing an entry under each of its values, and no index at all when a standard declares no grouping fields
 - **Output style**: generated Markdown contains no em dashes
 
 ### Bundled rule tests (585 tests, inside `rules/`)

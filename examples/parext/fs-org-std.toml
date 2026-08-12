@@ -42,10 +42,10 @@ root = "~/usr/"
 [meta]
 description = "Personal filesystem standard for ~/usr/ - a PARA-style split (area/prj/task/res/knwl) with state carried by folder location and `_`-prefixed reserved names."
 
-schema_version = "1.0"     # version of this TOML *structure* (the grammar/spec)
-schema_date = 2026-08-05
+schema_version = "2.0"     # version of this TOML *structure* (the grammar/spec)
+schema_date = 2026-08-12
 
-standard_version = "1.0"   # version of the *content* of the standard
+standard_version = "2.0"   # version of the *content* of the standard
 standard_date = 2026-08-12
 
 
@@ -80,17 +80,24 @@ tool_dirs = [
 #  PATHS
 # =====================================================================
 [paths]
-purpose = "Specific, individually documented locations under root - each gets its own [paths.\"...\"] entry describing what it's for, its lifecycle, and its origin."
 
-# valid field names on a [paths."..."] entry - most have no default,
-# since a path's own content is what's supposed to fill them in
+# Free-form documentation fields on a [paths."..."] entry - most have no
+# default, since a path's own content is what's supposed to fill them in.
 [paths.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
 
 [paths.attributes.defaults]
 allow_missing = false
 # `outside_root` deliberately has no default and can't be given one - it
 # must be written on each escaping entry itself. Nothing here escapes.
+
+# Enum-backed fields, checked against enums.paths.* and used to group
+# paths in the generated docs.
+[paths.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 
 # ---------------------------------------------------------------------
@@ -1047,15 +1054,20 @@ recursive = true
 #  FOLDERS
 # =====================================================================
 [folders]
-purpose = "Rules and definitions that apply without being tied to one cataloged path: blanket rules over every folder under root, and reserved folder-name patterns that apply independent of location."
 
-# valid field names on a [folders.reserved."..."] entry - same shape as
-# paths.attributes, minus allow_missing (a reserved NAME is not one
-# location, so "does it exist" doesn't apply the same way)
+# What a [folders.reserved."..."] entry may carry. Same two declarations
+# as paths, and no control fields at all: a reserved NAME is not one
+# location, so "does it exist" has nothing to apply to.
 [folders.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also"]
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
 
 [folders.attributes.defaults]
+
+[folders.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 
 # ---------------------------------------------------------------------
@@ -1226,6 +1238,19 @@ ongoing = "continuously active/maintained, no end state"
 archival = "already at rest, rarely touched"
 
 [enums.paths.origin]
+self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
+external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
+generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
+
+# Reserved folders group by the same two vocabularies, declared for their
+# own namespace - the tool never shares one across namespaces.
+[enums.folders.lifecycle]
+transient = "meant to be emptied constantly, nothing lingers"
+temporary = "has a completion condition, then gets archived"
+ongoing = "continuously active/maintained, no end state"
+archival = "already at rest, rarely touched"
+
+[enums.folders.origin]
 self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
 external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"

@@ -106,13 +106,19 @@ class TestComparisonKey:
 BOILERPLATE_HEAD = '''root = "~/usr/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
+
+[paths.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 [paths.attributes.defaults]
 '''

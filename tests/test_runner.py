@@ -408,13 +408,19 @@ class TestStalePlanIsSkipped:
         std_path.write_text(f'''root = "{tmp_path}/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "lifecycle", "origin", "allow_missing"]
+names = ["purpose"]
+required = ["purpose"]
+
+[paths.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 [paths.attributes.defaults]
 allow_missing = false
 
@@ -524,13 +530,19 @@ class TestMainIntegration:
         std_path.write_text(f'''root = "{tmp_path}/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "lifecycle", "origin", "allow_missing"]
+names = ["purpose"]
+required = ["purpose"]
+
+[paths.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 [paths.attributes.defaults]
 allow_missing = false

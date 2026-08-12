@@ -36,18 +36,38 @@
 #               now live in rule.template.toml alongside what they
 #               validate.)
 #
-# paths.attributes.names lists the valid fields on a [paths."..."] entry,
-# same idea as rule.template.toml's own attributes.names. Unlike a rule's
-# own attributes, most path attributes have no sensible standard-wide
-# default (nothing about a specific path's `purpose` is universal) - so
-# paths.attributes.defaults is normally near-empty. It's not FORBIDDEN
-# to add a default there, though: whatever's declared applies wherever an
-# entry doesn't set that field itself (and isn't set via inheritance
-# either) - see `allow_missing` below for the one field that ships with a
-# real default out of the box.
-# `origin` is a LIST of enums.paths.origin values (e.g. content that's
-# partly self-authored and partly generated) - every other enum-backed
-# field on a path entry is single-valued.
+# An entry under [paths."..."] or [folders.reserved."..."] carries three
+# KINDS of field, declared apart from each other because they're read
+# differently:
+#
+#   documentation - listed in <ns>.attributes.names. Free-form: a string,
+#                   or a list of strings. Nothing reads the values; the
+#                   doc generator renders whatever is there.
+#                   <ns>.attributes.required says which of them may not
+#                   be left empty.
+#   grouping      - listed in <ns>.grouping.names. Enum-backed, checked
+#                   against enums.<ns>.<field>, and used to sort entries
+#                   into buckets in the generated docs - a closed
+#                   vocabulary is what makes that possible. A field named
+#                   in <ns>.grouping.multi holds a LIST of values (e.g.
+#                   content that's partly self-authored and partly
+#                   generated); every other one holds exactly one.
+#   control       - `allow_missing` and `outside_root` (below). A fixed
+#                   set, read by the tool itself, never declared in
+#                   either list: a standard can't rename or invent one,
+#                   and they're always allowed on a path entry.
+#
+# Which names appear in the first two kinds is entirely yours - nothing
+# in the code knows what `purpose` or `lifecycle` mean. The two
+# namespaces declare independently, so `folders` can carry a different
+# set of fields from `paths`, with its own vocabularies under
+# enums.folders.*.
+#
+# <ns>.attributes.defaults applies wherever an entry sets a field neither
+# itself nor by inheritance. Most fields have no sensible standard-wide
+# default - nothing about a specific path's `purpose` is universal - so
+# it's normally near-empty; `allow_missing` is the one field that ships
+# with a real default out of the box.
 #
 # `allow_missing` (bool, default false via paths.attributes.defaults) -
 # marks a cataloged path as one that may not currently exist on disk.
@@ -164,11 +184,11 @@ root = "~/usr/"
 [meta]
 description = ""
 
-schema_version = "1.0"     # version of this TOML *structure* (the grammar/spec)
-schema_date = 2026-08-05
+schema_version = "2.0"     # version of this TOML *structure* (the grammar/spec)
+schema_date = 2026-08-12
 
-standard_version = "1.0"   # version of the *content* of the standard
-standard_date = 2026-08-04
+standard_version = "2.0"   # version of the *content* of the standard
+standard_date = 2026-08-12
 
 
 
@@ -178,6 +198,11 @@ standard_date = 2026-08-04
 # ===================================================================
 [enums]
 purpose = "Validate the specified values."
+
+# One table per GROUPING field, named enums.<namespace>.<field> - the
+# closed set of values entries in that namespace may use for it. A
+# grouping field with no table here still groups, but its values go
+# unchecked (the validator warns).
 
 # -------------------------------------------------------------------
 # Enums > Paths
@@ -193,6 +218,18 @@ self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
 external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
 
+# -------------------------------------------------------------------
+# Enums > Folders
+# -------------------------------------------------------------------
+# Declared separately from enums.paths.lifecycle on purpose: the two
+# namespaces group by their own vocabularies, and a name meaning the
+# same thing in both is a choice, not a shared definition.
+[enums.folders.lifecycle]
+transient = "meant to be emptied constantly, nothing lingers"
+temporary = "has a completion condition, then gets archived"
+ongoing = "continuously active/maintained, no end state"
+archival = "already at rest, rarely touched"
+
 # `exclude` is a native TOML array of glob strings and needs no enum table.
 # (Whether a rule can be fixed is structural - it's the presence of the
 # -fix.py script file - not manifest-declared.)
@@ -206,17 +243,26 @@ generated = "produced automatically by a tool, script, or model - not hand-autho
 # blanket rules over every folder under root, and reserved folder-name patterns
 # that apply independent of location.
 
-# valid field names on a [folders.reserved."..."] entry - same shape as
-# paths.attributes below, minus allow_missing (a reserved-name pattern
-# isn't one location, so "does it exist on disk" doesn't apply the same
-# way). `inherit` works identically here too - see the worked example
-# under [paths."path/a/archived/"] below; the mechanism is namespace-
-# scoped, so a reserved folder entry can only inherit from another
-# reserved folder entry, never from a [paths."..."] entry.
+# What a [folders.reserved."..."] entry may carry - same two declarations
+# as paths below, and deliberately a SMALLER set here: this namespace
+# needs no `origin`, and gets no control fields at all (a reserved-name
+# pattern isn't one location, so "does it exist on disk" and "does it
+# point outside root" have nothing to apply to). `inherit` works
+# identically here too - see the worked example under
+# [paths."path/a/archived/"] below; the mechanism is namespace-scoped, so
+# a reserved folder entry can only inherit from another reserved folder
+# entry, never from a [paths."..."] entry.
 [folders.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also"]
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
 
 [folders.attributes.defaults]
+
+# enum-backed, checked against enums.folders.<field>, used to group
+# reserved folders in the generated docs
+[folders.grouping]
+names = ["lifecycle"]
+required = ["lifecycle"]
 
 # rules applying to EVERY folder under root, cataloged or not - use this to
 # catch folders that exist on disk but aren't part of the documented standard.
@@ -251,7 +297,6 @@ not_for = [
   ""
 ]
 lifecycle = ""
-origin = []
 
 # Rules attach here exactly as they do on a path, but the target set is
 # a NAME match: the runner invokes this once per folder actually called
@@ -264,8 +309,8 @@ origin = []
 # _folder-name means anywhere" vs "what this one location is"), the same
 # way a per-path attachment and [[folders.rules]] already coexist.
 # A reserved name matching no folder on disk is not "missing" - nothing
-# says it has to occur - which is why folders.attributes.names has no
-# allow_missing to set.
+# says it has to occur - which is why this namespace gets no
+# `allow_missing` control field to set.
 [[folders.reserved."_folder-name".rules.rule-a-v1]]
 reason = "Why is this rule applied wherever this name appears?"
 
@@ -281,15 +326,26 @@ key-a-1 = "custom value"
 # Specific, individually documented locations under root - each gets its own
 # [paths."..."] entry describing what it's for, its lifecycle, and its origin.
 
-# valid field names on a [paths."..."] entry - most have no default
-# since a path's own content is what's supposed to fill them in
+# free-form documentation fields on a [paths."..."] entry - a string or a
+# list of strings each, rendered as-is by the doc generator. Most have no
+# default since a path's own content is what's supposed to fill them in.
 [paths.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
 
 [paths.attributes.defaults]
 allow_missing = false
 # `outside_root` deliberately has NO default here, and can't be given one:
 # it must be written on each escaping entry itself (see below).
+
+# enum-backed fields, checked against enums.paths.<field> and used to
+# group paths in the generated docs. `origin` is listed in `multi` because
+# content can be partly self-authored and partly generated; `lifecycle`
+# holds exactly one value.
+[paths.grouping]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 # rules applying to every *standardized* path (i.e. every path with its own
 # [paths."..."] entry below) - not every folder under root. See

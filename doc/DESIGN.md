@@ -153,11 +153,26 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 The validator reads its field lists and defaults from the file being checked:
 
-- `paths.attributes.names` declares what fields are valid on a path
-- `paths.attributes.defaults` provides default values
-- `enums.paths.*` define the valid values for enum fields
+- `<ns>.attributes.names` / `<ns>.attributes.required` declare the free-form documentation fields an entry may carry, and which of them may not be left empty
+- `<ns>.grouping.names` / `.multi` / `.required` declare the enum-backed grouping fields
+- `<ns>.attributes.defaults` provides standard-wide default values
+- `enums.<ns>.<field>` defines the valid values for one grouping field
 
 This means the validator doesn't need code edits when the schema evolves - it adapts automatically.
+
+### Entry fields come in three kinds, declared apart
+
+`purpose` and `allow_missing` sat in the same list and read as the same kind of thing, but only one of them does anything: the tool acted on `allow_missing` and `outside_root` while `purpose`, `notes`, `use_for` and the rest were documentation the code never looked at - except that `purpose`, `lifecycle` and `origin` were also hardcoded by name in the validator, contradicting the self-describing claim directly above. So the three kinds are now declared separately (`fs_org_kit/fields.py`):
+
+- **control** - `allow_missing`, `outside_root`. A fixed set owned by the package, never declared in a standard, because they change what the runner and the sandbox actually *do*. Declaring one as a user field is an error, not a silent shadow.
+- **grouping** - enum-backed, listed in `<ns>.grouping.names`, checked against `enums.<ns>.<field>`. Separate from documentation because a closed vocabulary is what makes bucketing entries possible at all; the doc generator emits a "by `<field>`" index per grouping field, which free-form prose could never support.
+- **documentation** - everything else. A string or a list of strings; nothing reads the value, and the doc generator renders whatever is there, in the order declared.
+
+Nothing in the code knows what `purpose` or `lifecycle` mean - including the ones this project's own template ships with. A standard that wants `sensitivity` and `owner` instead gets the same validation and the same rendering.
+
+Both namespaces declare independently, and `folders` deliberately gets no control fields (see "Why there is no `allow_missing` here"). A vocabulary is never shared across namespaces either: `folders` grouping by `lifecycle` needs its own `[enums.folders.lifecycle]`. Sharing by name would make one namespace's edit silently retune the other's validation, and the two are only ever the same vocabulary by the author's choice.
+
+Requiredness moved into the standard with the names (`attributes.required` / `grouping.required`). It has to: a validator that no longer knows `purpose` exists can't insist on it either.
 
 ### Paths use flat TOML keys
 
@@ -280,7 +295,7 @@ A path attribute, independent of `inherit` (a path can be `allow_missing` withou
 
 ### Why `allow_missing` gets a defaults table entry, and other path attributes normally don't
 
-Most path attributes (`purpose`, `notes`, `lifecycle`, ...) have no sensible standard-wide default - there's no universal answer to "what is this folder for." `allow_missing` is the exception: `false` (must exist) is a reasonable default for anything not marked otherwise. Rather than special-case this in code, `paths.attributes.defaults` is a real, generic mechanism - any attribute can have a standard-wide default declared there, resolved with the same precedence as everything else (explicit > inherited > standard-wide default > unset). It's just that in practice, `allow_missing` is currently the only field where declaring one makes sense.
+Most entry fields (`purpose`, `notes`, `lifecycle`, ...) have no sensible standard-wide default - there's no universal answer to "what is this folder for." `allow_missing` is the exception: `false` (must exist) is a reasonable default for anything not marked otherwise. Rather than special-case this in code, `paths.attributes.defaults` is a real, generic mechanism - any attribute can have a standard-wide default declared there, resolved with the same precedence as everything else (explicit > inherited > standard-wide default > unset). It's just that in practice, `allow_missing` is currently the only field where declaring one makes sense.
 
 ### Why this is a separate module (`fs_org_kit/inherit.py`), not inline in the validator
 
@@ -354,7 +369,7 @@ The entries arrive via `validator.resolved_folders` rather than a second resolut
 
 ### Why there is no `allow_missing` here
 
-A cataloged path that isn't on disk is evidence of drift. A reserved name that happens to occur nowhere is not - nothing ever said it had to occur. So a name matching zero folders contributes zero invocations and is reported nowhere, and `folders.attributes.names` has no `allow_missing` to set.
+A cataloged path that isn't on disk is evidence of drift. A reserved name that happens to occur nowhere is not - nothing ever said it had to occur. So a name matching zero folders contributes zero invocations and is reported nowhere, and the `folders` namespace carries no control fields at all - `allow_missing` and `outside_root` both describe one location, which a reserved name isn't.
 
 ## Deferred Decisions
 

@@ -4,11 +4,13 @@ validator.py - checks a TOML file against the fs-org-std grammar defined in
 fs-org-std.template.toml. The file being checked can be named anything; it's
 validated against the *standard*, not against a specific filename.
 
-This does NOT hardcode enums or path attribute lists - it reads them from
-the file itself (enums.paths.*, paths.attributes.names), so it stays
-correct as the standard evolves without needing edits here. Rule catalog
-validation (scope, params, required fields) is driven by discovery.py,
-which reads manifests from disk rather than from an embedded [rules] table.
+This does NOT hardcode field names, enums or requiredness - it reads
+them from the file itself (see fs_org_kit.fields), so it stays correct
+as a standard names its own fields. The only exceptions are the control
+fields `allow_missing` and `outside_root`, which the tool acts on
+itself. Rule catalog validation (scope, params, required fields) is
+driven by discovery.py, which reads manifests from disk rather than
+from an embedded [rules] table.
 
 Usage:
     python -m fs_org_kit.validator path/to/your-file.toml
@@ -86,6 +88,7 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
+from fs_org_kit.fields import STRUCTURAL_KEYS, FieldSpec, parse_field_spec
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, resolve_entries
 from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
 from fs_org_kit.path_keys import OUTSIDE_ROOT_ATTR, comparison_key, escapes_root
@@ -94,7 +97,7 @@ from fs_org_kit.path_patterns import is_pattern, patterns_may_overlap
 # the schema major version this validator understands - bump this
 # deliberately whenever a breaking (major-version) grammar change is made
 # to fs-org-std.template.toml, alongside updating the checks themselves
-SUPPORTED_SCHEMA_MAJOR = 1
+SUPPORTED_SCHEMA_MAJOR = 2
 
 
 # ---------------------------------------------------------------------
@@ -243,11 +246,12 @@ WARNING_CODES = {
     "root-trailing-slash":         ("lint",       "root doesn't end with a trailing slash"),
     "version-format":              ("lint",       "schema_version/standard_version doesn't look like major.minor"),
     "no-paths":                    ("lint",       'no standardized [paths."..."] entries found'),
-    "missing-path-attribute-list": ("validation", "paths.attributes.names is empty or missing"),
+    "missing-path-attribute-list": ("validation", "the paths namespace declares no fields at all"),
     "path-trailing-slash":         ("lint",       "a path key doesn't end with a trailing slash"),
     "reserved-name-prefix":        ("lint",       "a reserved folder name doesn't start with `_`"),
-    "unknown-path-field":          ("validation", "a path entry has a field not in paths.attributes.names"),
-    "empty-list-item":             ("lint",       "a list field (use_for/not_for/...) has empty placeholder entries"),
+    "unknown-path-field":          ("validation", "an entry has a field its namespace never declared"),
+    "missing-grouping-enum":       ("validation", "a grouping field has no vocabulary under enums.<namespace>.<field>"),
+    "empty-list-item":             ("lint",       "a list field has empty placeholder entries"),
     "unknown-param":               ("validation", "an attachment passes a param not declared in the rule manifest"),
     "rule-discovery-warning":      ("validation", "non-fatal issue found during rule discovery (collision, suspicious flag)"),
     "inherit-issue":               ("validation", "non-fatal issue resolving `inherit` (dead exclude_rules entry, etc.)"),
@@ -255,12 +259,11 @@ WARNING_CODES = {
 }
 
 
-# fields on a [paths."..."] / [folders.reserved."..."] entry that must be
-# non-empty in a populated file, vs. ones that are allowed to stay empty
-# (origin is handled separately below - it's a list, not a scalar)
-REQUIRED_ENTRY_FIELDS = ("purpose", "lifecycle")
-OPTIONAL_ENTRY_FIELDS = ("notes", "see_also")
-LIST_ENTRY_FIELDS = ("use_for", "not_for")
+# Which fields an entry may carry, which of them are required, and which
+# are enum-backed all come from the standard itself - see
+# fs_org_kit.fields. Nothing here knows what `purpose` or `lifecycle`
+# mean; only `allow_missing` and `outside_root` are hardcoded, because
+# the tool acts on those two itself.
 
 DEFAULT_RESERVED_PREFIX = "_"
 
@@ -285,8 +288,10 @@ class Validator:
         self.rule_catalog: dict[str, RuleEntry] = {}   # populated by _load_rule_catalog
         self.resolved_paths: dict[str, ResolvedEntry] = {}     # populated by _load_inheritance
         self.resolved_folders: dict[str, ResolvedEntry] = {}   # populated by _load_inheritance
-        self.lifecycle_enum: set[str] = set()
-        self.origin_enum: set[str] = set()
+        # what each namespace declares its entries may carry - parsed once
+        # here, reused by the doc generator (see fs_org_kit.fields)
+        self.path_fields = FieldSpec("paths")      # populated by _load_field_specs
+        self.folder_fields = FieldSpec("folders")  # populated by _load_field_specs
         self.known_path_keys: set[str] = set()
         self.schema_major: int | None = None
         # category -> [(component_id, location_prefix), ...], used to build
@@ -317,7 +322,7 @@ class Validator:
             # v1-shaped checks against a different major version would
             # likely just produce a flood of misleading noise, so stop here
             return self.issues
-        self._load_enums()
+        self._load_field_specs()
         self._load_rule_catalog()
         self._load_inheritance()
         self._check_paths()
@@ -406,13 +411,21 @@ class Validator:
                 f"(supports major version {SUPPORTED_SCHEMA_MAJOR}) - skipping remaining checks",
             )
 
-    # -- enums ------------------------------------------------------------
+    # -- field declarations (attributes / grouping / enums) ------------------
 
-    def _load_enums(self) -> None:
-        enums = self.data.get("enums", {})
-        paths_enums = enums.get("paths", {})
-        self.lifecycle_enum = set(paths_enums.get("lifecycle", {}).keys())
-        self.origin_enum = set(paths_enums.get("origin", {}).keys())
+    def _load_field_specs(self) -> None:
+        """Read what each namespace says its entries may carry, before any
+        entry is checked against it. Both namespaces are read the same way
+        and independently - `folders` can declare a different set of fields
+        from `paths`, with its own vocabularies under `enums.folders.*`."""
+        for namespace, attr in (("paths", "path_fields"), ("folders", "folder_fields")):
+            spec, issues = parse_field_spec(self.data, namespace)
+            setattr(self, attr, spec)
+            for issue in issues:
+                if issue.level == "error":
+                    self.error(issue.location, issue.message)
+                else:
+                    self.warning(issue.location, issue.message, issue.code)
 
     # -- rule catalog (from discovery) -------------------------------------
 
@@ -619,9 +632,13 @@ class Validator:
 
         self._check_rule_instances(paths.get("rules"), "paths", context="single", component_category="paths.rules")
 
-        path_attr_names = set(paths.get("attributes", {}).get("names", []))
-        if not path_attr_names:
-            self.warning("paths.attributes.names", "empty or missing - can't check unknown fields on path entries", "missing-path-attribute-list")
+        if not self.path_fields.is_declared():
+            self.warning(
+                "paths.attributes.names",
+                "no fields declared for path entries (paths.attributes.names / paths.grouping.names) - "
+                "can't check unknown fields",
+                "missing-path-attribute-list",
+            )
 
         for key in self.known_path_keys:
             entry = paths[key]
@@ -656,7 +673,7 @@ class Validator:
             else:
                 resolved = self.resolved_paths.get(key)
                 resolved_attrs = resolved.attributes if resolved else {}
-                self._check_entry_fields(entry, resolved_attrs, loc, known_field_names=path_attr_names)
+                self._check_entry_fields(entry, resolved_attrs, loc, self.path_fields)
 
             resolved = self.resolved_paths.get(key)
             if resolved is not None:
@@ -683,8 +700,6 @@ class Validator:
         folders = self.data.get("folders", {})
         self._check_rule_instances(folders.get("rules"), "folders", context="single", component_category="folders.rules")
 
-        folder_attr_names = set(folders.get("attributes", {}).get("names", []))
-
         reserved = folders.get("reserved", {})
         reserved_prefix = reserved.get("prefix", DEFAULT_RESERVED_PREFIX)
         if not isinstance(reserved_prefix, str) or not reserved_prefix:
@@ -692,6 +707,15 @@ class Validator:
             reserved_prefix = DEFAULT_RESERVED_PREFIX
 
         reserved_names = [k for k in reserved if k not in META_KEYS_UNDER_RESERVED]
+        if reserved_names and not self.folder_fields.is_declared():
+            # every field on these entries is then both unchecked and
+            # unrendered - the generated docs would show the names alone
+            self.warning(
+                "folders.attributes.names",
+                "reserved folder entries exist, but the folders namespace declares no fields "
+                "(folders.attributes.names / folders.grouping.names)",
+                "missing-path-attribute-list",
+            )
         self._check_alphabetical_order(reserved_names, "folders.reserved")
         for name in reserved_names:
             entry = reserved[name]
@@ -707,7 +731,7 @@ class Validator:
 
             resolved = self.resolved_folders.get(name)
             resolved_attrs = resolved.attributes if resolved else {}
-            self._check_entry_fields(entry, resolved_attrs, loc, known_field_names=folder_attr_names)
+            self._check_entry_fields(entry, resolved_attrs, loc, self.folder_fields)
 
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
@@ -848,65 +872,83 @@ class Validator:
     # -- shared entry-field checks (paths + reserved folders) ------------------
 
     def _check_entry_fields(
-        self, raw_entry: dict[str, Any], resolved_attrs: dict[str, Any], loc: str, known_field_names: set[str] | None = None
+        self, raw_entry: dict[str, Any], resolved_attrs: dict[str, Any], loc: str, spec: FieldSpec
     ) -> None:
-        if known_field_names:
+        if spec.is_declared():
+            known = spec.known_names()
             for key in raw_entry:
                 # `rules` is where rule instances attach, `inherit` is the
                 # inheritance sub-table - both structural, neither is a
-                # content field, so neither is part of attributes.names
-                if key in ("rules", "inherit"):
+                # content field, so neither is declared anywhere
+                if key in STRUCTURAL_KEYS:
                     continue
-                if key not in known_field_names:
-                    self.warning(f"{loc}.{key}", "field isn't declared in the namespace's attributes.names", "unknown-path-field")
+                if key not in known:
+                    self.warning(
+                        f"{loc}.{key}",
+                        f"field isn't declared in {spec.namespace}.attributes.names or "
+                        f"{spec.namespace}.grouping.names",
+                        "unknown-path-field",
+                    )
 
-        for field_name in REQUIRED_ENTRY_FIELDS:
-            value = resolved_attrs.get(field_name)
-            if not value:
+        for field_name in spec.required_names:
+            if not resolved_attrs.get(field_name):
                 self.error(f"{loc}.{field_name}", "required field is empty or missing, even after inheritance/defaults")
 
-        lifecycle = resolved_attrs.get("lifecycle")
-        if lifecycle and self.lifecycle_enum and lifecycle not in self.lifecycle_enum:
-            self.error(f"{loc}.lifecycle", f"'{lifecycle}' is not a value in enums.paths.lifecycle")
+        for field_name in spec.doc_names:
+            self._check_documentation_field(resolved_attrs.get(field_name), field_name, loc)
 
-        origin = resolved_attrs.get("origin")
-        self._check_origin_field(origin, loc)
+        for field_name in spec.grouping_names:
+            self._check_grouping_field(resolved_attrs.get(field_name), field_name, loc, spec)
 
-        for field_name in LIST_ENTRY_FIELDS:
-            value = resolved_attrs.get(field_name)
-            if value is None:
-                continue
-            if not isinstance(value, list):
-                self.error(f"{loc}.{field_name}", "must be a list")
-            elif any(not item for item in value):
-                self.warning(f"{loc}.{field_name}", "contains empty placeholder entries", "empty-list-item")
-
-        for flag_name in ("allow_missing", OUTSIDE_ROOT_ATTR):
+        for flag_name in spec.control_names:
             if flag_name in resolved_attrs and not isinstance(resolved_attrs[flag_name], bool):
                 self.error(f"{loc}.{flag_name}", "must be a boolean (true/false) if present")
 
-    def _check_origin_field(self, origin: Any, loc: str) -> None:
-        # origin is a LIST of enums.paths.origin values (content can be
-        # partly self-authored and partly generated, for example) - every
-        # branch below reports via error()/warning(), never raises, even
-        # if origin was written as the wrong type entirely
-        if origin is None:
-            self.error(f"{loc}.origin", "required field is empty or missing")
+    def _check_documentation_field(self, value: Any, field_name: str, loc: str) -> None:
+        """A documentation field is free-form prose - nothing reads its
+        value, so the only structural claim worth making is that it's
+        renderable: a string, or a list of strings."""
+        if value is None:
+            return  # requiredness is checked separately, from the declaration
+        if isinstance(value, str):
             return
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            self.error(f"{loc}.{field_name}", "must be a string or a list of strings")
+        elif any(not item for item in value):
+            self.warning(f"{loc}.{field_name}", "contains empty placeholder entries", "empty-list-item")
 
-        if not isinstance(origin, list):
-            self.error(f"{loc}.origin", "must be a list of values from enums.paths.origin, e.g. [\"self\"]")
-            return
+    def _check_grouping_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
+        """A grouping field's whole point is a closed vocabulary - entries
+        only sort into buckets if they agree on what the buckets are. A
+        field declared in `<namespace>.grouping.multi` holds a LIST of
+        values (content that's partly self-authored and partly generated,
+        say); every other one holds exactly one."""
+        if value is None:
+            return  # requiredness is checked separately, from the declaration
 
-        if not origin:
-            self.error(f"{loc}.origin", "required field is empty or missing")
-            return
+        enum_loc = spec.enum_location(field_name)
+        allowed = spec.grouping_values.get(field_name, frozenset())
 
-        for value in origin:
-            if not isinstance(value, str):
-                self.error(f"{loc}.origin", f"'{value}' should be a string from enums.paths.origin")
-            elif self.origin_enum and value not in self.origin_enum:
-                self.error(f"{loc}.origin", f"'{value}' is not a value in enums.paths.origin")
+        if spec.is_multi(field_name):
+            if not isinstance(value, list):
+                self.error(f"{loc}.{field_name}", f'must be a list of values from {enum_loc}, e.g. ["self"]')
+                return
+            values = value
+        else:
+            if isinstance(value, list):
+                self.error(
+                    f"{loc}.{field_name}",
+                    f"must be a single value from {enum_loc} - add it to {spec.namespace}.grouping.multi "
+                    f"to allow several",
+                )
+                return
+            values = [value]
+
+        for item in values:
+            if not isinstance(item, str):
+                self.error(f"{loc}.{field_name}", f"'{item}' should be a string from {enum_loc}")
+            elif allowed and item not in allowed:
+                self.error(f"{loc}.{field_name}", f"'{item}' is not a value in {enum_loc}")
 
 
 def _parse_version(value: str) -> tuple[int, ...] | None:
