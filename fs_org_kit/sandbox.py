@@ -55,9 +55,9 @@ Always writable:  the rule's own cache directory (when it has one), the
 system temp directory, and the null/tty devices.
 
 Additionally writable in --fix mode:  root, and the invocation's own
-target path(s). Targets are listed separately because a path may be
-outside root - that's what `outside_root` in the standard declares, and
-this is one of the things it declares it *for* (fs_org_kit.path_keys).
+target path(s). Targets are listed separately because a catalog key may
+name a location outside root (fs_org_kit.path_keys), which root alone
+would not cover.
 
 A checker therefore gets no writable location beyond its cache and temp,
 which is the protocol's "checkers never write" rule, finally enforced.

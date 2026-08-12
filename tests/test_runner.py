@@ -37,57 +37,27 @@ class TestResolveActiveTargets:
     def test_existing_path_is_active(self, tmp_path):
         real_dir = tmp_path / "exists"
         real_dir.mkdir()
-        resolved, _ = resolve_entries(
-            {"exists/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
+        resolved, _ = resolve_entries({"exists/": {"purpose": "P"}}, "paths")
+        active = _resolve_active_targets(resolved, tmp_path)
         assert [k for k, _ in active] == ["exists/"]
-        assert missing == []
 
-    def test_missing_with_allow_missing_is_silently_skipped(self, tmp_path):
-        resolved, _ = resolve_entries(
-            {"gone/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"], "allow_missing": True}},
-            {}, "paths",
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
-        assert active == []
-        assert missing == []  # not reported - that's the whole point of allow_missing
-
-    def test_missing_without_allow_missing_is_reported(self, tmp_path):
-        resolved, _ = resolve_entries(
-            {"gone/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
-        assert active == []
-        assert missing == ["gone/"]
+    def test_a_path_that_isnt_on_disk_is_simply_skipped(self, tmp_path):
+        """A catalog says where things go, not that every location
+        currently exists - whether one should is a rule's question."""
+        resolved, _ = resolve_entries({"gone/": {"purpose": "P"}}, "paths")
+        assert _resolve_active_targets(resolved, tmp_path) == []
 
     def test_pattern_key_expands_to_every_real_match(self, tmp_path):
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         (tmp_path / "clients" / "globex").mkdir(parents=True)
-        resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
+        resolved, _ = resolve_entries({"clients/*/": {"purpose": "P"}}, "paths")
+        active = _resolve_active_targets(resolved, tmp_path)
         assert sorted(p.name for _, p in active) == ["acme", "globex"]
         assert all(k == "clients/*/" for k, _ in active)
-        assert missing == []
 
-    def test_pattern_key_zero_matches_with_allow_missing_is_silently_skipped(self, tmp_path):
-        resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"], "allow_missing": True}},
-            {}, "paths",
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
-        assert active == []
-        assert missing == []
-
-    def test_pattern_key_zero_matches_without_allow_missing_is_reported(self, tmp_path):
-        resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
-        )
-        active, missing = _resolve_active_targets(resolved, tmp_path)
-        assert active == []
-        assert missing == ["clients/*/"]
+    def test_pattern_key_matching_nothing_is_skipped_the_same_way(self, tmp_path):
+        resolved, _ = resolve_entries({"clients/*/": {"purpose": "P"}}, "paths")
+        assert _resolve_active_targets(resolved, tmp_path) == []
 
     def test_literal_override_excluded_from_patterns_own_expansion(self, tmp_path):
         """clients/acme/ has its own explicit catalog entry - the
@@ -96,36 +66,28 @@ class TestResolveActiveTargets:
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         (tmp_path / "clients" / "globex").mkdir(parents=True)
         raw = {
-            "clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]},
-            "clients/acme/": {
-                "purpose": "Acme", "lifecycle": "ongoing", "origin": ["self"],
-                "inherit": {"attributes": "clients/*/"},
-            },
+            "clients/*/": {"purpose": "P"},
+            "clients/acme/": {"purpose": "Acme", "inherit": {"attributes": "clients/*/"}},
         }
-        resolved, _ = resolve_entries(raw, {}, "paths")
-        active, missing = _resolve_active_targets(resolved, tmp_path)
+        resolved, _ = resolve_entries(raw, "paths")
+        active = _resolve_active_targets(resolved, tmp_path)
         assert sorted(active) == sorted([
             ("clients/*/", (tmp_path / "clients" / "globex").resolve()),
             ("clients/acme/", (tmp_path / "clients" / "acme").resolve()),
         ])
-        assert missing == []
 
-    def test_pattern_fully_overridden_by_literals_is_not_missing(self, tmp_path):
-        """Every real match is claimed by its own literal entry - the
-        pattern itself contributes zero targets, but that's not
-        "missing": the folders exist, just cataloged elsewhere."""
+    def test_pattern_fully_overridden_by_literals_yields_only_the_literals(self, tmp_path):
+        """Every real match is claimed by its own literal entry, so the
+        pattern itself contributes no separate target - the folder is
+        invoked once, through the entry that names it."""
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         raw = {
-            "clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]},
-            "clients/acme/": {
-                "purpose": "Acme", "lifecycle": "ongoing", "origin": ["self"],
-                "inherit": {"attributes": "clients/*/"},
-            },
+            "clients/*/": {"purpose": "P"},
+            "clients/acme/": {"purpose": "Acme", "inherit": {"attributes": "clients/*/"}},
         }
-        resolved, _ = resolve_entries(raw, {}, "paths")
-        active, missing = _resolve_active_targets(resolved, tmp_path)
+        resolved, _ = resolve_entries(raw, "paths")
+        active = _resolve_active_targets(resolved, tmp_path)
         assert active == [("clients/acme/", (tmp_path / "clients" / "acme").resolve())]
-        assert missing == []
 
 
 class TestCollectInvocations:
@@ -135,28 +97,27 @@ class TestCollectInvocations:
         data = {
             "paths": {
                 "media/": {
-                    "purpose": "M", "lifecycle": "ongoing", "origin": ["self"],
+                    "purpose": "M",
                     "rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": ["jpg"]}}]},
                 }
             }
         }
-        resolved, _ = resolve_entries(data["paths"], {}, "paths")
-        invocations, missing = collect_invocations(data, tmp_path, catalog, resolved)
+        resolved, _ = resolve_entries(data["paths"], "paths")
+        invocations = collect_invocations(data, tmp_path, catalog, resolved)
         assert len(invocations) == 1
         assert invocations[0].rule_id == "file-extensions-v1"
-        assert missing == []
 
     def test_paths_rules_blanket_applies_to_every_cataloged_path(self, tmp_path, catalog):
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
         paths = {
-            "a/": {"purpose": "A", "lifecycle": "ongoing", "origin": ["self"]},
-            "b/": {"purpose": "B", "lifecycle": "ongoing", "origin": ["self"]},
+            "a/": {"purpose": "A"},
+            "b/": {"purpose": "B"},
             "rules": {"file-extensions-v1": [{"reason": "blanket", "params": {"allowed": ["jpg"]}}]},
         }
         data = {"paths": paths}
-        resolved, _ = resolve_entries({k: v for k, v in paths.items() if k != "rules"}, {}, "paths")
-        invocations, _ = collect_invocations(data, tmp_path, catalog, resolved)
+        resolved, _ = resolve_entries({k: v for k, v in paths.items() if k != "rules"}, "paths")
+        invocations = collect_invocations(data, tmp_path, catalog, resolved)
         assert len(invocations) == 2  # one per cataloged path
 
     def test_pattern_key_produces_one_invocation_per_real_match(self, tmp_path, catalog):
@@ -164,39 +125,38 @@ class TestCollectInvocations:
         (tmp_path / "clients" / "globex").mkdir(parents=True)
         paths = {
             "clients/*/": {
-                "purpose": "P", "lifecycle": "ongoing", "origin": ["self"],
+                "purpose": "P",
                 "rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": ["jpg"]}}]},
             }
         }
         data = {"paths": paths}
-        resolved, _ = resolve_entries(paths, {}, "paths")
-        invocations, missing = collect_invocations(data, tmp_path, catalog, resolved)
+        resolved, _ = resolve_entries(paths, "paths")
+        invocations = collect_invocations(data, tmp_path, catalog, resolved)
         assert len(invocations) == 2  # one per real match, sharing the same rule attachment
         assert {inv.target_path.name for inv in invocations} == {"acme", "globex"}
         assert all(inv.rule_id == "file-extensions-v1" for inv in invocations)
-        assert missing == []
 
     def test_paths_cross(self, tmp_path, catalog):
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
         data = {
             "paths": {
-                "a/": {"purpose": "A", "lifecycle": "ongoing", "origin": ["self"]},
-                "b/": {"purpose": "B", "lifecycle": "ongoing", "origin": ["self"]},
+                "a/": {"purpose": "A"},
+                "b/": {"purpose": "B"},
                 "cross": [{"paths": ["a/", "b/"], "rules": {"basename-sync-v1": [{"reason": "r", "params": {"mode": "shared"}}]}}],
             }
         }
         resolved, _ = resolve_entries(
-            {k: v for k, v in data["paths"].items() if k not in ("cross",)}, {}, "paths"
+            {k: v for k, v in data["paths"].items() if k != "cross"}, "paths"
         )
-        invocations, _ = collect_invocations(data, tmp_path, catalog, resolved)
+        invocations = collect_invocations(data, tmp_path, catalog, resolved)
         assert len(invocations) == 1
         assert invocations[0].target_paths is not None
         assert len(invocations[0].target_paths) == 2
 
     def test_folders_rules_blanket_targets_root(self, tmp_path, catalog):
         data = {"paths": {}, "folders": {"rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": ["jpg"]}}]}}}
-        invocations, _ = collect_invocations(data, tmp_path, catalog, {})
+        invocations = collect_invocations(data, tmp_path, catalog, {})
         assert len(invocations) == 1
         assert invocations[0].target_path == tmp_path
 
@@ -214,11 +174,11 @@ class TestCollectInvocations:
                 },
                 "reserved": {
                     "prefix": "_",
-                    "_archive": {"purpose": "p", "lifecycle": "archival", "origin": ["self"]},
+                    "_archive": {"purpose": "p"},
                 },
             },
         }
-        invocations, _ = collect_invocations(data, tmp_path, catalog, {})
+        invocations = collect_invocations(data, tmp_path, catalog, {})
         assert len(invocations) == 1
         assert invocations[0].params["cataloged"] == ["_archive"]
 
@@ -228,23 +188,20 @@ class TestCollectInvocations:
             "tags": {"media": {"paths": ["a/", "b/"]}},
             "folders": {"rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": {"ref": "tags.media.paths"}}}]}},
         }
-        invocations, _ = collect_invocations(data, tmp_path, catalog, {})
+        invocations = collect_invocations(data, tmp_path, catalog, {})
         assert invocations[0].params["allowed"] == ["a/", "b/"]
 
-    def test_missing_path_excluded_from_invocations(self, tmp_path, catalog):
-        # path is cataloged but doesn't exist on disk, and isn't allow_missing
+    def test_a_cataloged_path_absent_from_disk_contributes_nothing(self, tmp_path, catalog):
         data = {
             "paths": {
                 "gone/": {
-                    "purpose": "G", "lifecycle": "ongoing", "origin": ["self"],
+                    "purpose": "G",
                     "rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": ["jpg"]}}]},
                 }
             }
         }
-        resolved, _ = resolve_entries(data["paths"], {}, "paths")
-        invocations, missing = collect_invocations(data, tmp_path, catalog, resolved)
-        assert invocations == []
-        assert missing == ["gone/"]
+        resolved, _ = resolve_entries(data["paths"], "paths")
+        assert collect_invocations(data, tmp_path, catalog, resolved) == []
 
 
 class TestReservedFolderInvocations:
@@ -263,8 +220,8 @@ class TestReservedFolderInvocations:
         reserved = self.RESERVED if reserved is None else reserved
         data = {"paths": {}, "folders": {"reserved": reserved}}
         entries = {k: v for k, v in reserved.items() if k != "prefix"}
-        resolved_folders, _ = resolve_entries(entries, {}, "folders.reserved")
-        return collect_invocations(data, tmp_path, catalog, {}, resolved_folders)[0]
+        resolved_folders, _ = resolve_entries(entries, "folders.reserved")
+        return collect_invocations(data, tmp_path, catalog, {}, resolved_folders)
 
     def test_one_invocation_per_matching_folder(self, tmp_path, catalog):
         (tmp_path / "prj" / "_arch").mkdir(parents=True)
@@ -285,7 +242,7 @@ class TestReservedFolderInvocations:
 
     def test_entry_without_rules_is_skipped(self, tmp_path, catalog):
         (tmp_path / "_arch").mkdir()
-        reserved = {"prefix": "_", "_arch": {"purpose": "P", "lifecycle": "archival", "origin": ["self"]}}
+        reserved = {"prefix": "_", "_arch": {"purpose": "P"}}
         assert self._collect(tmp_path, catalog, reserved) == []
 
     def test_coexists_with_a_path_entry_for_the_same_folder(self, tmp_path, catalog):
@@ -299,10 +256,10 @@ class TestReservedFolderInvocations:
             }
         }
         data = {"paths": paths, "folders": {"reserved": self.RESERVED}}
-        resolved_paths, _ = resolve_entries(paths, {}, "paths")
+        resolved_paths, _ = resolve_entries(paths, "paths")
         entries = {k: v for k, v in self.RESERVED.items() if k != "prefix"}
-        resolved_folders, _ = resolve_entries(entries, {}, "folders.reserved")
-        invocations, _ = collect_invocations(data, tmp_path, catalog, resolved_paths, resolved_folders)
+        resolved_folders, _ = resolve_entries(entries, "folders.reserved")
+        invocations = collect_invocations(data, tmp_path, catalog, resolved_paths, resolved_folders)
         assert {inv.rule_id for inv in invocations} == {"empty-v1", "file-extensions-v1"}
         assert {inv.target_path for inv in invocations} == {tmp_path / "prj" / "_arch"}
 
@@ -408,18 +365,24 @@ class TestStalePlanIsSkipped:
         std_path.write_text(f'''root = "{tmp_path}/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "lifecycle", "origin", "allow_missing"]
-[paths.attributes.defaults]
-allow_missing = false
+names = ["purpose"]
+required = ["purpose"]
+
+[paths.attributes.group]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 [paths."real/"]
 purpose = "Real"
+
+[paths."real/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -432,17 +395,15 @@ reason = "r"
 [paths.cross.rules.basename-sync-v1.params]
 mode = "shared"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
-[folders]
 [folders.attributes]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 ''')
         exit_code = main([str(std_path), "--no-color"])
@@ -524,30 +485,32 @@ class TestMainIntegration:
         std_path.write_text(f'''root = "{tmp_path}/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "lifecycle", "origin", "allow_missing"]
+names = ["purpose"]
+required = ["purpose"]
 
-[paths.attributes.defaults]
-allow_missing = false
+[paths.attributes.group]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
+
 
 {extra_toml}
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
-[folders]
 [folders.attributes]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 ''')
         return std_path
@@ -558,6 +521,8 @@ names = []
         std_path = self._write_standard(tmp_path, '''
 [paths."clean/"]
 purpose = "Clean"
+
+[paths."clean/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -576,6 +541,8 @@ allowed = ["jpg"]
         std_path = self._write_standard(tmp_path, '''
 [paths."dirty/"]
 purpose = "Dirty"
+
+[paths."dirty/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -588,23 +555,22 @@ allowed = ["jpg"]
         exit_code = main([str(std_path), "--no-color"])
         assert exit_code == 1
 
-    def test_missing_path_without_allow_missing_exits_one(self, tmp_path):
+    def test_a_cataloged_path_absent_from_disk_exits_zero(self, tmp_path):
+        """Nothing to run, nothing wrong: whether a location should exist
+        is a rule's question, not the runner's."""
         std_path = self._write_standard(tmp_path, '''
 [paths."gone/"]
 purpose = "Gone"
-lifecycle = "ongoing"
-origin = ["self"]
-''')
-        exit_code = main([str(std_path), "--no-color"])
-        assert exit_code == 1
 
-    def test_missing_path_with_allow_missing_exits_zero(self, tmp_path):
-        std_path = self._write_standard(tmp_path, '''
-[paths."gone/"]
-purpose = "Gone"
+[paths."gone/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-allow_missing = true
+
+[[paths."gone/".rules.file-extensions-v1]]
+reason = "r"
+
+[paths."gone/".rules.file-extensions-v1.params]
+allowed = ["jpg"]
 ''')
         exit_code = main([str(std_path), "--no-color"])
         assert exit_code == 0
@@ -617,16 +583,18 @@ allow_missing = true
 
     def test_inheritance_follows_a_real_filesystem_move(self, tmp_path):
         """The core PARA scenario: moving the real folder needs zero
-        standard edits, as long as both sides are allow_missing."""
+        standard edits - whichever side isn't there right now is simply
+        skipped."""
         (tmp_path / "active" / "proj").mkdir(parents=True)
         (tmp_path / "active" / "proj" / "a.jpg").touch()
 
         std_path = self._write_standard(tmp_path, '''
 [paths."active/proj/"]
 purpose = "Active"
+
+[paths."active/proj/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-allow_missing = true
 
 [[paths."active/proj/".rules.file-extensions-v1]]
 reason = "r"
@@ -634,12 +602,12 @@ reason = "r"
 [paths."active/proj/".rules.file-extensions-v1.params]
 allowed = ["jpg"]
 
-[paths."archive/proj/"]
+[paths."archive/proj/".group]
 lifecycle = "archival"
-allow_missing = true
 
 [paths."archive/proj/".inherit]
 attributes = "active/proj/"
+group = "active/proj/"
 rules = "active/proj/"
 ''')
         assert main([str(std_path), "--no-color"]) == 0
@@ -664,6 +632,8 @@ rules = "active/proj/"
         std_path = self._write_standard(tmp_path, '''
 [paths."projects/"]
 purpose = "Projects"
+
+[paths."projects/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -677,9 +647,11 @@ destination = "archive"
 
 [paths."projects/*/"]
 purpose = "One project"
+
+[paths."projects/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-allow_missing = true
+
 
 [[paths."projects/*/".rules.file-extensions-v1]]
 reason = "r"

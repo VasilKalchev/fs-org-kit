@@ -153,11 +153,31 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 The validator reads its field lists and defaults from the file being checked:
 
-- `paths.attributes.names` declares what fields are valid on a path
-- `paths.attributes.defaults` provides default values
-- `enums.paths.*` define the valid values for enum fields
+- `<ns>.attributes.names` / `.required` declare the free-form attributes an entry may carry, and which of them may not be left empty
+- `<ns>.attributes.group.names` / `.multi` / `.required` declare the enum-backed grouping fields
+- `enums.group.<field>` (and optionally `enums.attributes.<field>`) defines the valid values for one field
 
 This means the validator doesn't need code edits when the schema evolves - it adapts automatically.
+
+### An entry is its fields, a `group` table, and a `rules` table
+
+`purpose` and `allow_missing` used to sit side by side in a flat entry and read as the same kind of thing, though only one of them did anything. That's resolved from both ends now: the fields the tool acted on are gone (below), and what remains is split by who reads it.
+
+| Where | Holds | Declared by |
+|---|---|---|
+| the entry itself | free-form prose: a string, or a list of strings | `<ns>.attributes.names` / `.required` |
+| `<entry>.group` | enum-backed values, checked against `enums.group.<field>` | `<ns>.attributes.group.names` / `.multi` / `.required` |
+| `<entry>.rules` | rule attachments | nothing - they're references to rules on disk |
+
+Grouping is separate from documentation because a closed vocabulary is what makes bucketing entries possible at all: the doc generator emits a "by `<field>`" index per grouping field, which free-form prose could never support.
+
+Nothing in the code knows what `purpose` or `lifecycle` mean - including the ones this project's own template ships with. A standard that wants `sensitivity` and `owner` instead gets the same validation and the same rendering; `group`, `rules` and `inherit` are the only names an entry can't use for a field. Requiredness moved into the standard along with the names: a validator that no longer knows `purpose` exists can't insist on it either.
+
+Field lists are per namespace, so `folders` can carry a different set from `paths`. Vocabularies are not: `enums.group.lifecycle` is one table both namespaces read, because a value set describes the field, not who carries it.
+
+### Nothing keyed on a field's name, including in the doc generator
+
+The corollary of the above, and the one place it was violated: the generated docs used to draw a Mermaid diagram of the `lifecycle` vocabulary, recognized by its name and its four expected values. That's app behavior keyed on a name the user chose, so it's gone - the enums section renders every vocabulary the same way, under its dotted key. A standard naming the same concept `stage` was already getting nothing from it.
 
 ### Paths use flat TOML keys
 
@@ -226,7 +246,7 @@ Two decisions shaped it:
 
 **Capabilities are declared in the manifest, not special-cased in the runner.** `basename-sync-v1`'s fixer shells out to a user-provided script, so it declares `[sandbox] subprocess = true`; a fixer whose destination is a user-configured path the core can't know in advance declares `unrestricted_writes`. This is the same shape as `uses_cache`: the rule states a need, the core grants it uniformly, and the runner keeps no per-rule knowledge. It also puts the grant somewhere a reviewer reads before trusting a rule.
 
-The writable set is `{cache, temp}` for a checker, and additionally `{root} ∪ {targets}` for a fixer. Targets are listed separately from root because a path may be outside root - that's what `outside_root` declares, and this is one of the things it declares it *for*.
+The writable set is `{cache, temp}` for a checker, and additionally `{root} ∪ {targets}` for a fixer. Targets are listed separately from root because a catalog key may name a location outside it.
 
 A violation raises an exception deriving from `BaseException` rather than `Exception`, since rule scripts routinely wrap their work in `except Exception` and a swallowed violation would be reported as an ordinary failure or as success. Violations are also recorded, so even `except BaseException` can't turn one into a clean result.
 
@@ -272,15 +292,11 @@ exclude_rules = ["staleness-check-v1"]
 - Chains are allowed (`C` inherits from `B` inherits from `A`); cycles are a validation error.
 - If the same rule ID is both inherited (and not excluded) and separately declared on the entry itself, **both instances apply** - nothing silently overrides. To change an inherited rule's params, exclude it and redeclare it fresh. This was a deliberate choice to avoid "invisible" behavior: a config that looks like two declarations should behave like two declarations.
 
-### `allow_missing`
+### A cataloged path that isn't on disk is skipped, not reported
 
-A path attribute, independent of `inherit` (a path can be `allow_missing` without inheriting anything, and vice versa). Marks a cataloged path as one that may not currently exist on disk. Resolved at runtime by the runner (not the validator, which never touches the filesystem) - a missing path without this flag is reported as a problem and fails the run; with it, the runner silently skips invoking any rules for that path.
+The runner invokes rules against the paths that exist right now, and passes over the ones that don't. There was an `allow_missing` flag for this, defaulting to "must exist", so an absent path failed the run unless marked - which made state-via-location schemes (a project moving between `active/x/` and `archive/x/`) depend on remembering to mark *both* sides, since either could be the absent one at any moment.
 
-**Both sides of a state-varying pair need `allow_missing = true`, not just the "unusual" one.** Since only one of two alternate locations exists at any given time, whichever one *isn't* currently real needs to not be flagged as a problem - and that could be either side depending on current state. Marking only the archive location, say, works fine until the folder is *in* the archive location and the active one goes missing instead.
-
-### Why `allow_missing` gets a defaults table entry, and other path attributes normally don't
-
-Most path attributes (`purpose`, `notes`, `lifecycle`, ...) have no sensible standard-wide default - there's no universal answer to "what is this folder for." `allow_missing` is the exception: `false` (must exist) is a reasonable default for anything not marked otherwise. Rather than special-case this in code, `paths.attributes.defaults` is a real, generic mechanism - any attribute can have a standard-wide default declared there, resolved with the same precedence as everything else (explicit > inherited > standard-wide default > unset). It's just that in practice, `allow_missing` is currently the only field where declaring one makes sense.
+The catalog describes where things go, not which locations exist at this instant. "This path should exist" is a real thing to want checked, but it's a question about the filesystem, which is what rules are for - so it belongs in a rule, attached where it applies, not in a flag on every entry. Until such a rule exists, absence is simply not reported.
 
 ### Why this is a separate module (`fs_org_kit/inherit.py`), not inline in the validator
 
@@ -296,19 +312,15 @@ Same reasoning as `discovery.py` for rules: resolution is needed by both the val
 
 `root` is the tree the standard governs, and a catalog key is relative to it. But a personal filesystem doesn't stop at one tree: `~/.config/`, `/etc/`, an external drive's mount point are all worth cataloging and attaching rules to, and none of them sit under a `root` of, say, `~/usr/`.
 
-### Why it's an opt-in flag rather than just accepting an absolute key
+### Why there's no flag for it
 
-It was already "working", wrongly. `Path("/home/me/usr") / "/etc/nginx"` is `/etc/nginx` - Python's path join **discards** the left side when the right is absolute. So an absolute key typo'd into a standard would already have sent rules walking somewhere far outside root, with nothing anywhere saying so. `outside_root = true` turns a silent escape into a deliberate one, which is the same stance `overrides_bundled` takes for rule identity: the surprising thing is rejected by default, and one explicit field on the record opts out.
+There was one - `outside_root = true`, required on any key that escaped root - and it existed because the escape was silent and easy to write by accident: `Path("/home/me/usr") / "/etc/nginx"` is `/etc/nginx`, since Python's path join **discards** the left side when the right is absolute.
 
-Three routes escape and all three need the flag - absolute (`/etc/`), home-relative (`~/.config/`), and walking up (`../sibling/`). The `..` case matters most: it escapes just as completely and is the easiest to write by accident.
-
-### Why it is never inherited or defaulted
-
-Hardcoded, like `reason`. A flag whose only job is to make one thing deliberate is worth nothing if it can arrive from somewhere else - a one-word edit to an unrelated entry must not be able to widen the set of directories the tool will walk into and, under `--fix`, write to. Arriving via `inherit` or `paths.attributes.defaults` is an error rather than a quiet acceptance.
+That's a sharp edge in path handling, and the fix for it is `fs_org_kit/path_keys.resolve_key` being the only place a key becomes a real path - not a field every escaping entry has to carry. The flag asked the standard to restate what the key already says, and made a second thing to get wrong (it was un-inheritable, un-defaultable, and separately mirrored on `[[paths.cross]]`). A key names a location; the tool goes there.
 
 ### What it feeds
 
-`fs_org_kit/path_keys.py` owns `resolve_key`, the single place a key becomes a real path, so all three escape routes are handled identically everywhere rather than being re-derived per consumer. The sandbox reads the flag's consequence: an out-of-root target is a place a fixer may write, and the policy can only know that because the standard said so.
+`resolve_key` handles relative, absolute, `~`-relative and `..`-walking keys identically for every consumer, so no caller re-derives it and no bare join appears anywhere else. The sandbox confines a fixer's writes to root plus its own targets, and a target outside root is simply one of those targets.
 
 Overlap detection compares keys in a normalized form, so `/srv/*/` and `srv/*/` are correctly *not* a collision while `~/x/` and `/home/me/x/` still are.
 
@@ -328,15 +340,15 @@ One pattern entry's attributes and rule attachments apply identically to every r
 
 ### Why zero matches isn't automatically "missing"
 
-A literal path defaults to "must exist" (`allow_missing = false`). A pattern matching nothing right now is completely normal glob behavior, not evidence of a broken standard - so a pattern key uses the exact same `allow_missing` attribute a literal key already has, with the exact same semantics, rather than inventing a second "pattern matched nothing" concept. `allow_missing = true` on a pattern key means "it's fine if this currently matches nothing"; the default (`false`) still reports zero real matches as a problem.
+A pattern matching nothing right now is completely normal glob behavior, not evidence of a broken standard - and it needs no separate concept, because a literal path that isn't on disk is skipped the same way. Zero matches contributes zero invocations, and nothing is reported.
 
 ### Overlap between two catalog keys: validator work, not runner work
 
-Two catalog keys that could both match the same real folder is a structural problem - whose `purpose`/`lifecycle`/rules would actually apply is ambiguous. Unlike "does this pattern match anything on disk right now" (real filesystem state, runner-only, same as `allow_missing`), "could these two catalog KEY STRINGS ever describe the same location" is a property of the two strings alone, computable with zero filesystem access - so it's checked by the validator (`Validator._check_pattern_overlaps` / `path_patterns.patterns_may_overlap`), not deferred to the runner.
+Two catalog keys that could both match the same real folder is a structural problem - whose `purpose`/`lifecycle`/rules would actually apply is ambiguous. Unlike "does this pattern match anything on disk right now" (real filesystem state, runner-only), "could these two catalog KEY STRINGS ever describe the same location" is a property of the two strings alone, computable with zero filesystem access - so it's checked by the validator (`Validator._check_pattern_overlaps` / `path_patterns.patterns_may_overlap`), not deferred to the runner.
 
 The check is deliberately conservative (segment-by-segment comparison; `[abc]` vs `[xyz]` at the same position are treated as "may overlap" even though they could never actually share a character; `**`'s variable-length matching is approximated via each side's fixed prefix before its first `**`, not proven exactly). A false positive here costs a human a rename; a false negative would be a silently-broken standard where two entries fight over the same real folder and nothing ever says so.
 
-Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.attributes` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared attributes/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
+Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.attributes`, `inherit.group` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared fields/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
 
 When the runner actually expands a pattern against real disk, any real match that's *also* its own explicit literal catalog entry is excluded from that pattern's own expansion - since the validator already guarantees any such overlap was sanctioned, the literal entry's own resolved attributes/rules (already including whatever it inherited from the pattern) are authoritative for that one folder, not a second, separate invocation via the pattern. A pattern whose real matches are *all* claimed this way still isn't "missing" - the folders exist, they're just individually cataloged elsewhere.
 
@@ -352,9 +364,9 @@ The entries arrive via `validator.resolved_folders` rather than a second resolut
 
 `prj/_arch/` can be both its own `[paths."..."]` entry and an occurrence of the reserved name `_arch`. Both sets of rules run against it. They answer different questions - "what `_arch` means anywhere" and "what this one location is" - and suppressing one would mean picking which question the standard is allowed to ask. This is the same coexistence a per-path attachment already has with `[[folders.rules]]`, and the opposite of the pattern-vs-literal rule, where the ambiguity is over a single set of attributes rather than two independent statements.
 
-### Why there is no `allow_missing` here
+### Why a name matching nothing is not a problem
 
-A cataloged path that isn't on disk is evidence of drift. A reserved name that happens to occur nowhere is not - nothing ever said it had to occur. So a name matching zero folders contributes zero invocations and is reported nowhere, and `folders.attributes.names` has no `allow_missing` to set.
+Nothing ever said a reserved name had to occur anywhere. A name matching zero folders contributes zero invocations and is reported nowhere - the same treatment a cataloged path that isn't on disk gets, for the same reason.
 
 ## Deferred Decisions
 

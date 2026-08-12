@@ -108,7 +108,7 @@ class TestPolicyForInvocation:
         assert str(target.resolve()) in policy.writable
 
     def test_out_of_root_target_is_writable_for_a_fixer(self, tmp_path):
-        """An outside_root path is exactly the case root alone can't cover."""
+        """A target outside root is exactly the case root alone can't cover."""
         root = tmp_path / "root"
         outside = tmp_path / "elsewhere"
         policy = Policy.for_invocation(

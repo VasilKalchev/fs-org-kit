@@ -24,8 +24,8 @@ glob metacharacter (*, ?, [), since a literal path can't legitimately
 contain those characters anyway (see naming-pattern-v1's portable-
 charset doc comment, and illegal-names-v1's history).
 
-Two very different operations live here, deliberately kept apart, same
-reasoning as `allow_missing` in DESIGN.md:
+Two very different operations live here, deliberately kept apart along
+the validator/runner line DESIGN.md draws:
 
 - Overlap detection (`patterns_may_overlap`) is validator work - a
   purely static comparison of two catalog KEY STRINGS, no filesystem
@@ -45,9 +45,9 @@ reasoning as `allow_missing` in DESIGN.md:
 - Expansion (`expand_pattern`) is runner work - it walks the real
   filesystem and can only run once there's a real directory tree to
   walk. The validator never does this (see doc/DESIGN.md - "Validator
-  is read-only"). Whether a pattern matching zero real folders is a
-  problem follows the same `allow_missing` attribute a literal path
-  already uses - no separate concept needed.
+  is read-only"). A pattern matching zero real folders contributes no
+  invocations and is reported nowhere - the same treatment a literal
+  path that isn't on disk gets, so there's no separate concept here.
 """
 
 from __future__ import annotations
@@ -108,12 +108,11 @@ def expand_pattern(root_dir: Path, key: str) -> list[Path]:
     Non-directory matches are excluded - a [paths."..."] entry is always a
     folder.
 
-    `key` is normally a pattern relative to root_dir. It may also be an
-    out-of-root pattern (see fs_org_kit.path_keys - the entry has to
-    declare outside_root for the validator to have allowed it here), in
-    which case globbing starts from the filesystem anchor instead:
-    Path.glob rejects an absolute pattern outright, so the pattern is
-    split into its anchor and the rest."""
+    `key` is normally a pattern relative to root_dir. It may also name
+    somewhere outside root (see fs_org_kit.path_keys), in which case
+    globbing starts from the filesystem anchor instead: Path.glob
+    rejects an absolute pattern outright, so the pattern is split into
+    its anchor and the rest."""
     pattern = key.rstrip("/")
     base = Path(pattern).expanduser() if pattern.startswith("~") else Path(pattern)
     if base.is_absolute():

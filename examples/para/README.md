@@ -79,7 +79,7 @@ paths      7     0       0      7
 ```
 
 Seven cataloged paths, all clean. Try breaking one — set
-`lifecycle = "eternal"` on `[paths."areas/"]`, or delete a `reason` from
+`lifecycle = "eternal"` in `[paths."areas/".group]`, or delete a `reason` from
 a rule attachment — and run it again to see what it catches.
 
 ## 2. Check the tree
@@ -210,8 +210,6 @@ Things this example deliberately leaves out — see
 [`fs-org-std.template.toml`](../../fs-org-std.template.toml) for the
 full grammar and [`doc/RULES.md`](../../doc/RULES.md) for writing rules:
 
-- **`allow_missing`** — catalog `projects/x/` *and* `archive/x/`, mark
-  both, and moving the real folder between them needs no edit here.
 - **Blanket attachments** — `[[paths.rules.<name>]]` runs a rule on
   every cataloged path; `[[folders.rules.<name>]]` on every folder under
   root, cataloged or not.

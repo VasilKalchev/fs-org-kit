@@ -44,11 +44,11 @@ knowledge of what any param means.
 A [paths."..."] key may be a glob pattern instead of a literal path -
 see fs_org_kit.path_patterns - expanded here against the real
 filesystem into zero, one, or many real targets, each sharing that
-entry's attributes/rule attachments. Pattern-overlap between two
-catalog keys is caught by the validator (a static, disk-free check);
-this module only ever expands one key at a time against real disk
-state, and treats a pattern matching nothing the same way a literal
-path treats not existing - governed by allow_missing, nothing new.
+entry's fields/rule attachments. Pattern-overlap between two catalog
+keys is caught by the validator (a static, disk-free check); this
+module only ever expands one key at a time against real disk state, and
+treats a pattern matching nothing the same way a literal path treats
+not existing: it contributes no invocations, silently.
 
 Checker/fixer protocol - see rule.template.toml for the authoritative
 version:
@@ -243,53 +243,38 @@ def _add_invocations_from_resolved(
 
 def _resolve_active_targets(
     resolved_paths: dict[str, ResolvedEntry], root_dir: Path
-) -> tuple[list[tuple[str, Path]], list[str]]:
-    """Splits cataloged paths into ones that exist on disk right now (the
-    only ones any rule gets invoked against) and ones that don't and
-    aren't marked allow_missing (a real problem, reported separately -
-    see main()). A path marked allow_missing that's currently absent is
-    simply excluded from `active` with no further note - that's the
-    entire point of the flag.
+) -> list[tuple[str, Path]]:
+    """The cataloged paths that exist on disk right now - the only ones
+    any rule gets invoked against. One that isn't there is simply skipped:
+    a catalog is a description of where things go, not an assertion that
+    every location currently exists, and "this path should exist" is a
+    question for a rule, not for the runner.
 
     A glob-style key (fs_org_kit.path_patterns) can produce zero, one,
     or many (key, abs_path) tuples from one catalog entry - every real
-    match shares that entry's resolved attributes/rules, invoked once
+    match shares that entry's resolved fields/rules, invoked once
     per match, the same way a [folders.reserved."_x"] entry is invoked
     once per folder named _x. ([[folders.rules]] is the other shape: one
     invocation, on root, with the rule's own params doing the walking.)
-    Whether zero matches counts as "missing" follows the same
-    allow_missing attribute a literal path already uses - there's no
-    separate "pattern matched nothing" concept.
 
     A real match that's ALSO its own explicit literal catalog entry is
     excluded from the pattern's own expansion - the validator only lets
     a literal overlap a pattern through when that literal explicitly
     inherits from it (see Validator._check_pattern_overlaps), so by the
     time the runner runs, any such overlap is guaranteed sanctioned:
-    the literal entry's own resolved attributes/rules (already
-    including whatever it inherited) are authoritative for that one
-    real folder, not a second, separate invocation via the pattern. A
-    pattern whose real matches are ALL claimed this way still isn't
-    "missing" - the folders exist, they're just individually cataloged
-    elsewhere - only a pattern matching nothing on disk at all falls
-    through to the allow_missing check below."""
+    the literal entry's own resolved fields/rules (already including
+    whatever it inherited) are authoritative for that one real folder,
+    not a second, separate invocation via the pattern."""
     literal_abs_paths = {resolve_key(root_dir, key) for key in resolved_paths if not is_pattern(key)}
     active: list[tuple[str, Path]] = []
-    missing_and_not_allowed: list[str] = []
-    for key, resolved in resolved_paths.items():
+    for key in resolved_paths:
         if is_pattern(key):
-            raw_matches = expand_pattern(root_dir, key)
-            if raw_matches:
-                active.extend((key, m) for m in raw_matches if m not in literal_abs_paths)
-                continue
+            active.extend((key, m) for m in expand_pattern(root_dir, key) if m not in literal_abs_paths)
         else:
             abs_path = resolve_key(root_dir, key)
             if abs_path.is_dir():
                 active.append((key, abs_path))
-                continue
-        if not bool(resolved.attributes.get("allow_missing", False)):
-            missing_and_not_allowed.append(key)
-    return active, missing_and_not_allowed
+    return active
 
 
 def _find_reserved_folders(root_dir: Path, names: set[str]) -> dict[str, list[Path]]:
@@ -319,14 +304,13 @@ def collect_invocations(
     catalog: dict[str, RuleEntry],
     resolved_paths: dict[str, ResolvedEntry],
     resolved_folders: dict[str, ResolvedEntry] | None = None,
-) -> tuple[list[Invocation], list[str]]:
-    """Walk the standard and build one Invocation per (rule, target) pair.
-    Returns (invocations, missing_and_not_allowed) - the second list is
-    cataloged paths absent from disk and not marked allow_missing."""
+) -> list[Invocation]:
+    """Walk the standard and build one Invocation per (rule, target)
+    pair. A cataloged path that isn't on disk contributes none."""
     invocations: list[Invocation] = []
     paths = data.get("paths", {})
 
-    active_targets, missing = _resolve_active_targets(resolved_paths, root_dir)
+    active_targets = _resolve_active_targets(resolved_paths, root_dir)
 
     # per-path attachments - resolved rules already include inherited +
     # excluded + this entry's own, merged
@@ -385,9 +369,7 @@ def collect_invocations(
     # inherit from another reserved entry), so this reuses the same
     # resolved-rules path individual [paths."..."] entries take. A
     # reserved name that matches nothing on disk simply contributes no
-    # invocations - unlike a cataloged path, a name that doesn't happen to
-    # occur anywhere isn't missing, so allow_missing has no counterpart
-    # here (and isn't in folders.attributes.names).
+    # invocations, the same as a cataloged path that isn't there.
     if resolved_folders:
         with_rules = {name: r for name, r in resolved_folders.items() if r.rules}
         for name, matches in _find_reserved_folders(root_dir, set(with_rules)).items():
@@ -413,7 +395,7 @@ def collect_invocations(
         # references directly, so this is the only check they get.
         inv.present_at_plan = frozenset(p for p in inv.targets if p.is_dir())
 
-    return invocations, missing
+    return invocations
 
 
 # ---------------------------------------------------------------------
@@ -632,18 +614,11 @@ def main(argv: list[str] | None = None) -> int:
     root = data.get("root", "")
     root_dir = Path(root).expanduser().resolve() if root else standard_dir
 
-    invocations, missing = collect_invocations(
+    invocations = collect_invocations(
         data, root_dir, validator.rule_catalog, validator.resolved_paths, validator.resolved_folders
     )
 
-    if missing:
-        for key in missing:
-            reason = "matched no folder on disk" if is_pattern(key) else "not found on disk"
-            line = f'missing: paths."{key}" is cataloged but {reason} (not marked allow_missing)'
-            print(f"{_COLOR['unfixable']}{line}{_COLOR['reset']}" if color else line)
-        print()
-
-    if not invocations and not missing:
+    if not invocations:
         print("no rule attachments to run")
         return 0
 
@@ -659,7 +634,7 @@ def main(argv: list[str] | None = None) -> int:
     print()
     _print_summary(results, color)
 
-    if missing or any(r.status in ("violation", "unfixable", "broken") for r in results):
+    if any(r.status in ("violation", "unfixable", "broken") for r in results):
         return 1
     return 0
 

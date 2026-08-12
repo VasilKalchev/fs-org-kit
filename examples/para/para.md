@@ -1,6 +1,6 @@
 # tree - fs-org-std
 
-> Generated from `fs-org-std.toml` - standard v1.0, schema v1.0
+> Generated from `fs-org-std.toml` - standard v2.0, schema v2.0
 
 ## Table of Contents
 
@@ -25,8 +25,8 @@
 
 - **Root**: `./tree/`
 - PARA (Projects / Areas / Resources / Archive) plus an inbox, as an enforceable standard.
-- **Schema version**: 1.0 (2026-08-05)
-- **Standard version**: 1.0 (2026-08-11)
+- **Schema version**: 2.0 (2026-08-12)
+- **Standard version**: 2.0 (2026-08-12)
 - **Cataloged paths**: 7
 - **Cross-path sets**: 0
 - **Reserved folders**: 0
@@ -55,6 +55,18 @@ graph TD
 <a id="section-paths"></a>
 ## Paths
 
+**By `lifecycle`:**
+
+- `archival` - [`archive/`](#path-archive), [`archive/*/`](#path-archive)
+- `ongoing` - [`areas/`](#path-areas), [`resources/`](#path-resources)
+- `temporary` - [`projects/`](#path-projects), [`projects/*/`](#path-projects)
+- `transient` - [`inbox/`](#path-inbox)
+
+**By `origin`:**
+
+- `external` - [`inbox/`](#path-inbox), [`resources/`](#path-resources)
+- `self` - [`archive/`](#path-archive), [`archive/*/`](#path-archive), [`areas/`](#path-areas), [`inbox/`](#path-inbox), [`projects/`](#path-projects), [`projects/*/`](#path-projects), [`resources/`](#path-resources)
+
 <a id="path-archive"></a>
 ### `archive/`
 
@@ -62,13 +74,15 @@ graph TD
 |---|---|
 | Purpose | Everything from the other three categories that is no longer active - kept, not deleted. |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self` |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - finished or abandoned projects
 - areas you no longer maintain
 
 **Not for:**
+
 - anything you still expect to touch this month
 
 <a id="path-archive"></a>
@@ -78,12 +92,14 @@ graph TD
 |---|---|
 | Purpose | One project: its notes, its files, and a README stating what 'done' means. *(inherited from `projects/*/`)* |
 | Lifecycle | [`archival`](#section-enums) |
-| Origin | `self` *(inherited from `projects/*/`)* |
+| Origin | [`self`](#section-enums) *(inherited from `projects/*/`)* |
 
-**Use for:**
+**Use for:** *(inherited from `projects/*/`)*
+
 - working files for this project only
 
-**Not for:**
+**Not for:** *(inherited from `projects/*/`)*
+
 - reference material that outlives the project - move it to resources/ when you finish
 
 **Attached rules:**
@@ -100,12 +116,14 @@ graph TD
 | Purpose | Ongoing responsibilities with a standard to maintain and no finish line - health, finances, the car. |
 | Notes | The PARA distinction that does the most work: an area is never 'done'. If it can be finished, it belongs in projects/. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self` |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - a responsibility you hold indefinitely
 
 **Not for:**
+
 - anything with a deadline or a definition of done
 
 <a id="path-inbox"></a>
@@ -116,12 +134,14 @@ graph TD
 | Purpose | Landing zone for anything not yet filed - scans, downloads, half-written notes. |
 | Notes | Not part of canonical PARA, but a common addition: without it, filing pressure lands on the four real categories. |
 | Lifecycle | [`transient`](#section-enums) |
-| Origin | `external`, `self` |
+| Origin | [`external`](#section-enums), [`self`](#section-enums) |
 
 **Use for:**
+
 - anything you haven't decided about yet
 
 **Not for:**
+
 - anything you've already decided about
 
 **Attached rules:**
@@ -137,12 +157,14 @@ graph TD
 |---|---|
 | Purpose | Short-term efforts with a definition of done and (usually) a deadline. |
 | Lifecycle | [`temporary`](#section-enums) |
-| Origin | `self` |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - anything you can finish
 
 **Not for:**
+
 - standing responsibilities - those are areas/
 - reference material - that's resources/
 
@@ -159,12 +181,14 @@ graph TD
 |---|---|
 | Purpose | One project: its notes, its files, and a README stating what 'done' means. |
 | Lifecycle | [`temporary`](#section-enums) |
-| Origin | `self` |
+| Origin | [`self`](#section-enums) |
 
 **Use for:**
+
 - working files for this project only
 
 **Not for:**
+
 - reference material that outlives the project - move it to resources/ when you finish
 
 **Attached rules:**
@@ -180,12 +204,14 @@ graph TD
 |---|---|
 | Purpose | Topics of ongoing interest - reference material that belongs to no single project. |
 | Lifecycle | [`ongoing`](#section-enums) |
-| Origin | `self`, `external` |
+| Origin | [`self`](#section-enums), [`external`](#section-enums) |
 
 **Use for:**
+
 - notes, clippings and references you'll want again
 
 **Not for:**
+
 - anything you're actively working on
 
 **Attached rules:**
@@ -304,7 +330,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 | | |
 |---|---|
 | Tier | bundled |
-| Version | 1.0 |
+| Version | 1.1 |
 | Severity | `warn` |
 | Scope | `single` |
 | Fixable | yes |
@@ -317,6 +343,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 | `threshold` |  | yes |
 | `basis` | `"mtime"` | no |
 | `destination` |  | yes |
+| `create_destination` | `false` | no |
 | `exclude` | `[]` | no |
 
 **Attached at 1 location(s):**
@@ -326,7 +353,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 <a id="section-enums"></a>
 ## Enums
 
-**Lifecycle:**
+**`enums.group.lifecycle`:**
 
 | Value | Meaning |
 |---|---|
@@ -335,18 +362,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 | `ongoing` | continuously active/maintained, no end state |
 | `archival` | already at rest, rarely touched |
 
-```mermaid
-graph LR
-    l0["transient"]
-    l1["temporary"]
-    l2["ongoing"]
-    l3["archival"]
-    l0 --> l1
-    l1 --> l2
-    l2 --> l3
-```
-
-**Origin:**
+**`enums.group.origin`:**
 
 | Value | Meaning |
 |---|---|

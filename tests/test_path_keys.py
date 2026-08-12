@@ -8,55 +8,23 @@ Run with: python -m pytest tests/test_path_keys.py -v
 import tomllib
 from pathlib import Path
 
-from fs_org_kit.path_keys import (
-    OUTSIDE_ROOT_ATTR,
-    comparison_key,
-    escapes_root,
-    is_absolute_key,
-    resolve_key,
-    walks_above_root,
-)
+from fs_org_kit.path_keys import comparison_key, is_absolute_key, is_home_relative, resolve_key
 from fs_org_kit.path_patterns import expand_pattern
 from fs_org_kit.runner import collect_invocations
 from fs_org_kit.validator import Validator, _index_source
 
 
-class TestEscapeDetection:
-    """The three routes out of root, and the things that only look like them."""
+class TestKeyShape:
 
-    def test_relative_key_stays_inside(self):
-        assert not escapes_root("area/inv/")
+    def test_a_relative_key_is_not_absolute(self):
         assert not is_absolute_key("area/inv/")
 
-    def test_absolute_key_escapes(self):
-        assert escapes_root("/etc/nginx/")
+    def test_a_leading_slash_is_absolute(self):
         assert is_absolute_key("/etc/nginx/")
 
-    def test_home_relative_key_escapes(self):
-        assert escapes_root("~/.config/")
+    def test_a_tilde_key_is_absolute_once_expanded(self):
         assert is_absolute_key("~/.config/")
-
-    def test_dotdot_walking_up_escapes(self):
-        assert escapes_root("../sibling/")
-        assert walks_above_root("../sibling/")
-
-    def test_dotdot_that_comes_back_down_does_not_escape(self):
-        """"a/../b/" never leaves root, so it needs no flag."""
-        assert not escapes_root("a/../b/")
-        assert not walks_above_root("a/../b/")
-
-    def test_dotdot_escaping_partway_through_is_caught(self):
-        """Depth is tracked segment by segment, so a key that dips above
-        root and returns is still an escape - it named a location outside
-        root on the way."""
-        assert walks_above_root("a/../../a/b/")
-
-    def test_leading_dot_segment_is_not_an_escape(self):
-        assert not escapes_root("./area/")
-
-    def test_filename_containing_dots_is_not_an_escape(self):
-        assert not escapes_root("area/..hidden/")
-        assert not escapes_root("area/a..b/")
+        assert is_home_relative("~/.config/")
 
 
 class TestResolveKey:
@@ -71,17 +39,19 @@ class TestResolveKey:
     def test_home_relative_key_expands(self, tmp_path):
         assert resolve_key(tmp_path, "~/x/") == (Path.home() / "x").resolve()
 
+    def test_dotdot_key_resolves_above_root(self, tmp_path):
+        root = tmp_path / "root"
+        assert resolve_key(root, "../sibling/") == (tmp_path / "sibling").resolve()
+
     def test_plain_join_would_have_silently_discarded_root(self, tmp_path):
-        """The accident outside_root exists to surface: Python's path join
+        """Why every consumer goes through resolve_key: Python's path join
         drops the left operand entirely when the right is absolute, so an
-        absolute key was already 'working' - just pointing somewhere nobody
-        declared."""
+        absolute key joined by hand lands somewhere other than intended."""
         assert (tmp_path / "/etc/nginx") == Path("/etc/nginx")
 
     def test_plain_join_would_not_have_expanded_tilde(self, tmp_path):
-        """The other half of the accident: `~` isn't magic to pathlib, so
-        a home-relative key used to resolve to a literal '~' directory
-        under root."""
+        """The other half: `~` isn't magic to pathlib, so a home-relative
+        key would resolve to a literal '~' directory under root."""
         assert (tmp_path / "~/x") != resolve_key(tmp_path, "~/x/")
 
 
@@ -100,46 +70,33 @@ class TestComparisonKey:
 
 
 # ---------------------------------------------------------------------
-# Validator integration
+# Validator / runner integration
 # ---------------------------------------------------------------------
 
 BOILERPLATE_HEAD = '''root = "~/usr/"
 
 [meta]
-schema_version = "1.0"
-standard_version = "1.0"
+schema_version = "2.0"
+standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "notes", "use_for", "not_for", "lifecycle", "origin", "see_also", "allow_missing", "outside_root"]
+names = ["purpose"]
+required = ["purpose"]
 
-[paths.attributes.defaults]
+[paths.attributes.group]
+names = ["lifecycle"]
+required = ["lifecycle"]
 '''
 
 BOILERPLATE_TAIL = '''
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
-
-[enums.paths.origin]
-self = "x"
 
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
-names = []
-[folders.attributes.defaults]
-[folders.reserved]
-'''
-
-ENTRY_BODY = '''purpose = "x"
-notes = ""
-use_for = ["x"]
-not_for = [""]
-lifecycle = "ongoing"
-origin = ["self"]
-see_also = ""
 '''
 
 
@@ -152,70 +109,31 @@ def validate(standard_toml: str, tmp_path: Path):
     return validator.run(), validator
 
 
-def entry(key: str, extra: str = "") -> str:
-    return f'\n[paths."{key}"]\n{extra}{ENTRY_BODY}'
+def entry(key: str) -> str:
+    return f'\n[paths."{key}"]\npurpose = "x"\n\n[paths."{key}".group]\nlifecycle = "ongoing"\n'
 
 
-def locations(issues, level="error"):
-    return [i.location for i in issues if i.level == level]
+def errors(issues):
+    return [i for i in issues if i.level == "error"]
 
 
-class TestValidatorOutsideRoot:
+class TestValidatorOutOfRootKeys:
+    """A key naming somewhere outside root is ordinary: it resolves where
+    it says, and nothing has to be declared for that."""
 
-    def test_absolute_key_without_the_flag_is_an_error(self, tmp_path):
+    def test_an_absolute_key_validates(self, tmp_path):
         issues, _ = validate(BOILERPLATE_HEAD + entry("/etc/nginx/") + BOILERPLATE_TAIL, tmp_path)
-        assert 'paths."/etc/nginx/"' in locations(issues)
+        assert errors(issues) == []
 
-    def test_absolute_key_with_the_flag_validates(self, tmp_path):
-        issues, _ = validate(
-            BOILERPLATE_HEAD + entry("/etc/nginx/", "outside_root = true\n") + BOILERPLATE_TAIL, tmp_path
-        )
-        assert locations(issues) == []
-
-    def test_home_relative_key_needs_the_flag_too(self, tmp_path):
+    def test_a_home_relative_key_validates(self, tmp_path):
         issues, _ = validate(BOILERPLATE_HEAD + entry("~/.config/") + BOILERPLATE_TAIL, tmp_path)
-        assert 'paths."~/.config/"' in locations(issues)
+        assert errors(issues) == []
 
-    def test_dotdot_key_needs_the_flag_too(self, tmp_path):
+    def test_a_dotdot_key_validates(self, tmp_path):
         issues, _ = validate(BOILERPLATE_HEAD + entry("../sibling/") + BOILERPLATE_TAIL, tmp_path)
-        assert 'paths."../sibling/"' in locations(issues)
+        assert errors(issues) == []
 
-    def test_flag_on_an_inside_root_key_is_an_error(self, tmp_path):
-        """A flag that claims something untrue about the entry is as much a
-        defect as a missing one - it misleads the next reader."""
-        issues, _ = validate(
-            BOILERPLATE_HEAD + entry("area/inv/", "outside_root = true\n") + BOILERPLATE_TAIL, tmp_path
-        )
-        assert f'paths."area/inv/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
-
-    def test_flag_must_be_a_boolean(self, tmp_path):
-        issues, _ = validate(
-            BOILERPLATE_HEAD + entry("/etc/nginx/", 'outside_root = "yes"\n') + BOILERPLATE_TAIL, tmp_path
-        )
-        assert f'paths."/etc/nginx/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
-
-    def test_flag_cannot_arrive_through_inheritance(self, tmp_path):
-        """The whole point of the flag is that escaping is deliberate at the
-        escaping entry. Inheriting it would let an edit somewhere else widen
-        what the tool walks into."""
-        standard = (
-            BOILERPLATE_HEAD
-            + entry("/srv/a/", "outside_root = true\n")
-            + entry("/srv/b/")
-            + '\n[paths."/srv/b/".inherit]\nattributes = "/srv/a/"\n'
-            + BOILERPLATE_TAIL
-        )
-        issues, _ = validate(standard, tmp_path)
-        assert f'paths."/srv/b/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
-
-    def test_flag_cannot_arrive_from_attribute_defaults(self, tmp_path):
-        head = BOILERPLATE_HEAD.replace(
-            "[paths.attributes.defaults]\n", "[paths.attributes.defaults]\noutside_root = true\n"
-        )
-        issues, _ = validate(head + entry("/etc/nginx/") + BOILERPLATE_TAIL, tmp_path)
-        assert f'paths."/etc/nginx/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
-
-    def test_cross_entry_listing_an_outside_path_needs_the_flag(self, tmp_path):
+    def test_a_cross_set_may_reference_one(self, tmp_path):
         standard = (
             BOILERPLATE_HEAD
             + entry("area/a/")
@@ -223,27 +141,7 @@ class TestValidatorOutsideRoot:
             + BOILERPLATE_TAIL
         )
         issues, _ = validate(standard, tmp_path)
-        assert "paths.cross[0].paths" in locations(issues)
-
-    def test_cross_entry_with_the_flag_validates(self, tmp_path):
-        standard = (
-            BOILERPLATE_HEAD
-            + entry("area/a/")
-            + '\n[[paths.cross]]\noutside_root = true\npaths = ["area/a/", "/etc/nginx/"]\n'
-            + BOILERPLATE_TAIL
-        )
-        issues, _ = validate(standard, tmp_path)
-        assert locations(issues) == []
-
-    def test_cross_flag_with_no_outside_paths_is_an_error(self, tmp_path):
-        standard = (
-            BOILERPLATE_HEAD
-            + entry("area/a/")
-            + '\n[[paths.cross]]\noutside_root = true\npaths = ["area/a/", "area/b/"]\n'
-            + BOILERPLATE_TAIL
-        )
-        issues, _ = validate(standard, tmp_path)
-        assert f"paths.cross[0].{OUTSIDE_ROOT_ATTR}" in locations(issues)
+        assert errors(issues) == []
 
 
 class TestValidatorOverlapAcrossTheRootBoundary:
@@ -251,34 +149,33 @@ class TestValidatorOverlapAcrossTheRootBoundary:
     def test_inside_and_outside_lookalikes_do_not_collide(self, tmp_path):
         """"/srv/*/" and "srv/*/" name different places; flagging them as
         overlapping would be a false positive."""
-        standard = (
-            BOILERPLATE_HEAD
-            + entry("/srv/*/", "outside_root = true\n")
-            + entry("srv/*/")
-            + BOILERPLATE_TAIL
-        )
+        standard = BOILERPLATE_HEAD + entry("/srv/*/") + entry("srv/*/") + BOILERPLATE_TAIL
         issues, _ = validate(standard, tmp_path)
-        assert locations(issues) == []
+        assert errors(issues) == []
 
     def test_two_spellings_of_the_same_outside_place_still_collide(self, tmp_path):
         home = str(Path.home())
-        standard = (
-            BOILERPLATE_HEAD
-            + entry("~/shared/*/", "outside_root = true\n")
-            + entry(f"{home}/shared/*/", "outside_root = true\n")
-            + BOILERPLATE_TAIL
-        )
+        standard = BOILERPLATE_HEAD + entry("~/shared/*/") + entry(f"{home}/shared/*/") + BOILERPLATE_TAIL
         issues, _ = validate(standard, tmp_path)
-        assert locations(issues) != []
+        assert errors(issues) != []
 
-
-# ---------------------------------------------------------------------
-# Runner integration
-# ---------------------------------------------------------------------
 
 class TestRunnerResolvesOutsideRootTargets:
 
-    def test_absolute_target_is_found_where_it_actually_lives(self, tmp_path):
+    def _invocations(self, std_text: str, tmp_path: Path, root: Path):
+        data = tomllib.loads(std_text)
+        _, validator = validate(std_text, tmp_path)
+        return collect_invocations(data, root, validator.rule_catalog, validator.resolved_paths)
+
+    def _entry_with_rule(self, key: str) -> str:
+        return (
+            f'\n[paths."{key}"]\npurpose = "x"\n'
+            f'\n[paths."{key}".group]\nlifecycle = "ongoing"\n'
+            f'\n[[paths."{key}".rules.file-extensions-v1]]\nreason = "r"\n'
+            f'\n[paths."{key}".rules.file-extensions-v1.params]\nallowed = ["jpg"]\n'
+        )
+
+    def test_absolute_target_is_invoked_where_it_actually_lives(self, tmp_path):
         """The directory exists outside root and nothing exists at the
         would-be joined location, so finding it proves resolve_key is being
         used rather than a plain join."""
@@ -287,37 +184,17 @@ class TestRunnerResolvesOutsideRootTargets:
         root = tmp_path / "root"
         root.mkdir()
 
-        std_text = BOILERPLATE_HEAD + entry(f"{outside}/", "outside_root = true\n") + BOILERPLATE_TAIL
-        data = tomllib.loads(std_text)
-        _, validator = validate(std_text, tmp_path)
-        _, missing = collect_invocations(data, root, validator.rule_catalog, validator.resolved_paths)
-        assert missing == []
+        std_text = BOILERPLATE_HEAD + self._entry_with_rule(f"{outside}/") + BOILERPLATE_TAIL
+        invocations = self._invocations(std_text, tmp_path, root)
+        assert [inv.target_path for inv in invocations] == [outside]
 
-    def test_absent_outside_root_target_is_reported_missing(self, tmp_path):
+    def test_an_absent_target_contributes_no_invocation(self, tmp_path):
         root = tmp_path / "root"
         root.mkdir()
         gone = tmp_path / "not-there"
 
-        std_text = BOILERPLATE_HEAD + entry(f"{gone}/", "outside_root = true\n") + BOILERPLATE_TAIL
-        data = tomllib.loads(std_text)
-        _, validator = validate(std_text, tmp_path)
-        _, missing = collect_invocations(data, root, validator.rule_catalog, validator.resolved_paths)
-        assert missing == [f"{gone}/"]
-
-    def test_allow_missing_applies_outside_root_the_same_way(self, tmp_path):
-        root = tmp_path / "root"
-        root.mkdir()
-        gone = tmp_path / "not-there"
-
-        std_text = (
-            BOILERPLATE_HEAD
-            + entry(f"{gone}/", "outside_root = true\nallow_missing = true\n")
-            + BOILERPLATE_TAIL
-        )
-        data = tomllib.loads(std_text)
-        _, validator = validate(std_text, tmp_path)
-        _, missing = collect_invocations(data, root, validator.rule_catalog, validator.resolved_paths)
-        assert missing == []
+        std_text = BOILERPLATE_HEAD + self._entry_with_rule(f"{gone}/") + BOILERPLATE_TAIL
+        assert self._invocations(std_text, tmp_path, root) == []
 
 
 class TestExpandPatternOutsideRoot:

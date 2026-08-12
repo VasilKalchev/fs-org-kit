@@ -15,31 +15,35 @@ from fs_org_kit.doc import _format_value, _slugify, main
 BOILERPLATE = '''root = "{root}/"
 
 [meta]
-schema_version = "1.0"
+schema_version = "2.0"
 schema_date = "2026-01-01"
-standard_version = "1.0"
+standard_version = "2.0"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "notes", "lifecycle", "origin", "see_also", "allow_missing"]
-[paths.attributes.defaults]
-allow_missing = false
+names = ["purpose", "notes", "use_for", "see_also"]
+required = ["purpose"]
+
+
+[paths.attributes.group]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
 
 {body}
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 transient = "x"
 temporary = "x"
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
+external = "x"
 [tags]
 [abbreviations]
-[folders]
 [folders.attributes]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 '''
 
@@ -105,11 +109,15 @@ reason = "r"
         std = write_standard(tmp_path, '''
 [paths."z/"]
 purpose = "Z"
+
+[paths."z/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -126,6 +134,8 @@ class TestSections:
         return write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -167,11 +177,15 @@ class TestDiagrams:
         return write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."a/aa/"]
 purpose = "AA"
+
+[paths."a/aa/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -195,29 +209,22 @@ origin = ["self"]
     def test_node_limit_guard(self, tmp_path, capsys):
         body_parts = []
         for i in range(45):
-            body_parts.append(f'[paths."item{i}/"]\npurpose = "x"\nlifecycle = "ongoing"\norigin = ["self"]\n')
+            body_parts.append(
+                f'[paths."item{i}/"]\npurpose = "x"\n'
+                f'[paths."item{i}/".group]\nlifecycle = "ongoing"\norigin = ["self"]\n'
+            )
         std = write_standard(tmp_path, "\n".join(body_parts))
         main([str(std), "--sections", "overview"])
         out = capsys.readouterr().out
         assert "```mermaid" not in out
         assert "skipped" in out
 
-    def test_lifecycle_diagram_only_for_known_vocabulary(self, tmp_path, capsys):
-        std = write_standard(tmp_path, '''
-[paths."a/"]
-purpose = "A"
-lifecycle = "ongoing"
-origin = ["self"]
-''')
-        main([str(std), "--sections", "enums", "--diagrams", "lifecycle"])
-        out = capsys.readouterr().out
-        # BOILERPLATE's lifecycle enum matches the known vocabulary exactly
-        assert "```mermaid" in out
-
     def test_mermaid_special_chars_sanitized(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."weird[name]/"]
 purpose = "has \\"quotes\\" and [brackets]"
+
+[paths."weird[name]/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -245,6 +252,8 @@ class TestTableOfContents:
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -255,6 +264,8 @@ origin = ["self"]
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -265,6 +276,8 @@ origin = ["self"]
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -286,46 +299,158 @@ allowed = ["jpg"]
 
 
 class TestAttributeTable:
+    """The renderer knows no field names - it renders whatever the
+    standard declared, in the shape the value actually has."""
 
-    def test_see_also_list_is_joined_not_repr(self, tmp_path, capsys):
+    def test_list_valued_field_becomes_bullets_not_a_repr(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+see_also = ["b/", "c/"]
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = ["b/", "c/"]
 
 [paths."b/"]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
         main([str(std), "--sections", "paths"])
         out = capsys.readouterr().out
-        assert "| See also | `b/`, `c/` |" in out
+        assert "**See also:**" in out
+        assert "- b/" in out and "- c/" in out
         assert "['b/'" not in out
 
-    def test_see_also_string_passes_through(self, tmp_path, capsys):
+    def test_string_valued_field_becomes_a_table_row(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+see_also = "b/"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = "b/"
 ''')
         main([str(std), "--sections", "paths"])
         assert "| See also | b/ |" in capsys.readouterr().out
 
-    def test_see_also_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
+    def test_field_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+see_also = [""]
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = [""]
 ''')
         main([str(std), "--sections", "paths"])
         assert "See also" not in capsys.readouterr().out
+
+    def test_an_undeclared_field_name_is_not_rendered(self, tmp_path, capsys):
+        """The declaration drives rendering, so a field the namespace never
+        declared (already a validator warning) can't appear in the docs."""
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+undeclared = "should not be rendered"
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        main([str(std), "--sections", "paths"])
+        assert "should not be rendered" not in capsys.readouterr().out
+
+    def test_a_grouping_field_links_to_its_vocabulary(self, tmp_path, capsys):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        main([str(std), "--sections", "paths"])
+        out = capsys.readouterr().out
+        assert "| Lifecycle | [`ongoing`](#section-enums) |" in out
+
+
+class TestGroupingIndex:
+    """Grouping fields exist to sort entries into buckets - the index is
+    what that separation is for."""
+
+    def _std(self, tmp_path):
+        return write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[paths."b/"]
+purpose = "B"
+
+[paths."b/".group]
+lifecycle = "archival"
+origin = ["self"]
+''')
+
+    def test_one_bucket_list_per_grouping_field(self, tmp_path, capsys):
+        main([str(self._std(tmp_path)), "--sections", "paths"])
+        out = capsys.readouterr().out
+        assert "**By `lifecycle`:**" in out
+        assert "**By `origin`:**" in out
+
+    def test_entries_are_listed_under_their_value(self, tmp_path, capsys):
+        main([str(self._std(tmp_path)), "--sections", "paths"])
+        out = capsys.readouterr().out
+        assert "- `archival` - [`b/`](#path-b)" in out
+        assert "- `ongoing` - [`a/`](#path-a)" in out
+
+    def test_a_multi_valued_field_lists_an_entry_under_each_value(self, tmp_path, capsys):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
+''')
+        main([str(std), "--sections", "paths"])
+        out = capsys.readouterr().out
+        assert "- `external` - [`a/`](#path-a)" in out
+        assert "- `self` - [`a/`](#path-a)" in out
+
+    def test_no_grouping_fields_declared_means_no_index(self, tmp_path, capsys):
+        std = tmp_path / "fs-org-std.toml"
+        std.write_text(f'''root = "{tmp_path}/"
+
+[meta]
+schema_version = "2.0"
+schema_date = "2026-01-01"
+standard_version = "2.0"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = ["purpose"]
+required = ["purpose"]
+
+[paths."a/"]
+purpose = "A"
+
+[enums]
+[tags]
+[abbreviations]
+[folders]
+''')
+        main([str(std), "--sections", "paths"])
+        assert "**By `" not in capsys.readouterr().out
 
 
 class TestInheritanceRendering:
@@ -334,14 +459,17 @@ class TestInheritanceRendering:
         std = write_standard(tmp_path, '''
 [paths."active/x/"]
 purpose = "Active X"
+
+[paths."active/x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."archive/x/"]
+[paths."archive/x/".group]
 lifecycle = "archival"
 
 [paths."archive/x/".inherit]
 attributes = "active/x/"
+group = "active/x/"
 ''')
         main([str(std), "--sections", "paths"])
         out = capsys.readouterr().out
@@ -355,6 +483,8 @@ class TestRuleReverseIndex:
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -366,6 +496,8 @@ allowed = ["jpg"]
 
 [paths."b/"]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -389,6 +521,8 @@ class TestNoEmDashes:
         std = write_standard(tmp_path, '''
 [paths."a/"]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')

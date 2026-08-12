@@ -21,6 +21,7 @@ pytest -k "scope_mismatch"          # run a single test by name
 - `tests/test_cache.py` - tests for `fs_org_kit.cache`
 - `tests/test_discovery.py` - tests for `fs_org_kit.discovery`
 - `tests/test_doc.py` - tests for `fs_org_kit.doc`
+- `tests/test_fields.py` - tests for `fs_org_kit.fields`
 - `tests/test_inherit.py` - tests for `fs_org_kit.inherit`
 - `tests/test_param_refs.py` - tests for `fs_org_kit.param_refs`
 - `tests/test_path_keys.py` - tests for `fs_org_kit.path_keys`
@@ -89,19 +90,29 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Structure validation**: broken TOML, missing checker script, directory name format, version major mismatch, invalid severity/scope values
 - **Metadata**: RuleEntry fields are properly populated
 
-### Inherit tests (13 tests, `tests/test_inherit.py`)
+### Inherit tests (16 tests, `tests/test_inherit.py`)
 
-- **Basic inheritance**: full attribute inherit with per-field override, standard-wide defaults, an explicit `false` correctly overriding an inherited `true` (the trickiest edge case - booleans have no "empty" state)
+- **Basic inheritance**: full inherit with per-field override, each part inheriting only from its own source, an explicit `false` correctly overriding an inherited `true` (the trickiest edge case - booleans have no "empty" state)
 - **Rule inheritance**: `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `attributes` and `rules` inheriting from different sources
-- **Errors and cycles**: undefined references, 2- and 3-level cycles, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
+- **Errors and cycles**: undefined references from each of the three keys, 2- and 3-level cycles, a cycle in one part not stopping the others, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
 
-### Validator tests (24 tests, `tests/test_validator.py`)
+### Field declaration tests (17 tests, `tests/test_fields.py`)
+
+`parse_field_spec` reads what one namespace declares its entries may carry; checking values against that is the validator's job, tested below.
+
+- **Parsing**: the two kinds of field stay apart, declared order is preserved (the doc generator renders in it), `required` and `multi` are read per kind, and a namespace that declares nothing is still usable
+- **Vocabularies**: a grouping field reads `enums.group.<field>`, both namespaces read the same table for the same field name, an attribute's vocabulary is optional (`enums.attributes.<field>`), and a grouping field with none warns but still groups
+- **Namespaces are independent**: `folders` reads its own field lists
+- **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a field named after one of an entry's structural keys (`group`/`rules`/`inherit`); one name declared as both kinds; a name listed twice
+
+### Validator tests (34 tests, `tests/test_validator.py`)
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
 - **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.attributes`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
-- **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment, `allow_missing` must be a boolean
-- **folders.attributes**: unknown-field checking on `folders.reserved.*` entries
+- **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment
+- **Entry fields**: an attribute may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
+- **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against the shared `enums.group.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered
 - **Param refs**: a `{ref = "..."}` value to `folders.reserved` or `abbreviations` resolves with no errors, a broken ref is an error naming the bad path, a ref satisfies a required-param-with-no-default check the same as a literal would
 - **Discovery options**: `include_external` threaded through to the rule catalog used for validation
 
@@ -118,14 +129,14 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **`patterns_may_overlap`, `**`**: a `**` pattern against an incompatible literal root doesn't overlap; against a compatible prefix, or another `**` pattern sharing a prefix, it does; two `**` patterns with different literal prefixes don't
 - **`expand_pattern`**: matches only real directories (not files), sorted; no matches returns an empty list; a `[1-3]`-style char class range; `**` matches at any depth
 
-### Path keys tests (34 tests, `tests/test_path_keys.py`)
+### Path keys tests (22 tests, `tests/test_path_keys.py`)
 
-- **Escape detection**: a relative key stays inside; absolute, `~`-relative and `..`-walking keys each escape; `a/../b/` returns to root and doesn't; a key dipping above root and back is still an escape; `./` and dot-containing filenames aren't escapes
-- **`resolve_key`**: relative joins onto root, absolute ignores root, `~` expands - plus the two tests that pin the accident this exists for: a plain join silently discards root for an absolute key, and never expands `~` at all
+- **Key shape**: a relative key isn't absolute; a leading slash is; `~` is absolute once expanded
+- **`resolve_key`**: relative joins onto root, absolute ignores root, `~` expands, `..` resolves above root - plus the two tests that pin why a bare join isn't equivalent: it silently discards root for an absolute key, and never expands `~` at all
 - **`comparison_key`**: relative and absolute lookalikes stay distinct; two spellings of the same out-of-root place normalize together; trailing slashes are irrelevant
-- **Validator**: absolute/`~`/`..` keys are errors without `outside_root`, fine with it; the flag on an inside-root key is an error too; it must be boolean; it can arrive neither through `inherit` nor from `paths.attributes.defaults`; `[[paths.cross]]` carries the same flag with the same both-ways checks
+- **Validator**: an absolute, `~`-relative or `..`-walking key validates like any other, including inside a `[[paths.cross]]` set - nothing has to be declared for one
 - **Overlap across the root boundary**: `/srv/*/` and `srv/*/` don't collide, while `~/shared/*/` and `/home/me/shared/*/` still do
-- **Runner**: an out-of-root target is found where it actually lives, an absent one is reported missing, and `allow_missing` applies to it identically; `expand_pattern` globs an absolute pattern from the filesystem anchor (`Path.glob` refuses one outright) while a relative pattern still globs from root
+- **Runner**: an out-of-root target is invoked where it actually lives, an absent one contributes no invocation; `expand_pattern` globs an absolute pattern from the filesystem anchor (`Path.glob` refuses one outright) while a relative pattern still globs from root
 
 ### Sandbox tests (36 tests, `tests/test_sandbox.py`)
 
@@ -141,26 +152,27 @@ what did or didn't happen on disk.
 - **Violations can't be swallowed**: `except Exception` doesn't catch one (it derives from `BaseException`), and even `except BaseException` still fails the invocation, because the violation is also recorded
 - **Script semantics preserved**: argv reaches the script, exit codes propagate, stdout stays exactly one JSON line, an uncaught error still reports on stderr, and a sibling module beside the script is importable - `runpy.run_path` doesn't put the script's directory on `sys.path` the way direct execution does, and `staleness-v1` broke on precisely that
 
-### Runner tests (41 tests, `tests/test_runner.py`)
+### Runner tests (38 tests, `tests/test_runner.py`)
 
-- **Active target resolution**: an existing path is active; a missing path marked `allow_missing` is silently skipped (not reported at all); a missing path without it is reported
-- **Pattern keys**: a pattern key expands to every real match, sharing the same catalog key; zero matches with/without `allow_missing` mirrors a literal path's missing/skipped behavior exactly; a real match already claimed by its own explicit literal entry is excluded from the pattern's own expansion (no double invocation); a pattern whose every real match is claimed by literals still isn't "missing"
-- **Invocation collection**: per-path attachments, `paths.rules` blanket, `paths.cross`, `folders.rules` blanket (targets root), a missing path correctly excluded from invocations, a pattern-key attachment produces one invocation per real match sharing the same rule
+- **Active target resolution**: an existing path is active; one that isn't on disk is silently skipped, since whether a location should exist is a rule's question
+- **Pattern keys**: a pattern key expands to every real match, sharing the same catalog key; zero matches is skipped exactly like a literal path that isn't there; a real match already claimed by its own explicit literal entry is excluded from the pattern's own expansion (no double invocation), and a pattern whose every match is claimed that way contributes nothing of its own
+- **Invocation collection**: per-path attachments, `paths.rules` blanket, `paths.cross`, `folders.rules` blanket (targets root), an absent path contributing nothing, a pattern-key attachment producing one invocation per real match sharing the same rule
 - **Reserved-name attachments**: `folders.reserved."_x".rules` produces one invocation per folder *named* `_x` on disk (a reserved entry is a name, not a location); a name matching nothing contributes none; a match nested inside another isn't pruned; an entry with no rules is skipped without walking; a folder that is both a reserved name and its own `[paths."..."]` entry gets both sets of rules against the same target; inherited rule attachments are carried and still marked with their origin
 - **Param refs**: a `{ref = "folders.reserved"}` param reaches the invocation as the actual list of reserved-folder names (not the raw ref table, and without the `prefix` meta key leaking in), a ref to a list elsewhere in the standard is expanded verbatim
 - **Script invocation**: `ok`/`violation`/`broken` status parsing, a rule with no fixer falls back to its checker even when `--fix` is requested
 - **Stale plans are skipped, not broken**: a target that stopped existing between planning and invocation is `skipped` (and one replaced by a file likewise), including a cross-scope invocation where only one of its paths went; a target that was *already* absent when the plan was built is not skipped but still reported `broken` at exit 1 (a `paths.cross` reference to somewhere that never existed - a misconfigured attachment, not a fixer's doing); the guard belongs to `run_invocation`, so `invoke_script` handed a bad path directly still reports `broken`
 - **Cache-dir wiring**: a rule declaring `uses_cache` is handed `--cache-dir` and really writes into `<root>/rules/<rule-id>/`; a rule that doesn't declare it never receives the flag (which is what keeps the change additive - every existing rule's argparse would reject an unknown flag) and causes no cache root to be created at all; an unusable cache location still produces the correct verdict
-- **Full integration through `main()`**: clean run exits 0, a violation exits 1, a missing path with/without `allow_missing` exits 1/0, an invalid standard exits 2, a fixer that archives a folder leaves the per-folder check already planned against its old location reporting `skipped` rather than `broken` and the run still exiting 0, and the core PARA scenario end-to-end - moving a real folder on disk between two `allow_missing`-marked, inheritance-linked locations needs zero standard edits and the run stays clean before and after
+- **Full integration through `main()`**: clean run exits 0, a violation exits 1, a cataloged path that isn't on disk exits 0, an invalid standard exits 2, a fixer that archives a folder leaves the per-folder check already planned against its old location reporting `skipped` rather than `broken` and the run still exiting 0, and the core PARA scenario end-to-end - moving a real folder on disk between two inheritance-linked locations needs zero standard edits and the run stays clean before and after
 
-### Doc generator tests (31 tests, `tests/test_doc.py`)
+### Doc generator tests (36 tests, `tests/test_doc.py`)
 
 - **Helpers**: slug generation (`/` becomes `-`, special characters stripped, empty falls back), value formatting for booleans/strings/lists
 - **Validate first**: an invalid or missing standard exits 2 and generates nothing; warnings don't block
 - **Sections**: all present sections by default, `--sections`/`--exclude-sections` filtering, an unknown section name errors, an empty section is omitted rather than emitted blank
-- **Diagrams**: `--no-diagrams`, `--diagrams` filtering, the tree reflects real nesting, the 40-node guard, the lifecycle diagram appears only for the known vocabulary, and Mermaid-breaking characters in a path key are sanitized
+- **Diagrams**: `--no-diagrams`, `--diagrams` filtering, the tree reflects real nesting, the 40-node guard, and Mermaid-breaking characters in a path key are sanitized
 - **ToC**: present by default, `--no-toc`, and every link has a matching anchor
-- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued `see_also` is joined into readable Markdown rather than reaching the table as a Python repr, a bare-string one passes through, and one holding only empty placeholders is omitted
+- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued field becomes bullets rather than reaching the table as a Python repr, a string-valued one becomes a table row, one holding only empty placeholders is omitted, an undeclared field is never rendered at all, and a grouping value links to its vocabulary
+- **Grouping index**: one bucket list per grouping field, entries listed under their value, a multi-valued field listing an entry under each of its values, and no index at all when a standard declares no grouping fields
 - **Output style**: generated Markdown contains no em dashes
 
 ### Bundled rule tests (585 tests, inside `rules/`)
@@ -210,7 +222,7 @@ General guidance, either way:
 3. Use the `tmp_path` fixture (pytest-provided) or `tempfile.TemporaryDirectory()` for file-based tests
 4. Populate temporary directories with minimal valid TOML fixtures
 5. Avoid `assert` messages - pytest's output is clear enough
-6. **Filter on `.location`, not `.message`**, when checking which field a validator issue is about - `Issue.message` describes *what's wrong* ("must be a boolean if present"), it doesn't repeat the field name; `Issue.location` has the dotted path (`paths."x/".allow_missing`). This bit two tests during development - both looked like validator bugs at first and were actually just the test checking the wrong attribute.
+6. **Filter on `.location`, not `.message`**, when checking which field a validator issue is about - `Issue.message` describes *what's wrong* ("must be a boolean if present"), it doesn't repeat the field name; `Issue.location` has the dotted path (`paths."x/".purpose`). This bit two tests during development - both looked like validator bugs at first and were actually just the test checking the wrong attribute.
 7. **For rule tests specifically**: invoke the script via `subprocess`, exactly as the runner does - not by importing the script's internals. That's the real, documented protocol contract; testing through it catches anything an internals-only test would miss, and it's also what a third-party rule author copying your test file as a template would expect to see.
 
 Example (core package):

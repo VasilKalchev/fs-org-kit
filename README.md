@@ -53,9 +53,10 @@ fs-org-kit/                        (this repo - the tool, not your data)
     cache.py                       # where rules keep state between runs
     discovery.py                   # rule discovery - shared by all tools
     doc.py                         # generates Markdown documentation
-    inherit.py                     # resolves `inherit` and attribute defaults
+    fields.py                      # what a namespace declares its entries carry
+    inherit.py                     # resolves `inherit` across entries
     param_refs.py                  # {ref = "dotted.path"} param values
-    path_keys.py                   # what a path key names, incl. outside root
+    path_keys.py                   # what real location a path key names
     path_patterns.py               # glob keys in [paths."..."]
     runner.py                      # runs rule checkers against real filesystem
     sandbox.py                     # audit-hook harness rule scripts run inside
@@ -134,47 +135,64 @@ Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
 | `folders` | rules/definitions that apply *without* being tied to one cataloged path - blanket rules over every folder under root, and reserved folder-**name** patterns (e.g. `_archive`) independent of location |
 | `tags` | metadata tagging paths/folders for organization and cross-cutting concerns |
 | `abbreviations` | local shorthand definitions used throughout the standard |
-| `enums` | closed value sets: `paths.lifecycle`, `paths.origin` |
+| `enums` | one closed value set per field that has one, as `enums.group.<field>` (or `enums.attributes.<field>`), shared by both namespaces |
 
 ### A path entry
 
+An entry is its attributes, plus two tables:
+
 ```toml
-[paths."area/inv/"]
+[paths."area/inv/"]                  # prose, for the generated docs
 purpose = "Inventory tracking"
-notes = ""
 use_for = ["owned item records"]
 not_for = ["receipts"]
+
+[paths."area/inv/".group]            # enum-backed, for grouping
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = ""
+
+[[paths."area/inv/".rules.file-extensions-v1]]
+reason = "keep inventory scans to actual images"
 ```
 
-A path key is normally relative to `root`. One that resolves *outside*
-it - `"/etc/nginx/"`, `"~/.config/"`, `"../sibling/"` - is legal only on
-an entry that says so:
+A path key is normally relative to `root`, but doesn't have to be:
+`"/etc/nginx/"`, `"~/.config/"` and `"../sibling/"` each name exactly
+where they say, and rules attached to them run there.
+
+A cataloged path that isn't on disk right now is simply skipped - the
+catalog says where things go, not that every location currently exists.
+
+Each namespace declares what may go in the first two (see
+[doc/DESIGN.md](doc/DESIGN.md)):
 
 ```toml
-[paths."~/.config/"]
-outside_root = true
-purpose = "Application config that lives outside the governed tree"
+[paths.attributes]
+# free-form prose - a string or a list of strings, rendered as written
+names = ["purpose", "notes", "use_for", "not_for", "see_also"]
+required = ["purpose"]
+
+# enum-backed, checked against enums.group.<field>, and used to group
+# paths in the generated docs
+[paths.attributes.group]
+names = ["lifecycle", "origin"]
+multi = ["origin"]          # origin holds several values; lifecycle one
+required = ["lifecycle", "origin"]
 ```
 
-Without the flag it's a validation error. The flag exists because the
-escape used to be silent: joining an absolute key onto `root` *discards*
-`root` entirely, so a stray leading slash would have quietly pointed
-rules at a different tree. Unlike every other field, `outside_root` is
-never inherited and never picks up a default - it has to be written on
-the entry that escapes, the same way `reason` has to be written at every
-rule attachment site.
+- **Documentation** fields are yours to name - nothing in the code knows
+  what `purpose` means, and a standard can carry `owner` or
+  `sensitivity` instead. The validator warns on any field the namespace
+  never declared.
+- **Grouping** fields need a vocabulary under `enums.group.<field>`. The
+  template ships `lifecycle` (`transient` · `temporary` · `ongoing` ·
+  `archival`) and `origin` (`self` · `external` · `generated`).
+- `group`, `rules` and `inherit` are the only names an entry can't use
+  for a field of its own.
 
-- `lifecycle` (single value): `transient` (emptied constantly, nothing
-  lingers) · `temporary` (has a completion condition, then archived) ·
-  `ongoing` (continuously maintained, no end state) · `archival`
-  (already at rest, rarely touched).
-- `origin` (a **list**, not a single value - content can be partly
-  self-authored and partly generated): `self` · `external` · `generated`.
-- `paths.attributes.names` declares the full set of valid fields on a
-  path entry; the validator warns on anything not in that list.
+`folders` declares its own two field lists, so reserved folder names can
+carry a different set of fields from paths; the vocabularies under
+`enums` are shared, since a value set describes the field rather than
+who carries it.
 
 ### Value format conventions
 

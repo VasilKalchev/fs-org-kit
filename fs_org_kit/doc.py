@@ -44,13 +44,13 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import RuleEntry
-from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
+from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec
+from fs_org_kit.inherit import ResolvedEntry, RuleAttachment, own_fields
 from fs_org_kit.validator import Validator, _index_source
 
 ALL_SECTIONS = ("overview", "paths", "cross", "folders", "rules", "enums", "abbreviations", "tags")
-ALL_DIAGRAMS = ("tree", "lifecycle", "rules", "cross")
+ALL_DIAGRAMS = ("tree", "rules", "cross")
 MERMAID_NODE_LIMIT = 40
-KNOWN_LIFECYCLE_ORDER = ("transient", "temporary", "ongoing", "archival")
 
 
 # ---------------------------------------------------------------------
@@ -196,18 +196,6 @@ def build_tree_diagram(resolved_paths: dict[str, ResolvedEntry]) -> str | None:
     return "\n".join(lines)
 
 
-def build_lifecycle_diagram(lifecycle_enum: dict[str, Any]) -> str | None:
-    if set(lifecycle_enum.keys()) != set(KNOWN_LIFECYCLE_ORDER):
-        return None
-    lines = ["```mermaid", "graph LR"]
-    for i, val in enumerate(KNOWN_LIFECYCLE_ORDER):
-        lines.append(f'    l{i}["{val}"]')
-    for i in range(len(KNOWN_LIFECYCLE_ORDER) - 1):
-        lines.append(f"    l{i} --> l{i + 1}")
-    lines.append("```")
-    return "\n".join(lines)
-
-
 def build_rules_diagram(sites_by_rule: dict[str, list[RuleAttachmentSite]]) -> str | None:
     if not sites_by_rule:
         return None
@@ -314,38 +302,53 @@ def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict, d
             b.line()
 
 
-def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[str, Any]) -> None:
-    attrs = resolved.attributes
-    inherited_from = raw.get("inherit", {}).get("attributes") if isinstance(raw.get("inherit"), dict) else None
+def _field_label(name: str) -> str:
+    """`use_for` -> "Use for". The standard names its own fields; this is
+    the whole of the presentation logic applied to them."""
+    text = name.replace("_", " ").strip()
+    return text[:1].upper() + text[1:]
 
-    def marker(field_name: str) -> str:
-        if inherited_from and field_name not in raw:
-            return f" *(inherited from `{inherited_from}`)*"
-        return ""
 
-    rows = []
-    if attrs.get("purpose"):
-        rows.append(("Purpose", attrs["purpose"] + marker("purpose")))
-    if attrs.get("notes"):
-        rows.append(("Notes", attrs["notes"] + marker("notes")))
-    if attrs.get("lifecycle"):
-        rows.append(("Lifecycle", f"[`{attrs['lifecycle']}`](#{slug_for('section', 'enums')}){marker('lifecycle')}"))
-    if attrs.get("origin"):
-        origin_str = ", ".join(f"`{o}`" for o in attrs["origin"])
-        rows.append(("Origin", f"{origin_str}{marker('origin')}"))
-    if attrs.get("see_also"):
-        # a list of catalog keys, or a single one as a bare string - both
-        # shapes are in the wild, and a list must not reach the table as
-        # its Python repr
-        see_also = attrs["see_also"]
-        if isinstance(see_also, list):
-            see_also = ", ".join(f"`{s}`" for s in see_also if s)
-        if see_also:
-            rows.append(("See also", see_also))
-    if attrs.get("allow_missing"):
-        rows.append(("May be missing", "yes"))
-    if attrs.get("outside_root"):
-        rows.append(("Outside root", "yes - this entry deliberately points outside the governed tree"))
+def _string_values(value: Any) -> list[str]:
+    """Both shapes a field can hold, flattened - a bare string, or a list
+    of them, with empty placeholder entries dropped."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v]
+    return []
+
+
+def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[str, Any], spec: FieldSpec) -> None:
+    """Renders whatever the standard declared, in the order it declared
+    it: single-valued fields as table rows, list-valued ones as bullets
+    below. Grouping values link to the vocabulary that defines them."""
+    inherit = raw.get("inherit", {}) if isinstance(raw.get("inherit"), dict) else {}
+
+    def marker(kind: str, field_name: str) -> str:
+        """An inherited value is worth marking as such; one the entry
+        writes itself is not."""
+        source = inherit.get(kind)
+        written_here = field_name in own_fields(raw, kind)
+        return f" *(inherited from `{source}`)*" if source and not written_here else ""
+
+    rows: list[tuple[str, str]] = []
+    bullet_lists: list[tuple[str, list[str], str]] = []
+
+    for name in spec.attribute_names:
+        value = resolved.attributes.get(name)
+        if isinstance(value, str) and value:
+            rows.append((_field_label(name), value + marker(ATTRIBUTES, name)))
+            continue
+        values = _string_values(value)
+        if values:
+            bullet_lists.append((_field_label(name), values, marker(ATTRIBUTES, name)))
+
+    for name in spec.group_names:
+        values = _string_values(resolved.group.get(name))
+        if values:
+            linked = ", ".join(f"[`{v}`](#{slug_for('section', 'enums')})" for v in values)
+            rows.append((_field_label(name), linked + marker(GROUP, name)))
 
     if rows:
         b.line("| Field | Value |")
@@ -354,13 +357,31 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
             b.line(f"| {label} | {value} |")
         b.line()
 
-    for label, field_name in (("Use for", "use_for"), ("Not for", "not_for")):
-        values = [v for v in attrs.get(field_name, []) if v]
-        if values:
-            b.line(f"**{label}:**")
-            for v in values:
-                b.line(f"- {v}")
-            b.line()
+    for label, values, mark in bullet_lists:
+        b.line(f"**{label}:**{mark}")
+        b.line()
+        for v in values:
+            b.line(f"- {v}")
+        b.line()
+
+
+def render_grouping_index(b: DocBuilder, entries: dict[str, ResolvedEntry], spec: FieldSpec, kind: str) -> None:
+    """One bucket list per grouping field - the reason grouping fields are
+    declared apart from free-form documentation ones. Entries with no
+    value for a field simply don't appear under it."""
+    for name in spec.group_names:
+        buckets: dict[str, list[str]] = {}
+        for key in sorted(entries):
+            for value in _string_values(entries[key].group.get(name)):
+                buckets.setdefault(value, []).append(key)
+        if not buckets:
+            continue
+        b.line(f"**By `{name}`:**")
+        b.line()
+        for value in sorted(buckets):
+            members = ", ".join(link(f"`{k}`", slug_for(kind, k)) for k in buckets[value])
+            b.line(f"- `{value}` - {members}")
+        b.line()
 
 
 def _render_rule_attachments(b: DocBuilder, resolved: ResolvedEntry) -> None:
@@ -381,14 +402,15 @@ def _render_rule_attachments(b: DocBuilder, resolved: ResolvedEntry) -> None:
     b.line()
 
 
-def render_paths(b: DocBuilder, resolved_paths: dict[str, ResolvedEntry]) -> None:
+def render_paths(b: DocBuilder, resolved_paths: dict[str, ResolvedEntry], spec: FieldSpec) -> None:
     if not resolved_paths:
         return
     b.heading(2, "Paths", slug_for("section", "paths"))
+    render_grouping_index(b, resolved_paths, spec, "path")
     for key in sorted(resolved_paths.keys()):
         resolved = resolved_paths[key]
         b.heading(3, f"`{key}`", slug_for("path", key))
-        _render_attribute_table(b, resolved, resolved.raw)
+        _render_attribute_table(b, resolved, resolved.raw, spec)
         _render_rule_attachments(b, resolved)
 
 
@@ -434,7 +456,9 @@ def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
             b.line()
 
 
-def render_folders(b: DocBuilder, data: dict[str, Any], resolved_folders: dict[str, ResolvedEntry]) -> None:
+def render_folders(
+    b: DocBuilder, data: dict[str, Any], resolved_folders: dict[str, ResolvedEntry], spec: FieldSpec
+) -> None:
     if not resolved_folders:
         return
     b.heading(2, "Reserved Folders", slug_for("section", "folders"))
@@ -442,10 +466,11 @@ def render_folders(b: DocBuilder, data: dict[str, Any], resolved_folders: dict[s
     prefix = reserved.get("prefix", "_") if isinstance(reserved, dict) else "_"
     b.line(f"Reserved-name prefix: `{prefix}`")
     b.line()
+    render_grouping_index(b, resolved_folders, spec, "folder")
     for name in sorted(resolved_folders.keys()):
         resolved = resolved_folders[name]
         b.heading(3, f"`{name}`", slug_for("folder", name))
-        _render_attribute_table(b, resolved, resolved.raw)
+        _render_attribute_table(b, resolved, resolved.raw, spec)
         _render_rule_attachments(b, resolved)
 
 
@@ -501,36 +526,35 @@ def render_rules(b: DocBuilder, rule_catalog: dict[str, RuleEntry], sites_by_rul
         b.line()
 
 
-def render_enums(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> None:
+def render_enums(b: DocBuilder, data: dict[str, Any]) -> None:
+    """One table per vocabulary, under the kind of field it belongs to -
+    a standard names its own fields, so neither the set of tables nor
+    their names is known ahead of time. The heading is the dotted key
+    itself, so a reader of the docs can find it in the TOML."""
     enums = data.get("enums", {})
-    paths_enums = enums.get("paths", {})
-    lifecycle = paths_enums.get("lifecycle", {})
-    origin = paths_enums.get("origin", {})
-    if not lifecycle and not origin:
+    if not isinstance(enums, dict):
+        return
+
+    vocabularies: list[tuple[str, str, dict[str, Any]]] = []
+    for kind in (GROUP, ATTRIBUTES):
+        kind_enums = enums.get(kind, {})
+        if not isinstance(kind_enums, dict):
+            continue
+        for name, values in kind_enums.items():
+            if isinstance(values, dict) and values:
+                vocabularies.append((kind, name, values))
+
+    if not vocabularies:
         return
 
     b.heading(2, "Enums", slug_for("section", "enums"))
 
-    if lifecycle:
-        b.line("**Lifecycle:**")
+    for kind, name, values in vocabularies:
+        b.line(f"**`enums.{kind}.{name}`:**")
         b.line()
         b.line("| Value | Meaning |")
         b.line("|---|---|")
-        for val, desc in lifecycle.items():
-            b.line(f"| `{val}` | {desc} |")
-        b.line()
-        if "lifecycle" in diagrams:
-            diagram = build_lifecycle_diagram(lifecycle)
-            if diagram:
-                b.line(diagram)
-                b.line()
-
-    if origin:
-        b.line("**Origin:**")
-        b.line()
-        b.line("| Value | Meaning |")
-        b.line("|---|---|")
-        for val, desc in origin.items():
+        for val, desc in values.items():
             b.line(f"| `{val}` | {desc} |")
         b.line()
 
@@ -586,15 +610,15 @@ def generate(
     if "overview" in sections:
         render_overview(b, data, validator.resolved_paths, diagrams)
     if "paths" in sections:
-        render_paths(b, validator.resolved_paths)
+        render_paths(b, validator.resolved_paths, validator.path_fields)
     if "cross" in sections:
         render_cross(b, data, diagrams)
     if "folders" in sections:
-        render_folders(b, data, validator.resolved_folders)
+        render_folders(b, data, validator.resolved_folders, validator.folder_fields)
     if "rules" in sections:
         render_rules(b, validator.rule_catalog, sites_by_rule, diagrams)
     if "enums" in sections:
-        render_enums(b, data, diagrams)
+        render_enums(b, data)
     if "abbreviations" in sections:
         render_abbreviations(b, data)
     if "tags" in sections:

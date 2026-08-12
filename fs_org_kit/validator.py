@@ -4,11 +4,11 @@ validator.py - checks a TOML file against the fs-org-std grammar defined in
 fs-org-std.template.toml. The file being checked can be named anything; it's
 validated against the *standard*, not against a specific filename.
 
-This does NOT hardcode enums or path attribute lists - it reads them from
-the file itself (enums.paths.*, paths.attributes.names), so it stays
-correct as the standard evolves without needing edits here. Rule catalog
-validation (scope, params, required fields) is driven by discovery.py,
-which reads manifests from disk rather than from an embedded [rules] table.
+This does NOT hardcode field names, enums or requiredness - it reads
+them from the file itself (see fs_org_kit.fields), so a standard names
+its own fields and this stays correct. Rule catalog validation (scope,
+params, required fields) is driven by discovery.py, which reads
+manifests from disk rather than from an embedded [rules] table.
 
 Usage:
     python -m fs_org_kit.validator path/to/your-file.toml
@@ -86,15 +86,16 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
-from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, resolve_entries
+from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, parse_field_spec
+from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, own_fields, resolve_entries
 from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
-from fs_org_kit.path_keys import OUTSIDE_ROOT_ATTR, comparison_key, escapes_root
+from fs_org_kit.path_keys import comparison_key
 from fs_org_kit.path_patterns import is_pattern, patterns_may_overlap
 
 # the schema major version this validator understands - bump this
 # deliberately whenever a breaking (major-version) grammar change is made
 # to fs-org-std.template.toml, alongside updating the checks themselves
-SUPPORTED_SCHEMA_MAJOR = 1
+SUPPORTED_SCHEMA_MAJOR = 2
 
 
 # ---------------------------------------------------------------------
@@ -243,11 +244,12 @@ WARNING_CODES = {
     "root-trailing-slash":         ("lint",       "root doesn't end with a trailing slash"),
     "version-format":              ("lint",       "schema_version/standard_version doesn't look like major.minor"),
     "no-paths":                    ("lint",       'no standardized [paths."..."] entries found'),
-    "missing-path-attribute-list": ("validation", "paths.attributes.names is empty or missing"),
+    "missing-path-attribute-list": ("validation", "the paths namespace declares no fields at all"),
     "path-trailing-slash":         ("lint",       "a path key doesn't end with a trailing slash"),
     "reserved-name-prefix":        ("lint",       "a reserved folder name doesn't start with `_`"),
-    "unknown-path-field":          ("validation", "a path entry has a field not in paths.attributes.names"),
-    "empty-list-item":             ("lint",       "a list field (use_for/not_for/...) has empty placeholder entries"),
+    "unknown-path-field":          ("validation", "an entry has a field its namespace never declared"),
+    "missing-grouping-enum":       ("validation", "a grouping field has no vocabulary under enums.<namespace>.<field>"),
+    "empty-list-item":             ("lint",       "a list field has empty placeholder entries"),
     "unknown-param":               ("validation", "an attachment passes a param not declared in the rule manifest"),
     "rule-discovery-warning":      ("validation", "non-fatal issue found during rule discovery (collision, suspicious flag)"),
     "inherit-issue":               ("validation", "non-fatal issue resolving `inherit` (dead exclude_rules entry, etc.)"),
@@ -255,12 +257,9 @@ WARNING_CODES = {
 }
 
 
-# fields on a [paths."..."] / [folders.reserved."..."] entry that must be
-# non-empty in a populated file, vs. ones that are allowed to stay empty
-# (origin is handled separately below - it's a list, not a scalar)
-REQUIRED_ENTRY_FIELDS = ("purpose", "lifecycle")
-OPTIONAL_ENTRY_FIELDS = ("notes", "see_also")
-LIST_ENTRY_FIELDS = ("use_for", "not_for")
+# Which fields an entry may carry, which of them are required, and which
+# are enum-backed all come from the standard itself - see
+# fs_org_kit.fields. No field name is hardcoded here.
 
 DEFAULT_RESERVED_PREFIX = "_"
 
@@ -285,8 +284,10 @@ class Validator:
         self.rule_catalog: dict[str, RuleEntry] = {}   # populated by _load_rule_catalog
         self.resolved_paths: dict[str, ResolvedEntry] = {}     # populated by _load_inheritance
         self.resolved_folders: dict[str, ResolvedEntry] = {}   # populated by _load_inheritance
-        self.lifecycle_enum: set[str] = set()
-        self.origin_enum: set[str] = set()
+        # what each namespace declares its entries may carry - parsed once
+        # here, reused by the doc generator (see fs_org_kit.fields)
+        self.path_fields = FieldSpec("paths")      # populated by _load_field_specs
+        self.folder_fields = FieldSpec("folders")  # populated by _load_field_specs
         self.known_path_keys: set[str] = set()
         self.schema_major: int | None = None
         # category -> [(component_id, location_prefix), ...], used to build
@@ -317,7 +318,7 @@ class Validator:
             # v1-shaped checks against a different major version would
             # likely just produce a flood of misleading noise, so stop here
             return self.issues
-        self._load_enums()
+        self._load_field_specs()
         self._load_rule_catalog()
         self._load_inheritance()
         self._check_paths()
@@ -406,13 +407,21 @@ class Validator:
                 f"(supports major version {SUPPORTED_SCHEMA_MAJOR}) - skipping remaining checks",
             )
 
-    # -- enums ------------------------------------------------------------
+    # -- field declarations (attributes / grouping / enums) ------------------
 
-    def _load_enums(self) -> None:
-        enums = self.data.get("enums", {})
-        paths_enums = enums.get("paths", {})
-        self.lifecycle_enum = set(paths_enums.get("lifecycle", {}).keys())
-        self.origin_enum = set(paths_enums.get("origin", {}).keys())
+    def _load_field_specs(self) -> None:
+        """Read what each namespace says its entries may carry, before any
+        entry is checked against it. Both namespaces are read the same way
+        and independently - `folders` can declare a different set of fields
+        from `paths` - though the vocabularies under `enums` are shared."""
+        for namespace, attr in (("paths", "path_fields"), ("folders", "folder_fields")):
+            spec, issues = parse_field_spec(self.data, namespace)
+            setattr(self, attr, spec)
+            for issue in issues:
+                if issue.level == "error":
+                    self.error(issue.location, issue.message)
+                else:
+                    self.warning(issue.location, issue.message, issue.code)
 
     # -- rule catalog (from discovery) -------------------------------------
 
@@ -445,19 +454,12 @@ class Validator:
         only from another reserved folder entry."""
         paths = self.data.get("paths", {})
         path_entries = {k: v for k, v in paths.items() if k not in META_KEYS_UNDER_PATHS and isinstance(v, dict)}
-        path_defaults = paths.get("attributes", {}).get("defaults", {})
-        if not isinstance(path_defaults, dict):
-            path_defaults = {}
-        self.resolved_paths, path_issues = resolve_entries(path_entries, path_defaults, "paths")
+        self.resolved_paths, path_issues = resolve_entries(path_entries, "paths")
         self._bridge_inherit_issues(path_issues, "paths")
 
-        folders = self.data.get("folders", {})
-        reserved = folders.get("reserved", {})
+        reserved = self.data.get("folders", {}).get("reserved", {})
         folder_entries = {k: v for k, v in reserved.items() if k not in META_KEYS_UNDER_RESERVED and isinstance(v, dict)}
-        folder_defaults = folders.get("attributes", {}).get("defaults", {})
-        if not isinstance(folder_defaults, dict):
-            folder_defaults = {}
-        self.resolved_folders, folder_issues = resolve_entries(folder_entries, folder_defaults, "folders.reserved")
+        self.resolved_folders, folder_issues = resolve_entries(folder_entries, "folders.reserved")
         self._bridge_inherit_issues(folder_issues, 'folders.reserved')
 
     def _bridge_inherit_issues(self, issues: list[InheritIssue], loc_prefix: str) -> None:
@@ -471,7 +473,8 @@ class Validator:
     # -- rule instances (attached under paths / folders / cross) --------------
 
     def _check_rule_instances(
-        self, rules_table: Any, location: str, context: str = "single", component_category: str | None = None
+        self, rules_table: Any, location: str, context: str = "single",
+        component_category: str | None = None,
     ) -> None:
         if not isinstance(rules_table, dict):
             return
@@ -550,8 +553,9 @@ class Validator:
         one's attributes/rules should win is genuinely ambiguous.
 
         A pattern overlapping a LITERAL is also an error, UNLESS that
-        literal entry explicitly declares inherit.attributes or
-        inherit.rules pointing at that exact pattern key - the
+        literal entry explicitly declares inherit.attributes,
+        inherit.group or inherit.rules pointing at that exact pattern
+        key - the
         deliberate, documented way to override one instance of a
         pattern's shared attributes/rules for a specific real folder
         (see doc/DESIGN.md). This mirrors overrides_bundled elsewhere
@@ -575,8 +579,9 @@ class Validator:
             self.error(
                 f'paths."{a}"',
                 f'may match the same folder(s) as paths."{b}" - overlapping catalog entries would leave it '
-                f"ambiguous which entry's attributes/rules actually apply (a literal entry can override one "
-                f"instance of a pattern via inherit.attributes/inherit.rules - see doc/DESIGN.md)",
+                f"ambiguous which entry's fields/rules actually apply (a literal entry can override one "
+                f"instance of a pattern via inherit.attributes/inherit.group/inherit.rules - "
+                f"see doc/DESIGN.md)",
             )
 
     @staticmethod
@@ -588,7 +593,7 @@ class Validator:
         inherit = entry.get("inherit") if isinstance(entry, dict) else None
         if not isinstance(inherit, dict):
             return False
-        return inherit.get("attributes") == pattern or inherit.get("rules") == pattern
+        return any(inherit.get(source) == pattern for source in (ATTRIBUTES, GROUP, RULES))
 
     # -- alphabetical order (lint) ------------------------------------------
 
@@ -619,9 +624,13 @@ class Validator:
 
         self._check_rule_instances(paths.get("rules"), "paths", context="single", component_category="paths.rules")
 
-        path_attr_names = set(paths.get("attributes", {}).get("names", []))
-        if not path_attr_names:
-            self.warning("paths.attributes.names", "empty or missing - can't check unknown fields on path entries", "missing-path-attribute-list")
+        if not self.path_fields.is_declared():
+            self.warning(
+                "paths.attributes.names",
+                "no fields declared for path entries (paths.attributes.names / "
+                "paths.attributes.group.names) - can't check unknown fields",
+                "missing-path-attribute-list",
+            )
 
         for key in self.known_path_keys:
             entry = paths[key]
@@ -635,30 +644,27 @@ class Validator:
                 self.error(loc, "expected a table")
                 continue
 
-            self._check_outside_root(key, entry, loc)
-            self._check_inherit_shape(entry, loc)
+            self._check_entry_shape(entry, loc)
 
-            # a table that ONLY has a `rules` key (and no `inherit`) exists
-            # purely because TOML implicitly creates parent tables -
+            # an entry carrying ONLY a `rules` table (and no `inherit`)
+            # exists purely because TOML implicitly creates parent tables -
             # someone wrote [paths."<key>".rules.<rule-name>] without ever
-            # declaring [paths."<key>"] itself. That's a mistaken/misattached
-            # rule, not an under-filled-out entry. A table whose only OTHER
-            # content is `inherit` is different - a purely-inherited entry
-            # is legitimate, its own fields all come from its source.
-            content_keys = set(entry.keys()) - {"rules", "inherit"}
+            # declaring what the path is. That's a mistaken/misattached
+            # rule, not an under-filled-out entry. An entry whose only
+            # other content is `inherit` is different - a purely-inherited
+            # entry is legitimate, its own fields all come from its source.
+            resolved = self.resolved_paths.get(key)
+            declared = bool(own_fields(entry, ATTRIBUTES)) or bool(own_fields(entry, GROUP))
             has_inherit = isinstance(entry.get("inherit"), dict) and bool(entry.get("inherit"))
-            if not content_keys and not has_inherit:
+            if not declared and not has_inherit:
                 self.error(
                     loc,
                     f"path isn't declared - a rule is attached under paths.\"{key}\".rules, "
-                    f"but there's no [paths.\"{key}\"] entry for it",
+                    f"but nothing says what paths.\"{key}\" is",
                 )
             else:
-                resolved = self.resolved_paths.get(key)
-                resolved_attrs = resolved.attributes if resolved else {}
-                self._check_entry_fields(entry, resolved_attrs, loc, known_field_names=path_attr_names)
+                self._check_entry_fields(entry, resolved, loc, self.path_fields)
 
-            resolved = self.resolved_paths.get(key)
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
 
@@ -673,8 +679,6 @@ class Validator:
                 self.error(f"{loc}.paths", "list is empty")
             elif not all(isinstance(p, str) for p in referenced):
                 self.error(f"{loc}.paths", "must be a list of path strings")
-            else:
-                self._check_cross_outside_root(cross, referenced, loc)
             self._check_rule_instances(cross.get("rules"), loc, context="cross")
 
     # -- folders ------------------------------------------------------------
@@ -683,8 +687,6 @@ class Validator:
         folders = self.data.get("folders", {})
         self._check_rule_instances(folders.get("rules"), "folders", context="single", component_category="folders.rules")
 
-        folder_attr_names = set(folders.get("attributes", {}).get("names", []))
-
         reserved = folders.get("reserved", {})
         reserved_prefix = reserved.get("prefix", DEFAULT_RESERVED_PREFIX)
         if not isinstance(reserved_prefix, str) or not reserved_prefix:
@@ -692,6 +694,15 @@ class Validator:
             reserved_prefix = DEFAULT_RESERVED_PREFIX
 
         reserved_names = [k for k in reserved if k not in META_KEYS_UNDER_RESERVED]
+        if reserved_names and not self.folder_fields.is_declared():
+            # every field on these entries is then both unchecked and
+            # unrendered - the generated docs would show the names alone
+            self.warning(
+                "folders.attributes.names",
+                "reserved folder entries exist, but the folders namespace declares no fields "
+                "(folders.attributes.names / folders.attributes.group.names)",
+                "missing-path-attribute-list",
+            )
         self._check_alphabetical_order(reserved_names, "folders.reserved")
         for name in reserved_names:
             entry = reserved[name]
@@ -703,11 +714,10 @@ class Validator:
                 self.error(loc, "expected a table")
                 continue
 
-            self._check_inherit_shape(entry, loc)
+            self._check_entry_shape(entry, loc)
 
             resolved = self.resolved_folders.get(name)
-            resolved_attrs = resolved.attributes if resolved else {}
-            self._check_entry_fields(entry, resolved_attrs, loc, known_field_names=folder_attr_names)
+            self._check_entry_fields(entry, resolved, loc, self.folder_fields)
 
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
@@ -721,69 +731,25 @@ class Validator:
 
     # -- inherit table shape ------------------------------------------------
 
-    def _check_outside_root(self, key: str, entry: dict[str, Any], loc: str) -> None:
-        """A catalog key that resolves outside `root` is legal only when the
-        entry says so with `outside_root = true` - see fs_org_kit.path_keys
-        for what counts as escaping (absolute, `~`-relative, or `..` walking
-        up) and why an accidental escape used to pass silently.
+    def _check_entry_shape(self, entry: dict[str, Any], loc: str) -> None:
+        """`group`, `rules` and `inherit` are an entry's structural keys;
+        everything else on it is a documentation field, checked against
+        the declaration elsewhere."""
+        for key in STRUCTURAL_KEYS:
+            if key in entry and not isinstance(entry[key], dict):
+                self.error(f"{loc}.{key}", "expected a table")
 
-        The flag must be written on the escaping entry ITSELF. Arriving via
-        `inherit` or paths.attributes.defaults doesn't count, and is an error
-        rather than a quiet acceptance: this is the same reasoning that keeps
-        `reason` un-inheritable at rule attachment sites. A one-word edit to
-        an unrelated entry must never be able to widen the set of directories
-        the tool will walk into and, under --fix, write to."""
-        declared = entry.get(OUTSIDE_ROOT_ATTR)
-        resolved = self.resolved_paths.get(key)
-        inherited = bool(resolved.attributes.get(OUTSIDE_ROOT_ATTR)) if resolved else False
-
-        if declared is not True and inherited:
-            self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
-                f"resolved to true through inheritance or paths.attributes.defaults, but "
-                f"{OUTSIDE_ROOT_ATTR} is never inherited or defaulted - write it on this entry itself",
-            )
-        elif escapes_root(key) and declared is not True:
-            self.error(
-                loc,
-                f"resolves outside root - set {OUTSIDE_ROOT_ATTR} = true on this entry to confirm that's "
-                f"intended (an absolute key silently discards root, so this is opt-in rather than implicit)",
-            )
-        elif declared is True and not escapes_root(key):
-            self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
-                "is set, but this key resolves inside root - drop the flag, or make the key absolute",
-            )
-
-    def _check_cross_outside_root(self, cross: dict[str, Any], referenced: list[Any], loc: str) -> None:
-        """[[paths.cross]] lists raw path strings rather than catalog entries,
-        so the opt-in lives on the cross table and covers every path it
-        lists - one place to look, same as the per-entry flag."""
-        declared = cross.get(OUTSIDE_ROOT_ATTR) is True
-        outside = [p for p in referenced if isinstance(p, str) and escapes_root(p)]
-        if outside and not declared:
-            self.error(
-                f"{loc}.paths",
-                f"{', '.join(repr(p) for p in outside)} resolve(s) outside root - set "
-                f"{OUTSIDE_ROOT_ATTR} = true on this [[paths.cross]] entry to confirm that's intended",
-            )
-        elif declared and not outside:
-            self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
-                "is set, but every path listed here resolves inside root - drop the flag",
-            )
-
-    def _check_inherit_shape(self, entry: dict[str, Any], loc: str) -> None:
         inherit = entry.get("inherit")
-        if inherit is None:
+        if inherit is None or not isinstance(inherit, dict):
             return
-        if not isinstance(inherit, dict):
-            self.error(f"{loc}.inherit", "expected a table")
-            return
-        known_keys = {"attributes", "rules", "exclude_rules"}
+        known_keys = {ATTRIBUTES, GROUP, RULES, "exclude_rules"}
         for key in inherit:
             if key not in known_keys:
-                self.warning(f"{loc}.inherit.{key}", "field isn't a recognized `inherit` key (attributes/rules/exclude_rules)", "unknown-path-field")
+                self.warning(
+                    f"{loc}.inherit.{key}",
+                    "field isn't a recognized `inherit` key (doc/group/rules/exclude_rules)",
+                    "unknown-path-field",
+                )
 
     # -- resolved rule instances (attached to a path or reserved folder,
     #    after inheritance has already been flattened) ----------------------
@@ -848,65 +814,107 @@ class Validator:
     # -- shared entry-field checks (paths + reserved folders) ------------------
 
     def _check_entry_fields(
-        self, raw_entry: dict[str, Any], resolved_attrs: dict[str, Any], loc: str, known_field_names: set[str] | None = None
+        self, raw_entry: dict[str, Any], resolved: ResolvedEntry | None, loc: str, spec: FieldSpec
     ) -> None:
-        if known_field_names:
-            for key in raw_entry:
-                # `rules` is where rule instances attach, `inherit` is the
-                # inheritance sub-table - both structural, neither is a
-                # content field, so neither is part of attributes.names
-                if key in ("rules", "inherit"):
-                    continue
-                if key not in known_field_names:
-                    self.warning(f"{loc}.{key}", "field isn't declared in the namespace's attributes.names", "unknown-path-field")
+        """Each of an entry's three tables is checked against what its
+        namespace declared for it - see fs_org_kit.fields. Values come
+        from the RESOLVED entry (inheritance and defaults already
+        applied); the raw entry is only consulted for what was written
+        where."""
+        resolved_by_kind = {
+            ATTRIBUTES: resolved.attributes if resolved else {},
+            GROUP: resolved.group if resolved else {},
+        }
 
-        for field_name in REQUIRED_ENTRY_FIELDS:
-            value = resolved_attrs.get(field_name)
-            if not value:
-                self.error(f"{loc}.{field_name}", "required field is empty or missing, even after inheritance/defaults")
+        for kind in (ATTRIBUTES, GROUP):
+            declared = set(spec.names(kind))
+            if spec.is_declared():
+                for field_name in own_fields(raw_entry, kind):
+                    if field_name not in declared:
+                        self.warning(
+                            f"{self._field_loc(loc, kind, field_name)}",
+                            f"field isn't declared in {spec.declaration_location(kind)}",
+                            "unknown-path-field",
+                        )
 
-        lifecycle = resolved_attrs.get("lifecycle")
-        if lifecycle and self.lifecycle_enum and lifecycle not in self.lifecycle_enum:
-            self.error(f"{loc}.lifecycle", f"'{lifecycle}' is not a value in enums.paths.lifecycle")
+            values = resolved_by_kind[kind]
+            for field_name in spec.names(kind):
+                if field_name in spec.required(kind) and not values.get(field_name):
+                    self.error(
+                        self._field_loc(loc, kind, field_name),
+                        "required field is empty or missing, even after inheritance",
+                    )
+                if kind == ATTRIBUTES:
+                    self._check_attribute_field(values.get(field_name), field_name, loc, spec)
+                else:
+                    self._check_grouping_field(values.get(field_name), field_name, loc, spec)
 
-        origin = resolved_attrs.get("origin")
-        self._check_origin_field(origin, loc)
+    @staticmethod
+    def _field_loc(loc: str, kind: str, field_name: str) -> str:
+        """Documentation fields sit directly on the entry; grouping fields
+        sit in its `group` table - the reported location follows."""
+        return f"{loc}.{field_name}" if kind == ATTRIBUTES else f"{loc}.{kind}.{field_name}"
 
-        for field_name in LIST_ENTRY_FIELDS:
-            value = resolved_attrs.get(field_name)
-            if value is None:
-                continue
+    def _check_attribute_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
+        """A documentation field is free-form prose - nothing reads its
+        value, so the only structural claim worth making is that it's
+        renderable: a string, or a list of strings. A standard may still
+        close its value set by declaring one under `enums.attributes.<field>`."""
+        if value is None:
+            return  # requiredness is checked separately, from the declaration
+        field_loc = self._field_loc(loc, ATTRIBUTES, field_name)
+
+        if isinstance(value, str):
+            values = [value]
+        elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+            values = value
+            if any(not item for item in value):
+                self.warning(field_loc, "contains empty placeholder entries", "empty-list-item")
+        else:
+            self.error(field_loc, "must be a string or a list of strings")
+            return
+
+        allowed = spec.attribute_values.get(field_name)
+        if not allowed:
+            return
+        enum_loc = spec.enum_location(ATTRIBUTES, field_name)
+        for item in values:
+            if item and item not in allowed:
+                self.error(field_loc, f"'{item}' is not a value in {enum_loc}")
+
+    def _check_grouping_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
+        """A grouping field's whole point is a closed vocabulary - entries
+        only sort into buckets if they agree on what the buckets are. A
+        field declared in `<namespace>.group.multi` holds a LIST of values
+        (content that's partly self-authored and partly generated, say);
+        every other one holds exactly one."""
+        if value is None:
+            return  # requiredness is checked separately, from the declaration
+
+        field_loc = self._field_loc(loc, GROUP, field_name)
+        enum_loc = spec.enum_location(GROUP, field_name)
+        allowed = spec.group_values.get(field_name, frozenset())
+
+        if spec.is_multi(field_name):
             if not isinstance(value, list):
-                self.error(f"{loc}.{field_name}", "must be a list")
-            elif any(not item for item in value):
-                self.warning(f"{loc}.{field_name}", "contains empty placeholder entries", "empty-list-item")
+                self.error(field_loc, f'must be a list of values from {enum_loc}, e.g. ["self"]')
+                return
+            values = value
+        else:
+            if isinstance(value, list):
+                self.error(
+                    field_loc,
+                    f"must be a single value from {enum_loc} - add it to {spec.namespace}.group.multi "
+                    f"to allow several",
+                )
+                return
+            values = [value]
 
-        for flag_name in ("allow_missing", OUTSIDE_ROOT_ATTR):
-            if flag_name in resolved_attrs and not isinstance(resolved_attrs[flag_name], bool):
-                self.error(f"{loc}.{flag_name}", "must be a boolean (true/false) if present")
-
-    def _check_origin_field(self, origin: Any, loc: str) -> None:
-        # origin is a LIST of enums.paths.origin values (content can be
-        # partly self-authored and partly generated, for example) - every
-        # branch below reports via error()/warning(), never raises, even
-        # if origin was written as the wrong type entirely
-        if origin is None:
-            self.error(f"{loc}.origin", "required field is empty or missing")
-            return
-
-        if not isinstance(origin, list):
-            self.error(f"{loc}.origin", "must be a list of values from enums.paths.origin, e.g. [\"self\"]")
-            return
-
-        if not origin:
-            self.error(f"{loc}.origin", "required field is empty or missing")
-            return
-
-        for value in origin:
-            if not isinstance(value, str):
-                self.error(f"{loc}.origin", f"'{value}' should be a string from enums.paths.origin")
-            elif self.origin_enum and value not in self.origin_enum:
-                self.error(f"{loc}.origin", f"'{value}' is not a value in enums.paths.origin")
+        for item in values:
+            if not isinstance(item, str):
+                self.error(field_loc, f"'{item}' should be a string from {enum_loc}")
+            elif allowed and item not in allowed:
+                self.error(field_loc, f"'{item}' is not a value in {enum_loc}")
 
 
 def _parse_version(value: str) -> tuple[int, ...] | None:
