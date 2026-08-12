@@ -11,6 +11,25 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Rules attached to a reserved folder name actually run
+
+`[folders.reserved."_x".rules.<name>]` validated and documented, but
+`runner.py` had no branch for it - `collect_invocations` covered
+per-path, `paths.rules`, `paths.cross`, and `folders.rules`, so those
+attachments silently did nothing. They now target every folder *named*
+`_x` anywhere under root, found in one `os.walk` that doesn't follow
+symlinks and doesn't prune a match nested inside another. This closes
+the gap between the four location vocabularies
+[DESIGN.md](DESIGN.md#path-pattern-keys) already claimed existed and the
+three the runner implemented.
+
+Reserved entries reach the runner through `validator.resolved_folders`,
+the same resolve-once-and-reuse path `resolved_paths` already takes, so
+`inherit` between reserved entries carries their rules with it. A folder
+that is both a reserved name and its own `[paths."..."]` entry gets both
+sets of rules - two questions, two answers, the way a per-path
+attachment and `[[folders.rules]]` already coexist on one folder.
+
 ### `see_also` renders as Markdown
 
 A list-valued `see_also` reached the generated attribute table as its

@@ -312,7 +312,7 @@ A `[paths."..."]` key may be a glob pattern (`fs_org_kit/path_patterns.py`) inst
 
 Brace-expansion (`folder{1..3}/`) was considered and rejected - it has no stdlib support (a bash-ism, not part of POSIX `glob()` or Python's `glob`/`fnmatch`), and `folder[1-3]/` already covers the common numeric-range case with zero extra code or dependencies.
 
-One pattern entry's attributes and rule attachments apply identically to every real folder it matches - invoked once per match, exactly like `[[folders.rules]]` already invokes once per real folder on disk. This required zero changes to `inherit.py`: it already resolves purely by key string, so inheriting from a pattern key (or a pattern key inheriting from something else) works unmodified.
+One pattern entry's attributes and rule attachments apply identically to every real folder it matches - invoked once per match, the same shape a `[folders.reserved."_name"]` entry uses. (`[[folders.rules]]` is the other shape: one invocation, on root, with the rule's own `recursive`/`exclude` params doing the walking.) This required zero changes to `inherit.py`: it already resolves purely by key string, so inheriting from a pattern key (or a pattern key inheriting from something else) works unmodified.
 
 ### Why zero matches isn't automatically "missing"
 
@@ -327,6 +327,22 @@ The check is deliberately conservative (segment-by-segment comparison; `[abc]` v
 Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.attributes` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared attributes/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
 
 When the runner actually expands a pattern against real disk, any real match that's *also* its own explicit literal catalog entry is excluded from that pattern's own expansion - since the validator already guarantees any such overlap was sanctioned, the literal entry's own resolved attributes/rules (already including whatever it inherited from the pattern) are authoritative for that one folder, not a second, separate invocation via the pattern. A pattern whose real matches are *all* claimed this way still isn't "missing" - the folders exist, they're just individually cataloged elsewhere.
+
+## Reserved-Name Rule Attachments
+
+### Why the targets come from a disk walk
+
+A `[folders.reserved."_x"]` entry describes what a *name* means wherever it occurs. That is the one location vocabulary with no key to resolve: a path key names a place, a pattern key names a set of places, but a reserved name names none - so its targets can only come from looking. One `os.walk` per run collects every folder whose own name matches, symlinks not followed (a link back up the tree would walk forever) and a match inside another match not pruned (a `_x` nested in a `_x` is still that name occurring in the tree).
+
+The entries arrive via `validator.resolved_folders` rather than a second resolution pass, so `inherit` between reserved entries carries rule attachments with it exactly as it does for paths - the same resolve-once-and-reuse path `resolved_paths` takes.
+
+### Why a folder can collect rules from two places at once
+
+`prj/_arch/` can be both its own `[paths."..."]` entry and an occurrence of the reserved name `_arch`. Both sets of rules run against it. They answer different questions - "what `_arch` means anywhere" and "what this one location is" - and suppressing one would mean picking which question the standard is allowed to ask. This is the same coexistence a per-path attachment already has with `[[folders.rules]]`, and the opposite of the pattern-vs-literal rule, where the ambiguity is over a single set of attributes rather than two independent statements.
+
+### Why there is no `allow_missing` here
+
+A cataloged path that isn't on disk is evidence of drift. A reserved name that happens to occur nowhere is not - nothing ever said it had to occur. So a name matching zero folders contributes zero invocations and is reported nowhere, and `folders.attributes.names` has no `allow_missing` to set.
 
 ## Deferred Decisions
 

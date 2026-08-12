@@ -25,6 +25,15 @@ What gets resolved into invocations:
       folder under root (cataloged or not). The rule's own params control
       what happens: exclusions, recursion, etc. are specified by the rule,
       not the runner - the runner just invokes the rule once per folder.
+    - reserved-name attachments:   [[folders.reserved."_x".rules.<name>]] -
+      once per folder actually NAMED _x, anywhere under root. A reserved
+      entry describes what a name means wherever it appears, so its
+      target set comes from a name match on disk rather than from a
+      catalog key. A folder that is both a reserved name and its own
+      [paths."..."] entry gets both sets of rules - they answer different
+      questions ("what _arch means anywhere" vs "what prj/_arch is"), the
+      same way a per-path attachment and [[folders.rules]] already
+      coexist on one folder.
 
 A param value may be {ref = "dotted.path"} instead of a literal - see
 fs_org_kit.param_refs - expanded to the table/list found at that path
@@ -229,10 +238,12 @@ def _resolve_active_targets(
     A glob-style key (fs_org_kit.path_patterns) can produce zero, one,
     or many (key, abs_path) tuples from one catalog entry - every real
     match shares that entry's resolved attributes/rules, invoked once
-    per match, exactly like [[folders.rules]] already invokes once per
-    real folder on disk. Whether zero matches counts as "missing"
-    follows the same allow_missing attribute a literal path already
-    uses - there's no separate "pattern matched nothing" concept.
+    per match, the same way a [folders.reserved."_x"] entry is invoked
+    once per folder named _x. ([[folders.rules]] is the other shape: one
+    invocation, on root, with the rule's own params doing the walking.)
+    Whether zero matches counts as "missing" follows the same
+    allow_missing attribute a literal path already uses - there's no
+    separate "pattern matched nothing" concept.
 
     A real match that's ALSO its own explicit literal catalog entry is
     excluded from the pattern's own expansion - the validator only lets
@@ -265,11 +276,33 @@ def _resolve_active_targets(
     return active, missing_and_not_allowed
 
 
+def _find_reserved_folders(root_dir: Path, names: set[str]) -> dict[str, list[Path]]:
+    """One walk of the tree, collecting every folder whose own name is one
+    of the reserved names. A reserved entry is a NAME, not a location, so
+    this is the only place its targets can come from - unlike a catalog
+    key, there's nothing to resolve without looking.
+
+    Symlinks aren't followed (a link back up the tree would otherwise
+    walk forever), and a match isn't pruned: a reserved folder nested
+    inside another one is still that name appearing in the tree, and the
+    entry says it means the same thing wherever it appears."""
+    found: dict[str, list[Path]] = {name: [] for name in names}
+    if not names or not root_dir.is_dir():
+        return found
+    for dirpath, dirnames, _filenames in os.walk(root_dir, followlinks=False):
+        dirnames.sort()
+        for dirname in dirnames:
+            if dirname in found:
+                found[dirname].append(Path(dirpath) / dirname)
+    return found
+
+
 def collect_invocations(
     data: dict[str, Any],
     root_dir: Path,
     catalog: dict[str, RuleEntry],
     resolved_paths: dict[str, ResolvedEntry],
+    resolved_folders: dict[str, ResolvedEntry] | None = None,
 ) -> tuple[list[Invocation], list[str]]:
     """Walk the standard and build one Invocation per (rule, target) pair.
     Returns (invocations, missing_and_not_allowed) - the second list is
@@ -330,6 +363,24 @@ def collect_invocations(
                 params = _resolve_params(entry, inst)
                 loc = f"folders.rules.{rule_id}[{j}]"
                 invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=root_dir))
+
+    # folders.reserved."_x".rules - once per folder named _x on disk. The
+    # entries are already inheritance-resolved (a reserved entry can
+    # inherit from another reserved entry), so this reuses the same
+    # resolved-rules path individual [paths."..."] entries take. A
+    # reserved name that matches nothing on disk simply contributes no
+    # invocations - unlike a cataloged path, a name that doesn't happen to
+    # occur anywhere isn't missing, so allow_missing has no counterpart
+    # here (and isn't in folders.attributes.names).
+    if resolved_folders:
+        with_rules = {name: r for name, r in resolved_folders.items() if r.rules}
+        for name, matches in _find_reserved_folders(root_dir, set(with_rules)).items():
+            if not matches:
+                continue
+            targets = [(name, match) for match in matches]
+            _add_invocations_from_resolved(
+                invocations, with_rules[name].rules, targets, f'folders.reserved."{name}"', catalog
+            )
 
     # {ref = "dotted.path"} param values (see fs_org_kit.param_refs) are
     # expanded here, once, regardless of which of the four attachment
@@ -526,7 +577,9 @@ def main(argv: list[str] | None = None) -> int:
     root = data.get("root", "")
     root_dir = Path(root).expanduser().resolve() if root else standard_dir
 
-    invocations, missing = collect_invocations(data, root_dir, validator.rule_catalog, validator.resolved_paths)
+    invocations, missing = collect_invocations(
+        data, root_dir, validator.rule_catalog, validator.resolved_paths, validator.resolved_folders
+    )
 
     if missing:
         for key in missing:
