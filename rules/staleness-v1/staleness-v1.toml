@@ -25,8 +25,8 @@ create_destination = false
 #                   recently than expected. Meant for archive folders
 #                   that shouldn't be seeing fresh activity.
 #
-# threshold - a duration in this project's established format (see
-#             rule.template.toml): <n><unit>, no space - "90d" (days),
+# threshold - a duration in this project's established format:
+#             <n><unit>, no space - "90d" (days),
 #             "12w" (weeks), "6m" (months, approximated as 30 days
 #             each).
 #

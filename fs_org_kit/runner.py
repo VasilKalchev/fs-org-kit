@@ -50,7 +50,7 @@ module only ever expands one key at a time against real disk state, and
 treats a pattern matching nothing the same way a literal path treats
 not existing: it contributes no invocations, silently.
 
-Checker/fixer protocol - see rule.template.toml for the authoritative
+Checker/fixer protocol - see doc/RULES.md for the authoritative
 version:
     scope=single -> --path <one path>
     scope=cross  -> --paths <path> [--paths <path> ...] (2 or more)

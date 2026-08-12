@@ -1,0 +1,42 @@
+# _template-cross-v1 - a complete, runnable cross-scope rule to copy.
+#
+# Same as _template-single-v1 in every way except how it's invoked: a
+# cross-scope rule is attached to a [[paths.cross]] set and receives all
+# of that set's locations at once, so it can compare them against each
+# other. Copy the directory, rename it and every file inside it to
+# <name>-v<major>, and drop the leading "_" (discovery skips an
+# underscore-prefixed directory in every tier).
+#
+# Full field reference: doc/RULES.md, "The manifest".
+
+version = "1.0"           # "<major>.<minor>"; major MUST match the -v<major> suffix
+purpose = "Template: one sentence saying what this rule checks across a set of paths."
+severity = "warn"         # none | info | warn | error
+scope = "cross"           # invoked once per cross set, with --paths (2 or more)
+protocol_version = "1.0"  # the runner<->script wire format, shared by every rule
+
+# exclude = ["*.tmp"]     # globs this rule never applies to; omitting it
+                          # means "no exclusions", which a default would erase
+
+# uses_cache = true       # to be handed --cache-dir, a directory the core
+                          # owns and can list/clear. Never resolve a location
+                          # yourself, and still work when the flag is absent.
+
+# overrides_bundled = true  # only meaningful in rules.own/, to deliberately
+                            # replace a same-named bundled rule
+
+# [sandbox]               # every invocation is sandboxed: no network, no
+# subprocess = true       # subprocesses, no native calls, and no writes
+                          # outside the cache (a fixer also gets root and its
+                          # own targets). Grant only what you need, from
+                          # network | subprocess | native | unrestricted_writes,
+                          # and say WHY here - a reviewer reads this table
+                          # before trusting the rule.
+
+[params]
+names = ["recursive"]
+
+[params.defaults]
+recursive = true
+# A param with no sensible default belongs OUT of this table: that
+# absence is what forces every attachment site to supply it.

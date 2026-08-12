@@ -25,8 +25,8 @@
 #               required params) must be supplied at that call site.
 #               The rule types themselves are defined externally, one
 #               per rules/<rule-name>-v<major>/rule.toml - see
-#               rule.template.toml for that file's grammar, and
-#               rules/rule-a-v1/ + rules/rule-b-v1/ for worked examples.
+#               doc/RULES.md for that file's grammar, and
+#               rules/_template-single-v1/ for a worked example.
 #               A rule's name always carries its major version
 #               (e.g. "rule-a-v1"), since that's the compatibility unit:
 #               a breaking change to a rule is a new directory, not an
@@ -35,8 +35,7 @@
 #               the KIND of field they belong to (enums.group.<field>,
 #               enums.attributes.<field>) and shared by both namespaces.
 #               (enums.severity and enums.scope, for rules specifically,
-#               now live in rule.template.toml alongside what they
-#               validate.)
+#               are the tool's own and live in fs_org_kit/discovery.py.)
 #
 # An entry under [paths."..."] or [folders.reserved."..."] is its
 # documentation fields, plus two sub-tables - and each namespace
@@ -141,7 +140,7 @@
 #
 # Whether a rule can be fixed is determined structurally by the presence
 # of the -fix.py script file, not by a manifest field. Omission is
-# meaningful for `exclude` on a rule's own manifest - see rule.template.toml.
+# meaningful for `exclude` on a rule's own manifest - see doc/RULES.md.
 #
 # Path keys: relative to `root`, with a trailing slash (e.g. "path/a/"),
 # or naming somewhere outside root as described above.

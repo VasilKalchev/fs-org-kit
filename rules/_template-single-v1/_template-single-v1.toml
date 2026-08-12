@@ -1,0 +1,45 @@
+# _template-single-v1 - a complete, runnable single-scope rule to copy.
+#
+# Copy the directory, then rename it and every file inside it to
+# <name>-v<major>; all four filenames repeat the directory name, and the
+# directory name IS the rule's identity. Dropping the leading "_" is part
+# of that rename - discovery skips an underscore-prefixed directory in
+# every tier, which is what keeps this template from running against
+# anyone's filesystem.
+#
+#     .claude/skills/new-rule/scaffold_rule.py does the copy and the
+#     renames for you.
+#
+# Full field reference: doc/RULES.md, "The manifest".
+
+version = "1.0"           # "<major>.<minor>"; major MUST match the -v<major> suffix
+purpose = "Template: one sentence saying what this rule checks, shown in generated docs."
+severity = "warn"         # none | info | warn | error
+scope = "single"          # invoked once per attached path, with --path
+protocol_version = "1.0"  # the runner<->script wire format, shared by every rule
+
+# exclude = ["*.tmp"]     # globs this rule never applies to; omitting it
+                          # means "no exclusions", which a default would erase
+
+# uses_cache = true       # to be handed --cache-dir, a directory the core
+                          # owns and can list/clear. Never resolve a location
+                          # yourself, and still work when the flag is absent.
+
+# overrides_bundled = true  # only meaningful in rules.own/, to deliberately
+                            # replace a same-named bundled rule
+
+# [sandbox]               # every invocation is sandboxed: no network, no
+# subprocess = true       # subprocesses, no native calls, and no writes
+                          # outside the cache (a fixer also gets root and its
+                          # own targets). Grant only what you need, from
+                          # network | subprocess | native | unrestricted_writes,
+                          # and say WHY here - a reviewer reads this table
+                          # before trusting the rule.
+
+[params]
+names = ["recursive"]
+
+[params.defaults]
+recursive = true
+# A param with no sensible default belongs OUT of this table: that
+# absence is what forces every attachment site to supply it.

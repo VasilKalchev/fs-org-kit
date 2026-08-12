@@ -26,5 +26,4 @@ include = ["fs_org_kit*"]
     "rules/**/*.toml",
     "rules/**/*.py",
     "fs-org-std.template.toml",
-    "rule.template.toml",
 ]

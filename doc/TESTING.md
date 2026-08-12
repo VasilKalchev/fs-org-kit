@@ -82,12 +82,13 @@ quietly go stale.
 
 Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cache is never read or written.
 
-### Discovery tests (11 tests, `tests/test_discovery.py`)
+### Discovery tests (15 tests, `tests/test_discovery.py`)
 
 - **Baseline**: discovers bundled rules when no own/external rules exist
 - **Tier collisions**: own rule vs. bundled (with/without override flag), external rule (can never override)
 - **Scan control**: `include_external=False` truly skips the tier, not just filters results
-- **Structure validation**: broken TOML, missing checker script, directory name format, version major mismatch, invalid severity/scope values
+- **Structure validation**: broken TOML, missing checker script, directory name format, version major mismatch, invalid severity/scope values, an unknown manifest field warning without rejecting the rule
+- **Disabled rules**: an `_`-prefixed directory is skipped silently (no warning - being skipped is the point), isn't even parsed (broken TOML inside one is not an error), and the bundled `_template-*-v1/` rules never reach the catalog
 - **Metadata**: RuleEntry fields are properly populated
 
 ### Inherit tests (16 tests, `tests/test_inherit.py`)
@@ -175,7 +176,17 @@ what did or didn't happen on disk.
 - **Grouping index**: one bucket list per grouping field, entries listed under their value, a multi-valued field listing an entry under each of its values, and no index at all when a standard declares no grouping fields
 - **Output style**: generated Markdown contains no em dashes
 
-### Bundled rule tests (585 tests, inside `rules/`)
+### Bundled rule tests (608 tests, inside `rules/`)
+
+The three rule templates are counted here too, since they live under
+`rules/` and run with everything else - but they are not bundled rules:
+discovery skips them, and their tests exist so a template that stops
+matching the protocol fails in this repo rather than in whatever someone
+copied it into.
+
+- **`rules/_template-single-v1/test__template_single_v1.py`** (7 tests): a clean directory is `ok` under the checker and the fixer, `recursive = false` is accepted, and the four broken-script cases (checker rejects `--fix`, either script given a nonexistent path, malformed `--params` JSON)
+- **`rules/_template-cross-v1/test__template_cross_v1.py`** (7 tests): two clean directories are `ok` under the checker and the fixer, `recursive = false` is accepted, and the script's own argument errors - rejects `--fix`, rejects a single `--paths` value (the 2-or-more minimum is the script's to enforce, not the runner's), rejects a nonexistent path
+- **`rules/_template-both-v1/test__template_both_v1.py`** (9 tests): `--path` and a `--paths` set each `ok`, plus the three ambiguous calls `scope = "both"` makes the script responsible for rejecting (both flags at once, neither, a single-valued `--paths`) - asserted against the fixer as well, which repeats the validation rather than trusting its caller
 
 - **`rules/file-extensions-v1/test_file_extensions_v1.py`** (14 tests): allow list, disallow list, case/dot-agnostic matching, recursive on/off, no-extension files, `exclude` glob filtering (bare name and nested), rejects `--fix` (it has no fixer), rejects an ambiguous "neither list set" call, rejects both-lists-set, rejects a nonexistent path
 - **`rules/basename-sync-v1/test_basename_sync_v1.py`** (14 tests): `shared` mode (ok when complete, violation when incomplete), `exclusive` mode (ok when disjoint, violation when overlapping), recursive matching is folder-structure-aware (same filename in a *different* subfolder does not satisfy the match), non-recursive ignores subfolders entirely, `exclude` filtering, `mode` is required with no default, requires 2+ paths, and the fixer: no violations is `ok`, no `fixer_script` configured is `unfixable`, everything resolved is `fixed`, partial success is `violation`, and the exact JSON payload (`--present`/`--missing`) a user's `fixer_script` receives is verified byte-for-byte

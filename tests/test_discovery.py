@@ -174,8 +174,26 @@ class TestDiscoveryErrors:
         assert len(errors) == 1
         assert "doesn't match" in errors[0].message and "2" in errors[0].message
 
+    def test_unknown_manifest_field(self, tmp_path):
+        """A field nothing reads is a typo doing nothing -> warning, rule still loads."""
+        own_dir = tmp_path / "rules.own" / "typo-v1"
+        own_dir.mkdir(parents=True)
+
+        (own_dir / "typo-v1.toml").write_text(
+            'version = "1.0"\npurpose = "has a made-up field"\nfixable = true\n[params]\nnames = []\n'
+        )
+        (own_dir / "typo-v1-check.py").write_text('print("stub")')
+
+        catalog, issues = discover_rules(tmp_path)
+
+        assert "typo-v1" in catalog
+        warnings = [i for i in issues if i.rule_id == "typo-v1"]
+        assert len(warnings) == 1
+        assert warnings[0].level == IssueLevel.WARNING
+        assert "fixable" in warnings[0].message
+
     def test_invalid_severity(self, tmp_path):
-        """Severity value not in rule.template.toml enums.severity -> error."""
+        """Severity value not one of discovery.SEVERITY -> error."""
         own_dir = tmp_path / "rules.own" / "bad-severity-v1"
         own_dir.mkdir(parents=True)
 
@@ -190,6 +208,45 @@ class TestDiscoveryErrors:
         errors = [i for i in issues if i.rule_id == "bad-severity-v1"]
         assert len(errors) == 1
         assert "catastrophic" in errors[0].message and "not one of" in errors[0].message
+
+
+class TestDisabledRules:
+    """A leading underscore takes a directory out of the catalog entirely."""
+
+    def _write_rule(self, directory: Path) -> None:
+        directory.mkdir(parents=True)
+        rule_id = directory.name
+        (directory / f"{rule_id}.toml").write_text(
+            'version = "1.0"\npurpose = "disabled"\n[params]\nnames = []\n'
+        )
+        (directory / f"{rule_id}-check.py").write_text('print("stub")')
+
+    def test_underscore_prefixed_rule_is_skipped_silently(self, tmp_path):
+        """Not loaded, and not complained about either - being skipped is
+        the whole point of the prefix, so a warning would be noise."""
+        self._write_rule(tmp_path / "rules.own" / "_draft-v1")
+
+        catalog, issues = discover_rules(tmp_path)
+
+        assert "_draft-v1" not in catalog
+        assert [i for i in issues if "_draft" in str(i)] == []
+
+    def test_a_disabled_rule_is_never_checked(self, tmp_path):
+        """Even a rule that would be a discovery ERROR stays silent."""
+        broken = tmp_path / "rules.own" / "_broken-v1"
+        broken.mkdir(parents=True)
+        (broken / "_broken-v1.toml").write_text("this is [[ not = = valid toml")
+
+        catalog, issues = discover_rules(tmp_path)
+
+        assert issues == []
+
+    def test_the_bundled_templates_are_not_in_the_catalog(self, tmp_path):
+        """rules/_template-*-v1/ are complete, valid rules on disk - only
+        the prefix keeps them from running against a real filesystem."""
+        catalog, _ = discover_rules(tmp_path)
+
+        assert not [rule_id for rule_id in catalog if rule_id.startswith("_")]
 
 
 class TestDiscoveryMetadata:

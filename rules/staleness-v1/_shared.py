@@ -16,7 +16,7 @@ DURATION_SECONDS = {"d": 86400, "w": 7 * 86400, "m": 30 * 86400}
 
 def parse_duration(value: str) -> int:
     """'90d' -> seconds. Matches this project's established duration
-    format (see rule.template.toml): <n><unit>, no space, d/w/m."""
+    format: <n><unit>, no space, d/w/m."""
     m = DURATION_PATTERN.match(str(value).strip())
     if not m:
         raise ValueError(f"not a recognized duration (expected e.g. '90d', '2w', '3m'): {value!r}")

@@ -25,6 +25,16 @@ All three files repeat the full directory name. This isn't decoration -
 isolation (an editor tab, a stack trace, a code review diff), without
 needing its parent folder for context.
 
+**Start from a template.** `rules/_template-single-v1/`,
+`_template-cross-v1/` and `_template-both-v1/` are complete, runnable,
+tested rules, one per scope - copy the directory, rename it and every
+file inside it, drop the leading `_`, and fill in the check. That
+underscore is what keeps them out of the catalog: discovery skips an
+underscore-prefixed directory in every tier, silently, which also gives
+you somewhere to park a half-written rule without deleting it.
+
+Claude Code users: the `new-rule` skill does the copy and the renames.
+
 Checking and fixing are **always separate files**, never one script that
 branches on a flag. This means:
 
@@ -124,9 +134,10 @@ scope:
            has fewer than 2 values)
 ```
 
-These are read live from `rule.template.toml`, not hardcoded anywhere -
-if that file's enums ever change, your manifest is checked against the
-current values automatically.
+Both vocabularies are closed and live in `fs_org_kit/discovery.py`
+(`SEVERITY`, `SCOPE`), along with `MANIFEST_KEYS` - the full set of
+fields a manifest may carry. A field outside that set is a typo doing
+nothing, and discovery says so rather than ignoring it.
 
 ### `protocol_version` vs `version`
 
