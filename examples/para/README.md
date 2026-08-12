@@ -79,7 +79,7 @@ paths      7     0       0      7
 ```
 
 Seven cataloged paths, all clean. Try breaking one — set
-`lifecycle = "eternal"` on `[paths."areas/"]`, or delete a `reason` from
+`lifecycle = "eternal"` in `[paths."areas/".group]`, or delete a `reason` from
 a rule attachment — and run it again to see what it catches.
 
 ## 2. Check the tree

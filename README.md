@@ -135,19 +135,24 @@ Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
 | `folders` | rules/definitions that apply *without* being tied to one cataloged path - blanket rules over every folder under root, and reserved folder-**name** patterns (e.g. `_archive`) independent of location |
 | `tags` | metadata tagging paths/folders for organization and cross-cutting concerns |
 | `abbreviations` | local shorthand definitions used throughout the standard |
-| `enums` | one closed value set per grouping field, as `enums.<namespace>.<field>` |
+| `enums` | one closed value set per field that has one, as `enums.group.<field>` (or `enums.doc.<field>`), shared by both namespaces |
 
 ### A path entry
 
+An entry is three tables, named for who reads them:
+
 ```toml
-[paths."area/inv/"]
+[paths."area/inv/".doc]              # prose, for the generated docs
 purpose = "Inventory tracking"
-notes = ""
 use_for = ["owned item records"]
 not_for = ["receipts"]
+
+[paths."area/inv/".group]            # enum-backed, for grouping
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = ""
+
+[paths."area/inv/".rules]            # what the rule machinery reads
+allow_missing = false
 ```
 
 A path key is normally relative to `root`. One that resolves *outside*
@@ -155,9 +160,11 @@ it - `"/etc/nginx/"`, `"~/.config/"`, `"../sibling/"` - is legal only on
 an entry that says so:
 
 ```toml
-[paths."~/.config/"]
-outside_root = true
+[paths."~/.config/".doc]
 purpose = "Application config that lives outside the governed tree"
+
+[paths."~/.config/".rules]
+outside_root = true
 ```
 
 Without the flag it's a validation error. The flag exists because the
@@ -168,38 +175,43 @@ never inherited and never picks up a default - it has to be written on
 the entry that escapes, the same way `reason` has to be written at every
 rule attachment site.
 
-An entry's fields come in three kinds, declared separately (see
+Each namespace declares what may go in the first two tables (see
 [doc/DESIGN.md](doc/DESIGN.md)):
 
 ```toml
 # free-form prose - a string or a list of strings, rendered as written
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-# enum-backed, checked against enums.paths.<field>, and used to group
+# enum-backed, checked against enums.group.<field>, and used to group
 # paths in the generated docs
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]          # origin holds several values; lifecycle one
 required = ["lifecycle", "origin"]
+
+# the namespace's own rules table: control-field defaults, then any
+# rules attached to every cataloged path
+[paths.rules]
+allow_missing = false
 ```
 
-- **documentation** fields are yours to name - nothing in the code knows
-  what `purpose` means, and a standard can carry `owner` or
-  `sensitivity` instead. The validator warns on any field the namespace
-  never declared.
-- **grouping** fields need a vocabulary under
-  `enums.<namespace>.<field>`. The template ships `lifecycle`
-  (`transient` · `temporary` · `ongoing` · `archival`) and `origin`
-  (`self` · `external` · `generated`).
-- **control** fields - `allow_missing` and `outside_root` - are the
-  tool's own, always allowed on a path entry and never declared in
-  either list.
+- **`doc`** fields are yours to name - nothing in the code knows what
+  `purpose` means, and a standard can carry `owner` or `sensitivity`
+  instead. The validator warns on any field the namespace never
+  declared.
+- **`group`** fields need a vocabulary under `enums.group.<field>`. The
+  template ships `lifecycle` (`transient` · `temporary` · `ongoing` ·
+  `archival`) and `origin` (`self` · `external` · `generated`).
+- **`rules`** holds the rule attachments and the two control fields the
+  tool reads itself, `allow_missing` and `outside_root` - never declared
+  in either list above.
 
-`folders` declares its own two lists and its own vocabularies under
-`enums.folders.*`, so reserved folder names can carry a different set of
-fields from paths.
+`folders` declares its own two field lists, so reserved folder names can
+carry a different set of fields from paths; the vocabularies under
+`enums` are shared, since a value set describes the field rather than
+who carries it.
 
 ### Value format conventions
 

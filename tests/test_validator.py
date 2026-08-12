@@ -27,24 +27,23 @@ def validate(standard_toml: str, tmp_path: Path, **validator_kwargs):
 
 
 BOILERPLATE_TAIL = '''
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 archival = "x"
 
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 '''
 
@@ -64,18 +63,20 @@ class TestValidatorBaseline:
     def test_valid_standard(self, tmp_path):
         """A valid standard with one rule attachment should produce no errors."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths."media/img/"]
+[paths."media/img/".doc]
 purpose = "Personal photos"
 notes = ""
 use_for = ["photos"]
 not_for = [""]
+see_also = ""
+
+[paths."media/img/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = ""
 
 [[paths."media/img/".rules.file-extensions-v1]]
 reason = "keep images to known formats"
@@ -98,12 +99,14 @@ class TestValidatorRuleAttachmentErrors:
 
     def test_unknown_rule(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."test/"]
+[paths."test/".doc]
 purpose = "Test path"
+
+[paths."test/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -118,7 +121,7 @@ reason = "testing unknown rule"
 
     def test_scope_mismatch(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
@@ -128,13 +131,17 @@ paths = ["a/", "b/"]
 [[paths.cross.rules.file-extensions-v1]]
 reason = "testing scope mismatch"
 
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."b/"]
+[paths."b/".doc]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -147,12 +154,14 @@ origin = ["self"]
 
     def test_missing_reason(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."test/"]
+[paths."test/".doc]
 purpose = "Test"
+
+[paths."test/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -166,12 +175,14 @@ reason = ""
 
     def test_unknown_param(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."test/"]
+[paths."test/".doc]
 purpose = "Test"
+
+[paths."test/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -195,12 +206,14 @@ class TestValidatorPatternKeys:
 
     def test_pattern_key_alone_is_fine(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "One client's workspace"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -211,17 +224,21 @@ origin = ["self"]
 
     def test_pattern_overlapping_literal_is_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "One client's workspace"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."clients/acme/"]
+[paths."clients/acme/".doc]
 purpose = "Acme specifically"
+
+[paths."clients/acme/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -233,17 +250,21 @@ origin = ["self"]
 
     def test_two_non_overlapping_patterns_are_fine(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "Client workspace"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."vendors/*/"]
+[paths."vendors/*/".doc]
 purpose = "Vendor workspace"
+
+[paths."vendors/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -254,22 +275,27 @@ origin = ["self"]
 
     def test_literal_overriding_pattern_via_inherit_is_sanctioned(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "A client's workspace"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."clients/acme/"]
+[paths."clients/acme/".doc]
 purpose = "Acme specifically"
+
+[paths."clients/acme/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."clients/acme/".inherit]
-attributes = "clients/*/"
+doc = "clients/*/"
+group = "clients/*/"
 ''' + BOILERPLATE_TAIL
 
         issues, _ = validate(standard_toml, tmp_path)
@@ -280,17 +306,21 @@ attributes = "clients/*/"
         """Merely overlapping isn't enough to be sanctioned - the literal
         must explicitly reference the pattern via inherit."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "A client's workspace"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."clients/acme/"]
+[paths."clients/acme/".doc]
 purpose = "Acme specifically, no inherit link"
+
+[paths."clients/acme/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -303,22 +333,27 @@ origin = ["self"]
         """Two patterns have no override mechanism, inherit or otherwise -
         always an error."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."clients/*/"]
+[paths."clients/*/".doc]
 purpose = "A"
+
+[paths."clients/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."clients/a*/"]
+[paths."clients/a*/".doc]
 purpose = "B"
+
+[paths."clients/a*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."clients/a*/".inherit]
-attributes = "clients/*/"
+doc = "clients/*/"
+group = "clients/*/"
 ''' + BOILERPLATE_TAIL
 
         issues, _ = validate(standard_toml, tmp_path)
@@ -327,17 +362,21 @@ attributes = "clients/*/"
 
     def test_two_distinct_literals_never_flagged(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."b/"]
+[paths."b/".doc]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''' + BOILERPLATE_TAIL
@@ -353,59 +392,67 @@ class TestValidatorInheritance:
     def test_inherited_attributes_satisfy_required_fields(self, tmp_path):
         """A field only present via inheritance must NOT be flagged missing."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
-[paths.attributes.defaults]
+[paths.rules]
 allow_missing = false
 
-[paths."active/x/"]
+[paths."active/x/".doc]
 purpose = "Active"
+
+[paths."active/x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."archive/x/"]
+[paths."archive/x/".group]
 lifecycle = "archival"
+
+[paths."archive/x/".rules]
 allow_missing = true
 
 [paths."archive/x/".inherit]
-attributes = "active/x/"
+doc = "active/x/"
+group = "active/x/"
 ''' + BOILERPLATE_TAIL
 
         issues, validator = validate(standard_toml, tmp_path)
         errors = [i for i in issues if i.level == "error"]
         assert errors == [], errors
-        assert validator.resolved_paths["archive/x/"].attributes["purpose"] == "Active"
+        assert validator.resolved_paths["archive/x/"].doc["purpose"] == "Active"
 
     def test_undefined_inherit_reference_is_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."x/"]
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."x/".inherit]
-attributes = "nonexistent/"
+doc = "nonexistent/"
+group = "nonexistent/"
 ''' + BOILERPLATE_TAIL
 
         issues, _ = validate(standard_toml, tmp_path)
         errors = [i for i in issues if i.level == "error" and "unknown paths key" in i.message]
-        assert len(errors) == 1
+        assert errors
 
     def test_inherit_cycle_is_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
 [paths."a/".inherit]
-attributes = "b/"
+doc = "b/"
+group = "b/"
 
 [paths."b/".inherit]
-attributes = "a/"
+doc = "a/"
+group = "a/"
 ''' + BOILERPLATE_TAIL
 
         issues, _ = validate(standard_toml, tmp_path)
@@ -416,12 +463,14 @@ attributes = "a/"
         """If a rule id is excluded, it shouldn't be validated (or required)
         on the inheriting entry at all."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."parent/"]
+[paths."parent/".doc]
 purpose = "P"
+
+[paths."parent/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -431,8 +480,10 @@ reason = "r"
 [paths."parent/".rules.file-extensions-v1.params]
 allowed = ["jpg"]
 
-[paths."child/"]
+[paths."child/".doc]
 purpose = "C"
+
+[paths."child/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -450,17 +501,20 @@ exclude_rules = ["file-extensions-v1"]
         """A [paths."x/".inherit] entry with no other own fields is legitimate,
         not the 'rule attached to an undeclared path' mistake."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."source/"]
+[paths."source/".doc]
 purpose = "Source"
+
+[paths."source/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."pure/".inherit]
-attributes = "source/"
+doc = "source/"
+group = "source/"
 ''' + BOILERPLATE_TAIL
 
         issues, _ = validate(standard_toml, tmp_path)
@@ -469,14 +523,18 @@ attributes = "source/"
 
     def test_allow_missing_must_be_boolean(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."x/".rules]
 allow_missing = "yes"
 ''' + BOILERPLATE_TAIL
 
@@ -487,22 +545,39 @@ allow_missing = "yes"
 
 
 class TestValidatorEntryFields:
-    """Entry fields are checked against what the standard declared - see
-    fs_org_kit.fields for the three kinds. Nothing here is checked by
-    name; every fixture declares the names it uses."""
+    """Each of an entry's three tables is checked against what its
+    namespace declared - see fs_org_kit.fields. Nothing here is checked
+    by name; every fixture declares the names it uses."""
 
     def _std(self, entry: str, declarations: str = '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes"]
 required = ["purpose"]
 ''') -> str:
         return BOILERPLATE_HEAD + declarations + entry + BOILERPLATE_TAIL
 
-    def test_a_documentation_field_may_be_a_string_or_a_list(self, tmp_path):
+    def test_a_field_written_directly_on_the_entry_is_an_error(self, tmp_path):
+        """Not a warning: nothing would read it - no check, no docs - so
+        being rejected is better than being silently dropped."""
         issues, _ = validate(self._std('''
 [paths."x/"]
+purpose = "written at the wrong level"
+
+[paths."x/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+'''), tmp_path)
+        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".purpose']
+        assert len(errors) == 1
+        assert "[.doc]" in errors[0].message
+
+    def test_a_documentation_field_may_be_a_string_or_a_list(self, tmp_path):
+        issues, _ = validate(self._std('''
+[paths."x/".doc]
 purpose = "X"
 notes = ["one", "two"]
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 '''), tmp_path)
@@ -510,33 +585,39 @@ origin = ["self"]
 
     def test_a_documentation_field_of_another_type_is_an_error(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
 notes = 42
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 '''), tmp_path)
-        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".notes']
+        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".doc.notes']
         assert len(errors) == 1
 
     def test_a_required_field_left_empty_is_an_error(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = ""
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 '''), tmp_path)
-        assert 'paths."x/".purpose' in [i.location for i in issues if i.level == "error"]
+        assert 'paths."x/".doc.purpose' in [i.location for i in issues if i.level == "error"]
 
     def test_a_field_the_namespace_never_declared_is_flagged(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
 invented = "who is this for?"
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 '''), tmp_path)
-        warnings = [i for i in issues if i.level == "warning" and i.location == 'paths."x/".invented']
+        warnings = [i for i in issues if i.level == "warning" and i.location == 'paths."x/".doc.invented']
         assert len(warnings) == 1
         assert warnings[0].code == "unknown-path-field"
 
@@ -544,60 +625,72 @@ origin = ["self"]
         """`allow_missing` is the tool's, not the standard's - declaring it
         is an error, and using it undeclared is fine."""
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
-allow_missing = true
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."x/".rules]
+allow_missing = true
 '''), tmp_path)
-        assert [i for i in issues if 'paths."x/".allow_missing' in i.location] == []
+        assert [i for i in issues if "allow_missing" in i.location] == []
 
     def test_a_grouping_value_outside_its_vocabulary_is_an_error(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = "made-up"
 origin = ["self"]
 '''), tmp_path)
-        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".lifecycle']
+        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".group.lifecycle']
         assert len(errors) == 1
-        assert "enums.paths.lifecycle" in errors[0].message
+        assert "enums.group.lifecycle" in errors[0].message
 
     def test_a_single_valued_grouping_field_given_a_list_is_an_error(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = ["ongoing", "archival"]
 origin = ["self"]
 '''), tmp_path)
-        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".lifecycle']
+        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".group.lifecycle']
         assert len(errors) == 1
-        assert "grouping.multi" in errors[0].message
+        assert "group.multi" in errors[0].message
 
     def test_a_multi_valued_grouping_field_given_a_scalar_is_an_error(self, tmp_path):
         issues, _ = validate(self._std('''
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = "self"
 '''), tmp_path)
-        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".origin']
+        errors = [i for i in issues if i.level == "error" and i.location == 'paths."x/".group.origin']
         assert len(errors) == 1
 
     def test_a_grouping_field_with_no_vocabulary_warns_once_and_accepts_anything(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths.grouping]
+[paths.group]
 names = ["stage"]
 
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 stage = "anything at all"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 [tags]
 [abbreviations]
@@ -606,80 +699,112 @@ ongoing = "x"
         issues, _ = validate(standard_toml, tmp_path)
         assert [i for i in issues if i.level == "error"] == []
         warnings = [i for i in issues if i.code == "missing-grouping-enum"]
-        assert [w.location for w in warnings] == ["enums.paths.stage"]
+        assert [w.location for w in warnings] == ["enums.group.stage"]
 
 
-class TestValidatorFoldersAttributes:
-    """folders.attributes / folders.grouping / folders.reserved.* - the
-    same two declarations as paths, read independently."""
+class TestValidatorFolders:
+    """folders.doc / folders.group / folders.reserved.* - the same two
+    declarations as paths, read independently."""
 
     def test_folders_declares_its_own_fields(self, tmp_path):
         """A name that's fine on a path is unknown on a reserved folder
-        unless the folders namespace declared it too."""
+        unless the folders namespace declared it too - the field lists are
+        per namespace, even though the vocabularies aren't."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes"]
 
-[folders.attributes]
+[folders.doc]
 names = ["purpose"]
 
-[folders.reserved."_archive"]
+[folders.reserved."_archive".doc]
 purpose = "Archive"
 notes = "declared for paths, not for folders"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
 [folders]
 '''
         issues, _ = validate(standard_toml, tmp_path)
-        warnings = [i for i in issues if i.location == 'folders.reserved."_archive".notes']
+        warnings = [i for i in issues if i.location == 'folders.reserved."_archive".doc.notes']
         assert len(warnings) == 1
 
     def test_reserved_entries_with_no_declaration_at_all_are_flagged(self, tmp_path):
         """Undeclared means both unchecked and unrendered - the generated
         docs would show these entries as names alone."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[folders.reserved."_archive"]
+[folders.reserved."_archive".doc]
 purpose = "Archive"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 [tags]
 [abbreviations]
 [folders]
 '''
         issues, _ = validate(standard_toml, tmp_path)
-        warnings = [i for i in issues if i.location == "folders.attributes.names"]
+        warnings = [i for i in issues if i.location == "folders.doc.names"]
         assert len(warnings) == 1
 
-    def test_folders_grouping_uses_its_own_vocabulary(self, tmp_path):
+    def test_a_control_field_on_a_reserved_entry_is_an_error(self, tmp_path):
+        """`allow_missing` describes one location, which a reserved name
+        isn't - so it says nothing here rather than doing nothing."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[folders.attributes]
+[folders.doc]
 names = ["purpose"]
 
-[folders.grouping]
+[folders.reserved."_archive".doc]
+purpose = "Archive"
+
+[folders.reserved."_archive".rules]
+allow_missing = true
+
+[enums.group.lifecycle]
+ongoing = "x"
+[tags]
+[abbreviations]
+[folders]
+'''
+        issues, _ = validate(standard_toml, tmp_path)
+        errors = [i for i in issues if i.level == "error" and "allow_missing" in i.location]
+        assert len(errors) == 1
+        assert "control field" in errors[0].message
+
+    def test_folders_groups_against_the_shared_vocabulary(self, tmp_path):
+        standard_toml = BOILERPLATE_HEAD + '''
+[paths.doc]
+names = []
+
+[folders.doc]
+names = ["purpose"]
+
+[folders.group]
 names = ["visibility"]
 required = ["visibility"]
 
-[folders.reserved."_archive"]
+[folders.reserved."_archive".doc]
 purpose = "Archive"
+
+[folders.reserved."_archive".group]
 visibility = "shared"
 
-[folders.reserved."_secret"]
+[folders.reserved."_secret".doc]
 purpose = "Secret"
+
+[folders.reserved."_secret".group]
 visibility = "unlisted"
 
-[enums.folders.visibility]
+[enums.group.visibility]
 shared = "x"
 private = "x"
 [tags]
@@ -688,25 +813,25 @@ private = "x"
 '''
         issues, _ = validate(standard_toml, tmp_path)
         errors = [i for i in issues if i.level == "error"]
-        assert [e.location for e in errors] == ['folders.reserved."_secret".visibility']
-        assert "enums.folders.visibility" in errors[0].message
+        assert [e.location for e in errors] == ['folders.reserved."_secret".group.visibility']
+        assert "enums.group.visibility" in errors[0].message
 
     def test_unknown_field_on_reserved_folder(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[folders.attributes]
+[folders.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[folders.reserved."_archive"]
+[folders.reserved."_archive".doc]
 purpose = "Archive"
 not_a_real_field = "oops"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
@@ -723,17 +848,17 @@ class TestValidatorParamRefs:
 
     def test_ref_to_folders_reserved_resolves_with_no_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[folders.attributes]
+[folders.doc]
 names = ["purpose"]
 required = ["purpose"]
 
 [folders.reserved]
 prefix = "_"
 
-[folders.reserved."_archive"]
+[folders.reserved."_archive".doc]
 purpose = "Archive"
 
 [[folders.rules.uncataloged-reserved-v1]]
@@ -742,9 +867,9 @@ reason = "catch stray reserved-looking folders"
 [folders.rules.uncataloged-reserved-v1.params]
 cataloged = { ref = "folders.reserved" }
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
@@ -756,11 +881,13 @@ self = "x"
 
     def test_ref_to_abbreviations_resolves_with_no_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[paths."notes/"]
+[paths."notes/".doc]
 purpose = "Notes"
+
+[paths."notes/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -770,9 +897,9 @@ reason = "catch typos"
 [paths."notes/".rules.spelling-abbreviations-v1.params]
 abbreviations = { ref = "abbreviations" }
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 
@@ -781,9 +908,8 @@ arch = "Archive"
 
 [folders]
 purpose = "x"
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 '''
         issues, _ = validate(standard_toml, tmp_path)
@@ -792,11 +918,13 @@ names = []
 
     def test_broken_ref_is_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[paths."notes/"]
+[paths."notes/".doc]
 purpose = "Notes"
+
+[paths."notes/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -814,11 +942,13 @@ abbreviations = { ref = "no.such.table" }
         """`cataloged` has no default in uncataloged-reserved-v1's manifest -
         a {ref: ...} value must count as "supplied", same as a literal."""
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = []
 
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -845,12 +975,14 @@ class TestValidatorDiscoveryOptions:
         (ext_dir / "only-external-v1-check.py").write_text('print("stub")')
 
         standard_toml = BOILERPLATE_HEAD + '''
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."x/"]
+[paths."x/".doc]
 purpose = "X"
+
+[paths."x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 

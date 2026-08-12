@@ -11,36 +11,62 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
-### Entry fields split into three kinds - schema 2.0
+### An entry is three tables now - schema 2.0
 
-`purpose` and `allow_missing` used to sit in the same
-`paths.attributes.names` list, reading as the same kind of thing. Only
-one of them was: the tool acts on `allow_missing` and `outside_root`,
-while the rest are documentation nothing reads - except that `purpose`,
-`lifecycle` and `origin` were *also* hardcoded by name in the validator,
-so a standard couldn't actually name its own fields.
+`purpose` and `allow_missing` used to sit in the same flat entry and in
+the same `paths.attributes.names` list, reading as the same kind of
+thing. Only one of them was: the tool acts on `allow_missing` and
+`outside_root`, while the rest are documentation nothing reads - except
+that `purpose`, `lifecycle` and `origin` were *also* hardcoded by name in
+the validator, so a standard couldn't actually name its own fields.
 
-A namespace now declares them separately:
+The distinction is now structural, with the same three names at both
+levels - declaring a namespace, and making up every entry in it:
 
 ```toml
-[paths.attributes]                     # free-form, string or list of strings
+[paths.doc]                            # free-form: string or list of strings
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.grouping]                       # enum-backed, checked against enums.paths.*
+[paths.group]                          # enum-backed, checked against enums.group.*
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
+
+[paths.rules]                          # control-field defaults, then blanket rules
+allow_missing = false
+
+[paths."area/inv/".doc]
+purpose = "Inventory tracking"
+
+[paths."area/inv/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[paths."area/inv/".rules]
+allow_missing = true
+
+[[paths."area/inv/".rules.file-extensions-v1]]
+reason = "..."
 ```
 
-`allow_missing` and `outside_root` appear in neither list - they're the
-tool's, always allowed on a path entry, and declaring one is now an
-error. Nothing in the code knows what `purpose` or `lifecycle` mean any
-more, including requiredness, which had to move into the standard along
-with the names. `folders` declares its own two lists and its own
-vocabularies under `enums.folders.*`; a vocabulary is never shared
-across namespaces, so `folders` grouping by `lifecycle` needs
-`[enums.folders.lifecycle]` of its own.
+The control fields live in `rules` because that is who reads them:
+`allow_missing` decides whether the runner expects a target on disk,
+`outside_root` decides where a fixer may write. They're the tool's own -
+declaring one in `doc.names` or `group.names` is an error - and
+`folders` gets neither, having no single location to describe.
+
+Nothing in the code knows what `purpose` or `lifecycle` mean any more,
+including requiredness, which moved into the standard along with the
+names. `inherit` follows the same three names (`doc` / `group` / `rules`,
+plus `exclude_rules`), each pointing at its own source entry.
+
+Vocabularies moved from `enums.<namespace>.<field>` to
+`enums.<kind>.<field>` and are shared by both namespaces: one
+`[enums.group.lifecycle]` serves paths and reserved folders alike, since
+a value set describes the field rather than who carries it.
+`[enums.doc.<field>]` is optional and normally absent - a documentation
+field is prose unless a standard chooses to close its value set.
 
 The doc generator follows: it renders whatever was declared, in declared
 order - strings as table rows, lists as bullets - and emits a "by
@@ -48,12 +74,12 @@ order - strings as table rows, lists as bullets - and emits a "by
 for. The enums section lists every vocabulary under its dotted key
 rather than the two it used to know by name.
 
-Breaking, so `SUPPORTED_SCHEMA_MAJOR` is 2 and both bundled examples
-move to `schema_version = "2.0"`. A 1.x standard stops with one clear
-version error instead of a pile of unknown-field warnings. Migrating:
-split `names` into `attributes.names` + `grouping.names`, drop the two
-control fields from it, and add `required` where the old hardcoded
-`purpose`/`lifecycle`/`origin` checks were doing the work.
+Breaking, so `SUPPORTED_SCHEMA_MAJOR` is 2 and both bundled examples move
+to `schema_version = "2.0"`. A 1.x standard stops with one clear version
+error instead of a pile of unknown-field warnings. Migrating an entry:
+move its prose fields into `[<key>.doc]`, its enum-backed ones into
+`[<key>.group]`, and `allow_missing`/`outside_root` into `[<key>.rules]`
+beside the attachments already there.
 
 ### `skipped` - an invocation a fixer outran
 

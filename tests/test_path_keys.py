@@ -111,41 +111,43 @@ standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
-[paths.attributes.defaults]
+[paths.rules]
+allow_missing = false
 '''
 
 BOILERPLATE_TAIL = '''
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 '''
 
-ENTRY_BODY = '''purpose = "x"
+ENTRY_DOC = '''purpose = "x"
 notes = ""
 use_for = ["x"]
 not_for = [""]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ""
+'''
+
+ENTRY_GROUP = '''lifecycle = "ongoing"
+origin = ["self"]
 '''
 
 
@@ -158,8 +160,13 @@ def validate(standard_toml: str, tmp_path: Path):
     return validator.run(), validator
 
 
-def entry(key: str, extra: str = "") -> str:
-    return f'\n[paths."{key}"]\n{extra}{ENTRY_BODY}'
+def entry(key: str, control: str = "") -> str:
+    """One catalog entry in the three-table shape. `control` lands in the
+    entry's `rules` table - that's where allow_missing/outside_root live."""
+    block = f'\n[paths."{key}".doc]\n{ENTRY_DOC}\n[paths."{key}".group]\n{ENTRY_GROUP}'
+    if control:
+        block += f'\n[paths."{key}".rules]\n{control}'
+    return block
 
 
 def locations(issues, level="error"):
@@ -192,13 +199,13 @@ class TestValidatorOutsideRoot:
         issues, _ = validate(
             BOILERPLATE_HEAD + entry("area/inv/", "outside_root = true\n") + BOILERPLATE_TAIL, tmp_path
         )
-        assert f'paths."area/inv/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
+        assert f'paths."area/inv/".rules.{OUTSIDE_ROOT_ATTR}' in locations(issues)
 
     def test_flag_must_be_a_boolean(self, tmp_path):
         issues, _ = validate(
             BOILERPLATE_HEAD + entry("/etc/nginx/", 'outside_root = "yes"\n') + BOILERPLATE_TAIL, tmp_path
         )
-        assert f'paths."/etc/nginx/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
+        assert f'paths."/etc/nginx/".rules.{OUTSIDE_ROOT_ATTR}' in locations(issues)
 
     def test_flag_cannot_arrive_through_inheritance(self, tmp_path):
         """The whole point of the flag is that escaping is deliberate at the
@@ -208,18 +215,18 @@ class TestValidatorOutsideRoot:
             BOILERPLATE_HEAD
             + entry("/srv/a/", "outside_root = true\n")
             + entry("/srv/b/")
-            + '\n[paths."/srv/b/".inherit]\nattributes = "/srv/a/"\n'
+            + '\n[paths."/srv/b/".inherit]\nrules = "/srv/a/"\n'
             + BOILERPLATE_TAIL
         )
         issues, _ = validate(standard, tmp_path)
-        assert f'paths."/srv/b/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
+        assert f'paths."/srv/b/".rules.{OUTSIDE_ROOT_ATTR}' in locations(issues)
 
     def test_flag_cannot_arrive_from_attribute_defaults(self, tmp_path):
         head = BOILERPLATE_HEAD.replace(
-            "[paths.attributes.defaults]\n", "[paths.attributes.defaults]\noutside_root = true\n"
+            "allow_missing = false\n", "allow_missing = false\noutside_root = true\n"
         )
         issues, _ = validate(head + entry("/etc/nginx/") + BOILERPLATE_TAIL, tmp_path)
-        assert f'paths."/etc/nginx/".{OUTSIDE_ROOT_ATTR}' in locations(issues)
+        assert f'paths."/etc/nginx/".rules.{OUTSIDE_ROOT_ATTR}' in locations(issues)
 
     def test_cross_entry_listing_an_outside_path_needs_the_flag(self, tmp_path):
         standard = (
@@ -235,7 +242,7 @@ class TestValidatorOutsideRoot:
         standard = (
             BOILERPLATE_HEAD
             + entry("area/a/")
-            + '\n[[paths.cross]]\noutside_root = true\npaths = ["area/a/", "/etc/nginx/"]\n'
+            + '\n[[paths.cross]]\npaths = ["area/a/", "/etc/nginx/"]\n\n[paths.cross.rules]\noutside_root = true\n'
             + BOILERPLATE_TAIL
         )
         issues, _ = validate(standard, tmp_path)
@@ -245,11 +252,11 @@ class TestValidatorOutsideRoot:
         standard = (
             BOILERPLATE_HEAD
             + entry("area/a/")
-            + '\n[[paths.cross]]\noutside_root = true\npaths = ["area/a/", "area/b/"]\n'
+            + '\n[[paths.cross]]\npaths = ["area/a/", "area/b/"]\n\n[paths.cross.rules]\noutside_root = true\n'
             + BOILERPLATE_TAIL
         )
         issues, _ = validate(standard, tmp_path)
-        assert f"paths.cross[0].{OUTSIDE_ROOT_ATTR}" in locations(issues)
+        assert f"paths.cross[0].rules.{OUTSIDE_ROOT_ATTR}" in locations(issues)
 
 
 class TestValidatorOverlapAcrossTheRootBoundary:

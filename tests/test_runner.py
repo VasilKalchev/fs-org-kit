@@ -12,7 +12,10 @@ from pathlib import Path
 import pytest
 
 from fs_org_kit.discovery import discover_rules
+from fs_org_kit.fields import CONTROL_FIELDS
 from fs_org_kit.inherit import resolve_entries
+
+CONTROL = CONTROL_FIELDS["paths"]
 from fs_org_kit.runner import (
     Invocation,
     _resolve_active_targets,
@@ -38,7 +41,7 @@ class TestResolveActiveTargets:
         real_dir = tmp_path / "exists"
         real_dir.mkdir()
         resolved, _ = resolve_entries(
-            {"exists/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
+            {"exists/": {"doc": {"purpose": "P"}}}, {}, "paths", CONTROL
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert [k for k, _ in active] == ["exists/"]
@@ -46,8 +49,8 @@ class TestResolveActiveTargets:
 
     def test_missing_with_allow_missing_is_silently_skipped(self, tmp_path):
         resolved, _ = resolve_entries(
-            {"gone/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"], "allow_missing": True}},
-            {}, "paths",
+            {"gone/": {"doc": {"purpose": "P"}, "rules": {"allow_missing": True}}},
+            {}, "paths", CONTROL,
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert active == []
@@ -55,7 +58,7 @@ class TestResolveActiveTargets:
 
     def test_missing_without_allow_missing_is_reported(self, tmp_path):
         resolved, _ = resolve_entries(
-            {"gone/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
+            {"gone/": {"doc": {"purpose": "P"}}}, {}, "paths", CONTROL
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert active == []
@@ -65,7 +68,7 @@ class TestResolveActiveTargets:
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         (tmp_path / "clients" / "globex").mkdir(parents=True)
         resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
+            {"clients/*/": {"doc": {"purpose": "P"}}}, {}, "paths", CONTROL
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert sorted(p.name for _, p in active) == ["acme", "globex"]
@@ -74,8 +77,8 @@ class TestResolveActiveTargets:
 
     def test_pattern_key_zero_matches_with_allow_missing_is_silently_skipped(self, tmp_path):
         resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"], "allow_missing": True}},
-            {}, "paths",
+            {"clients/*/": {"doc": {"purpose": "P"}, "rules": {"allow_missing": True}}},
+            {}, "paths", CONTROL,
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert active == []
@@ -83,7 +86,7 @@ class TestResolveActiveTargets:
 
     def test_pattern_key_zero_matches_without_allow_missing_is_reported(self, tmp_path):
         resolved, _ = resolve_entries(
-            {"clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]}}, {}, "paths"
+            {"clients/*/": {"doc": {"purpose": "P"}}}, {}, "paths", CONTROL
         )
         active, missing = _resolve_active_targets(resolved, tmp_path)
         assert active == []
@@ -96,7 +99,7 @@ class TestResolveActiveTargets:
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         (tmp_path / "clients" / "globex").mkdir(parents=True)
         raw = {
-            "clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]},
+            "clients/*/": {"doc": {"purpose": "P"}},
             "clients/acme/": {
                 "purpose": "Acme", "lifecycle": "ongoing", "origin": ["self"],
                 "inherit": {"attributes": "clients/*/"},
@@ -116,7 +119,7 @@ class TestResolveActiveTargets:
         "missing": the folders exist, just cataloged elsewhere."""
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         raw = {
-            "clients/*/": {"purpose": "P", "lifecycle": "ongoing", "origin": ["self"]},
+            "clients/*/": {"doc": {"purpose": "P"}},
             "clients/acme/": {
                 "purpose": "Acme", "lifecycle": "ongoing", "origin": ["self"],
                 "inherit": {"attributes": "clients/*/"},
@@ -150,8 +153,8 @@ class TestCollectInvocations:
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
         paths = {
-            "a/": {"purpose": "A", "lifecycle": "ongoing", "origin": ["self"]},
-            "b/": {"purpose": "B", "lifecycle": "ongoing", "origin": ["self"]},
+            "a/": {"doc": {"purpose": "A"}},
+            "b/": {"doc": {"purpose": "B"}},
             "rules": {"file-extensions-v1": [{"reason": "blanket", "params": {"allowed": ["jpg"]}}]},
         }
         data = {"paths": paths}
@@ -181,8 +184,8 @@ class TestCollectInvocations:
         (tmp_path / "b").mkdir()
         data = {
             "paths": {
-                "a/": {"purpose": "A", "lifecycle": "ongoing", "origin": ["self"]},
-                "b/": {"purpose": "B", "lifecycle": "ongoing", "origin": ["self"]},
+                "a/": {"doc": {"purpose": "A"}},
+                "b/": {"doc": {"purpose": "B"}},
                 "cross": [{"paths": ["a/", "b/"], "rules": {"basename-sync-v1": [{"reason": "r", "params": {"mode": "shared"}}]}}],
             }
         }
@@ -214,7 +217,7 @@ class TestCollectInvocations:
                 },
                 "reserved": {
                     "prefix": "_",
-                    "_archive": {"purpose": "p", "lifecycle": "archival", "origin": ["self"]},
+                    "_archive": {"doc": {"purpose": "p"}},
                 },
             },
         }
@@ -285,7 +288,7 @@ class TestReservedFolderInvocations:
 
     def test_entry_without_rules_is_skipped(self, tmp_path, catalog):
         (tmp_path / "_arch").mkdir()
-        reserved = {"prefix": "_", "_arch": {"purpose": "P", "lifecycle": "archival", "origin": ["self"]}}
+        reserved = {"prefix": "_", "_arch": {"doc": {"purpose": "P"}}}
         assert self._collect(tmp_path, catalog, reserved) == []
 
     def test_coexists_with_a_path_entry_for_the_same_folder(self, tmp_path, catalog):
@@ -413,19 +416,21 @@ standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
-[paths.attributes.defaults]
+[paths.rules]
 allow_missing = false
 
-[paths."real/"]
+[paths."real/".doc]
 purpose = "Real"
+
+[paths."real/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -438,17 +443,16 @@ reason = "r"
 [paths.cross.rules.basename-sync-v1.params]
 mode = "shared"
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 ''')
         exit_code = main([str(std_path), "--no-color"])
@@ -535,31 +539,30 @@ standard_version = "2.0"
 schema_date = "2026-01-01"
 standard_date = "2026-01-01"
 
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
-[paths.attributes.defaults]
+[paths.rules]
 allow_missing = false
 
 {extra_toml}
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 ''')
         return std_path
@@ -568,8 +571,10 @@ names = []
         (tmp_path / "clean").mkdir()
         (tmp_path / "clean" / "a.jpg").touch()
         std_path = self._write_standard(tmp_path, '''
-[paths."clean/"]
+[paths."clean/".doc]
 purpose = "Clean"
+
+[paths."clean/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -586,8 +591,10 @@ allowed = ["jpg"]
         (tmp_path / "dirty").mkdir()
         (tmp_path / "dirty" / "a.pdf").touch()
         std_path = self._write_standard(tmp_path, '''
-[paths."dirty/"]
+[paths."dirty/".doc]
 purpose = "Dirty"
+
+[paths."dirty/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -602,8 +609,10 @@ allowed = ["jpg"]
 
     def test_missing_path_without_allow_missing_exits_one(self, tmp_path):
         std_path = self._write_standard(tmp_path, '''
-[paths."gone/"]
+[paths."gone/".doc]
 purpose = "Gone"
+
+[paths."gone/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -612,10 +621,14 @@ origin = ["self"]
 
     def test_missing_path_with_allow_missing_exits_zero(self, tmp_path):
         std_path = self._write_standard(tmp_path, '''
-[paths."gone/"]
+[paths."gone/".doc]
 purpose = "Gone"
+
+[paths."gone/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."gone/".rules]
 allow_missing = true
 ''')
         exit_code = main([str(std_path), "--no-color"])
@@ -634,10 +647,14 @@ allow_missing = true
         (tmp_path / "active" / "proj" / "a.jpg").touch()
 
         std_path = self._write_standard(tmp_path, '''
-[paths."active/proj/"]
+[paths."active/proj/".doc]
 purpose = "Active"
+
+[paths."active/proj/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."active/proj/".rules]
 allow_missing = true
 
 [[paths."active/proj/".rules.file-extensions-v1]]
@@ -646,12 +663,15 @@ reason = "r"
 [paths."active/proj/".rules.file-extensions-v1.params]
 allowed = ["jpg"]
 
-[paths."archive/proj/"]
+[paths."archive/proj/".group]
 lifecycle = "archival"
+
+[paths."archive/proj/".rules]
 allow_missing = true
 
 [paths."archive/proj/".inherit]
-attributes = "active/proj/"
+doc = "active/proj/"
+group = "active/proj/"
 rules = "active/proj/"
 ''')
         assert main([str(std_path), "--no-color"]) == 0
@@ -674,8 +694,10 @@ rules = "active/proj/"
         os.utime(tmp_path / "projects" / "old" / "a.jpg", (stale, stale))
 
         std_path = self._write_standard(tmp_path, '''
-[paths."projects/"]
+[paths."projects/".doc]
 purpose = "Projects"
+
+[paths."projects/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -687,10 +709,14 @@ mode = "stale"
 threshold = "90d"
 destination = "archive"
 
-[paths."projects/*/"]
+[paths."projects/*/".doc]
 purpose = "One project"
+
+[paths."projects/*/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."projects/*/".rules]
 allow_missing = true
 
 [[paths."projects/*/".rules.file-extensions-v1]]

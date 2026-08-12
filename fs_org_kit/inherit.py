@@ -4,16 +4,26 @@ fs_org_kit.inherit - resolves inheritance and standard-wide defaults for
 
 This is a pure data transformation, run once before validation: given the
 raw TOML data for one namespace (paths, or folders.reserved), it produces
-a fully resolved view where every entry's attributes and rules are already
-flattened - inheritance chains walked, exclusions applied, standard-wide
-defaults filled in. Everything downstream (the validator, the runner)
-operates on this resolved view and never needs to know inheritance exists.
+a fully resolved view where every entry's tables are already flattened -
+inheritance chains walked, exclusions applied, standard-wide defaults
+filled in. Everything downstream (the validator, the runner) operates on
+this resolved view and never needs to know inheritance exists.
 
-Resolution order per attribute field, most to least specific:
+An entry is three tables (see fs_org_kit.fields), and each inherits from
+its own source, named for the table it fills:
+
+    [paths."archive/project-x/".inherit]
+    doc = "active/project-x/"      # this entry's own doc fields still win
+    group = "active/project-x/"
+    rules = "active/project-x/"    # inherited attachments MERGE with this
+                                   # entry's own - use exclude_rules to
+                                   # drop specific inherited ones
+    exclude_rules = ["rule-a-v2"]
+
+Resolution order per field in `doc` / `group`, most to least specific:
     1. the entry's own explicitly-set value
-    2. inherited value, via .inherit.attributes' source entry (recursive)
-    3. standard-wide default (paths.attributes.defaults, or the folders
-       equivalent)
+    2. inherited value, via that table's source entry (recursive)
+    3. standard-wide default (<namespace>.doc.defaults, or .group's)
     4. unset
 
 A field counts as "explicitly set" if it's a non-empty string/list, or
@@ -21,13 +31,14 @@ if it's a boolean at all (booleans have no meaningful "empty" state -
 `allow_missing = false` is a deliberate override, not an absence, even
 though it's falsy).
 
-Rules resolve independently via .inherit.rules / .inherit.exclude_rules -
-same chain-walking and cycle detection as attributes, but the two chains
-can point at different sources, and the result is a MERGE, not a
-per-field override: the resolved rule set is
-    {rules inherited via .inherit.rules, minus .inherit.exclude_rules}
+An entry's `rules` table holds both rule attachments and the control
+fields, so `inherit.rules` carries both - but with the semantics each
+one needs. Control fields resolve per field, exactly like `doc`/`group`
+above (their standard-wide default being the namespace's own `rules`
+table). Attachments MERGE:
+    {attachments inherited via .inherit.rules, minus .inherit.exclude_rules}
     UNION
-    {this entry's own directly-declared rule attachments}
+    {this entry's own directly-declared attachments}
 If the same rule id appears in both, both sets of instances apply - nothing
 in the child silently replaces an inherited instance of the same rule.
 To change an inherited rule's params, exclude it and redeclare it fresh.
@@ -37,6 +48,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+from fs_org_kit.fields import DOC, GROUP, RULES
+
+# `inherit` keys naming a source entry, and the table each one fills
+SOURCE_KEYS = (DOC, GROUP, RULES)
 
 
 @dataclass(frozen=True)
@@ -51,7 +67,9 @@ class RuleAttachment:
 @dataclass(frozen=True)
 class ResolvedEntry:
     key: str
-    attributes: dict[str, Any]
+    doc: dict[str, Any]
+    group: dict[str, Any]
+    control: dict[str, Any]
     rules: dict[str, list[RuleAttachment]]
     raw: dict[str, Any]
 
@@ -68,10 +86,10 @@ class _CycleDetected(Exception):
         self.chain = chain
 
 
-def _is_explicitly_set(entry: dict[str, Any], field_name: str) -> bool:
-    if field_name not in entry:
+def _is_explicitly_set(table: dict[str, Any], field_name: str) -> bool:
+    if field_name not in table:
         return False
-    value = entry[field_name]
+    value = table[field_name]
     if isinstance(value, bool):
         return True  # no "empty" boolean - presence alone is the signal
     return bool(value)  # "" / [] / None don't count as explicitly set
@@ -82,30 +100,44 @@ def _get_inherit_table(entry: dict[str, Any]) -> dict[str, Any]:
     return inherit if isinstance(inherit, dict) else {}
 
 
-def _resolve_attributes(
+def _own_table(entry: dict[str, Any], table_name: str) -> dict[str, Any]:
+    table = entry.get(table_name)
+    return table if isinstance(table, dict) else {}
+
+
+def _resolve_fields(
     key: str,
     raw_entries: dict[str, dict[str, Any]],
     defaults: dict[str, Any],
     memo: dict[str, dict[str, Any]],
     chain: tuple[str, ...],
+    table_name: str,
+    keep: frozenset[str] | None = None,
 ) -> dict[str, Any]:
+    """Resolve one field-carrying table (`doc`, `group`, or the control
+    fields inside `rules`). `keep`, when given, restricts which keys of
+    the table count as fields - that's what separates control fields from
+    rule attachments, which share the `rules` table."""
     if key in memo:
         return memo[key]
     if key in chain:
         raise _CycleDetected(list(chain) + [key])
 
     entry = raw_entries.get(key, {})
-    parent_key = _get_inherit_table(entry).get("attributes")
+    parent_key = _get_inherit_table(entry).get(table_name)
 
     base: dict[str, Any] = {}
     if isinstance(parent_key, str) and parent_key:
-        base = dict(_resolve_attributes(parent_key, raw_entries, defaults, memo, chain + (key,)))
+        base = dict(_resolve_fields(
+            parent_key, raw_entries, defaults, memo, chain + (key,), table_name, keep
+        ))
 
     result = dict(base)
-    for field_name, value in entry.items():
-        if field_name in ("inherit", "rules"):
+    own = _own_table(entry, table_name)
+    for field_name, value in own.items():
+        if keep is not None and field_name not in keep:
             continue
-        if _is_explicitly_set(entry, field_name):
+        if _is_explicitly_set(own, field_name):
             result[field_name] = value
 
     for field_name, value in defaults.items():
@@ -121,6 +153,7 @@ def _resolve_rules(
     raw_entries: dict[str, dict[str, Any]],
     memo: dict[str, dict[str, list[RuleAttachment]]],
     chain: tuple[str, ...],
+    control_names: frozenset[str],
 ) -> dict[str, list[RuleAttachment]]:
     if key in memo:
         return memo[key]
@@ -129,13 +162,13 @@ def _resolve_rules(
 
     entry = raw_entries.get(key, {})
     inherit = _get_inherit_table(entry)
-    parent_key = inherit.get("rules")
+    parent_key = inherit.get(RULES)
     exclude = set(inherit.get("exclude_rules", [])) if isinstance(inherit.get("exclude_rules"), list) else set()
 
     result: dict[str, list[RuleAttachment]] = {}
 
     if isinstance(parent_key, str) and parent_key:
-        parent_rules = _resolve_rules(parent_key, raw_entries, memo, chain + (key,))
+        parent_rules = _resolve_rules(parent_key, raw_entries, memo, chain + (key,), control_names)
         for rule_id, attachments in parent_rules.items():
             if rule_id in exclude:
                 continue
@@ -144,13 +177,13 @@ def _resolve_rules(
                 for a in attachments
             ]
 
-    own_rules = entry.get("rules", {})
-    if isinstance(own_rules, dict):
-        for rule_id, instances in own_rules.items():
-            if not isinstance(instances, list):
-                instances = [instances]
-            own_attachments = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
-            result[rule_id] = result.get(rule_id, []) + own_attachments
+    for rule_id, instances in _own_table(entry, RULES).items():
+        if rule_id in control_names:
+            continue  # a control field, not an attachment
+        if not isinstance(instances, list):
+            instances = [instances]
+        own_attachments = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
+        result[rule_id] = result.get(rule_id, []) + own_attachments
 
     memo[key] = result
     return result
@@ -158,16 +191,20 @@ def _resolve_rules(
 
 def resolve_entries(
     raw_entries: dict[str, dict[str, Any]],
-    defaults: dict[str, Any],
+    defaults: dict[str, dict[str, Any]],
     namespace_label: str,
+    control_names: tuple[str, ...] = (),
 ) -> tuple[dict[str, ResolvedEntry], list[InheritIssue]]:
     """Resolve every entry in one namespace (paths, or folders.reserved).
 
-    namespace_label is used only for issue messages (e.g. "paths" or
-    "folders.reserved") - it doesn't affect resolution logic, which is
-    identical for both namespaces.
+    `defaults` is keyed by table name (`doc` / `group` / `rules`), each
+    holding that table's standard-wide defaults. `namespace_label` is
+    used only for issue messages (e.g. "paths" or "folders.reserved") -
+    it doesn't affect resolution logic, which is identical for both
+    namespaces.
     """
     issues: list[InheritIssue] = []
+    control = frozenset(control_names)
 
     # structural pre-check: every referenced source must exist, and must
     # be a string - resolved before any recursive walk so a bad reference
@@ -182,25 +219,23 @@ def resolve_entries(
             issues.append(InheritIssue("error", key, "`inherit` must be a table"))
             continue
 
-        attrs_src = inherit.get("attributes")
-        if attrs_src is not None:
-            if not isinstance(attrs_src, str):
-                issues.append(InheritIssue("error", key, "inherit.attributes must be a path/folder key (string)"))
-            elif attrs_src not in raw_entries:
-                issues.append(InheritIssue("error", key, f"inherit.attributes references unknown {namespace_label} key '{attrs_src}'"))
-
-        rules_src = inherit.get("rules")
-        if rules_src is not None:
-            if not isinstance(rules_src, str):
-                issues.append(InheritIssue("error", key, "inherit.rules must be a path/folder key (string)"))
-            elif rules_src not in raw_entries:
-                issues.append(InheritIssue("error", key, f"inherit.rules references unknown {namespace_label} key '{rules_src}'"))
+        for source_key in SOURCE_KEYS:
+            source = inherit.get(source_key)
+            if source is None:
+                continue
+            if not isinstance(source, str):
+                issues.append(InheritIssue("error", key, f"inherit.{source_key} must be a path/folder key (string)"))
+            elif source not in raw_entries:
+                issues.append(InheritIssue(
+                    "error", key,
+                    f"inherit.{source_key} references unknown {namespace_label} key '{source}'",
+                ))
 
         exclude_rules = inherit.get("exclude_rules")
         if exclude_rules is not None:
             if not isinstance(exclude_rules, list) or not all(isinstance(r, str) for r in exclude_rules):
                 issues.append(InheritIssue("error", key, "inherit.exclude_rules must be a list of rule ids"))
-            elif rules_src is None:
+            elif inherit.get(RULES) is None:
                 issues.append(InheritIssue("error", key, "inherit.exclude_rules is set but inherit.rules isn't - nothing to exclude from"))
 
     # drop entries whose own inherit table is structurally broken, so a bad
@@ -213,30 +248,40 @@ def resolve_entries(
         if isinstance(entry, dict)
     }
 
-    attr_memo: dict[str, dict[str, Any]] = {}
+    memos: dict[str, dict[str, dict[str, Any]]] = {DOC: {}, GROUP: {}, RULES: {}}
     rules_memo: dict[str, dict[str, list[RuleAttachment]]] = {}
     resolved: dict[str, ResolvedEntry] = {}
 
-    for key in safe_entries:
+    def resolve_table(key: str, table_name: str, keep: frozenset[str] | None) -> dict[str, Any]:
         try:
-            attrs = _resolve_attributes(key, safe_entries, defaults, attr_memo, ())
+            return _resolve_fields(
+                key, safe_entries, defaults.get(table_name, {}), memos[table_name], (), table_name, keep
+            )
         except _CycleDetected as e:
-            issues.append(InheritIssue("error", key, f"inherit.attributes cycle: {' -> '.join(e.chain)}"))
-            attrs = {k: v for k, v in safe_entries[key].items() if k not in ("inherit", "rules")}
+            issues.append(InheritIssue("error", key, f"inherit.{table_name} cycle: {' -> '.join(e.chain)}"))
+            own = _own_table(safe_entries[key], table_name)
+            return {k: v for k, v in own.items() if keep is None or k in keep}
+
+    for key in safe_entries:
+        doc = resolve_table(key, DOC, None)
+        group = resolve_table(key, GROUP, None)
+        control_values = resolve_table(key, RULES, control)
 
         try:
-            rules = _resolve_rules(key, safe_entries, rules_memo, ())
+            rules = _resolve_rules(key, safe_entries, rules_memo, (), control)
         except _CycleDetected as e:
             issues.append(InheritIssue("error", key, f"inherit.rules cycle: {' -> '.join(e.chain)}"))
-            own = safe_entries[key].get("rules", {})
             rules = {}
-            if isinstance(own, dict):
-                for rule_id, instances in own.items():
-                    if not isinstance(instances, list):
-                        instances = [instances]
-                    rules[rule_id] = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
+            for rule_id, instances in _own_table(safe_entries[key], RULES).items():
+                if rule_id in control:
+                    continue
+                if not isinstance(instances, list):
+                    instances = [instances]
+                rules[rule_id] = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
 
-        resolved[key] = ResolvedEntry(key=key, attributes=attrs, rules=rules, raw=raw_entries[key])
+        resolved[key] = ResolvedEntry(
+            key=key, doc=doc, group=group, control=control_values, rules=rules, raw=raw_entries[key]
+        )
 
     # exclude_rules entries that don't correspond to anything actually
     # inherited are very likely a typo or a stale exclusion - worth a
@@ -248,7 +293,7 @@ def resolve_entries(
         inherit = entry.get("inherit")
         if not isinstance(inherit, dict):
             continue
-        rules_src = inherit.get("rules")
+        rules_src = inherit.get(RULES)
         exclude = inherit.get("exclude_rules")
         if not isinstance(rules_src, str) or rules_src not in resolved or not isinstance(exclude, list):
             continue
@@ -256,7 +301,7 @@ def resolve_entries(
         # what the parent *would* offer before this entry's own exclusion -
         # resolve the parent alone, not this entry, to get the raw candidate set
         try:
-            candidate_ids = set(_resolve_rules(rules_src, safe_entries, rules_memo, ()).keys())
+            candidate_ids = set(_resolve_rules(rules_src, safe_entries, rules_memo, (), control).keys())
         except _CycleDetected:
             candidate_ids = parent_rule_ids
         for rule_id in exclude:

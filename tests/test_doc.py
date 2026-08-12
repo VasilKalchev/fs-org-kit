@@ -20,34 +20,33 @@ schema_date = "2026-01-01"
 standard_version = "2.0"
 standard_date = "2026-01-01"
 
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes", "use_for", "see_also"]
 required = ["purpose"]
 
-[paths.attributes.defaults]
+[paths.rules]
 allow_missing = false
 
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
 {body}
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 transient = "x"
 temporary = "x"
 ongoing = "x"
 archival = "x"
-[enums.paths.origin]
+[enums.group.origin]
 self = "x"
 external = "x"
 [tags]
 [abbreviations]
 [folders]
-[folders.attributes]
+[folders.doc]
 names = []
-[folders.attributes.defaults]
 [folders.reserved]
 '''
 
@@ -111,13 +110,17 @@ reason = "r"
 
     def test_warnings_do_not_block(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."z/"]
+[paths."z/".doc]
 purpose = "Z"
+
+[paths."z/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -132,8 +135,10 @@ class TestSections:
 
     def _std(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -173,13 +178,17 @@ class TestDiagrams:
 
     def _std_with_paths(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."a/aa/"]
+[paths."a/aa/".doc]
 purpose = "AA"
+
+[paths."a/aa/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -203,7 +212,10 @@ origin = ["self"]
     def test_node_limit_guard(self, tmp_path, capsys):
         body_parts = []
         for i in range(45):
-            body_parts.append(f'[paths."item{i}/"]\npurpose = "x"\nlifecycle = "ongoing"\norigin = ["self"]\n')
+            body_parts.append(
+                f'[paths."item{i}/".doc]\npurpose = "x"\n'
+                f'[paths."item{i}/".group]\nlifecycle = "ongoing"\norigin = ["self"]\n'
+            )
         std = write_standard(tmp_path, "\n".join(body_parts))
         main([str(std), "--sections", "overview"])
         out = capsys.readouterr().out
@@ -212,8 +224,10 @@ origin = ["self"]
 
     def test_lifecycle_diagram_only_for_known_vocabulary(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -224,8 +238,10 @@ origin = ["self"]
 
     def test_mermaid_special_chars_sanitized(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."weird[name]/"]
+[paths."weird[name]/".doc]
 purpose = "has \\"quotes\\" and [brackets]"
+
+[paths."weird[name]/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -251,8 +267,10 @@ class TestTableOfContents:
 
     def test_toc_present_by_default(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -261,8 +279,10 @@ origin = ["self"]
 
     def test_no_toc_flag(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -271,8 +291,10 @@ origin = ["self"]
 
     def test_every_link_has_a_matching_anchor(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -299,14 +321,18 @@ class TestAttributeTable:
 
     def test_list_valued_field_becomes_bullets_not_a_repr(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["b/", "c/"]
 
-[paths."b/"]
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[paths."b/".doc]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -318,22 +344,26 @@ origin = ["self"]
 
     def test_string_valued_field_becomes_a_table_row(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+see_also = "b/"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = "b/"
 ''')
         main([str(std), "--sections", "paths"])
         assert "| See also | b/ |" in capsys.readouterr().out
 
     def test_field_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+see_also = [""]
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-see_also = [""]
 ''')
         main([str(std), "--sections", "paths"])
         assert "See also" not in capsys.readouterr().out
@@ -342,19 +372,23 @@ see_also = [""]
         """The declaration drives rendering, so a field the namespace never
         declared (already a validator warning) can't appear in the docs."""
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+undeclared = "should not be rendered"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
-undeclared = "should not be rendered"
 ''')
         main([str(std), "--sections", "paths"])
         assert "should not be rendered" not in capsys.readouterr().out
 
     def test_a_grouping_field_links_to_its_vocabulary(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')
@@ -364,10 +398,14 @@ origin = ["self"]
 
     def test_control_fields_render_as_sentences(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
+
+[paths."a/".rules]
 allow_missing = true
 ''')
         main([str(std), "--sections", "paths"])
@@ -380,13 +418,17 @@ class TestGroupingIndex:
 
     def _std(self, tmp_path):
         return write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."b/"]
+[paths."b/".doc]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "archival"
 origin = ["self"]
 ''')
@@ -405,8 +447,10 @@ origin = ["self"]
 
     def test_a_multi_valued_field_lists_an_entry_under_each_value(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self", "external"]
 ''')
@@ -425,11 +469,11 @@ schema_date = "2026-01-01"
 standard_version = "2.0"
 standard_date = "2026-01-01"
 
-[paths.attributes]
+[paths.doc]
 names = ["purpose"]
 required = ["purpose"]
 
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
 
 [enums]
@@ -445,16 +489,19 @@ class TestInheritanceRendering:
 
     def test_inherited_field_shown_and_marked(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."active/x/"]
+[paths."active/x/".doc]
 purpose = "Active X"
+
+[paths."active/x/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
-[paths."archive/x/"]
+[paths."archive/x/".group]
 lifecycle = "archival"
 
 [paths."archive/x/".inherit]
-attributes = "active/x/"
+doc = "active/x/"
+group = "active/x/"
 ''')
         main([str(std), "--sections", "paths"])
         out = capsys.readouterr().out
@@ -466,8 +513,10 @@ class TestRuleReverseIndex:
 
     def test_rule_lists_every_attachment_site(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -477,8 +526,10 @@ reason = "reason A"
 [paths."a/".rules.file-extensions-v1.params]
 allowed = ["jpg"]
 
-[paths."b/"]
+[paths."b/".doc]
 purpose = "B"
+
+[paths."b/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -500,8 +551,10 @@ class TestNoEmDashes:
 
     def test_generated_output_has_no_em_dashes(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
-[paths."a/"]
+[paths."a/".doc]
 purpose = "A"
+
+[paths."a/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 ''')

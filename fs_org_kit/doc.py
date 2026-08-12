@@ -44,7 +44,7 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import RuleEntry
-from fs_org_kit.fields import FieldSpec
+from fs_org_kit.fields import ALL_CONTROL_FIELDS, DOC, GROUP, FieldSpec
 from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
 from fs_org_kit.validator import Validator, _index_source
 
@@ -134,9 +134,13 @@ def collect_rule_sites(
         )
 
     def add_raw_table(table: Any, label: str, slug: str | None) -> None:
+        """A `rules` table holds control fields alongside attachments -
+        only the attachments are sites."""
         if not isinstance(table, dict):
             return
         for rule_id, instances in table.items():
+            if rule_id in ALL_CONTROL_FIELDS:
+                continue
             if not isinstance(instances, list):
                 instances = [instances]
             for inst in instances:
@@ -345,34 +349,36 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
     """Renders whatever the standard declared, in the order it declared
     it: single-valued fields as table rows, list-valued ones as bullets
     below. Grouping values link to the vocabulary that defines them."""
-    attrs = resolved.attributes
-    inherited_from = raw.get("inherit", {}).get("attributes") if isinstance(raw.get("inherit"), dict) else None
+    inherit = raw.get("inherit", {}) if isinstance(raw.get("inherit"), dict) else {}
 
-    def marker(field_name: str) -> str:
-        if inherited_from and field_name not in raw:
-            return f" *(inherited from `{inherited_from}`)*"
-        return ""
+    def marker(kind: str, field_name: str) -> str:
+        """An inherited value is worth marking as such; a field written on
+        this entry, in this entry's own table, is not."""
+        source = inherit.get(kind)
+        own = raw.get(kind)
+        written_here = isinstance(own, dict) and field_name in own
+        return f" *(inherited from `{source}`)*" if source and not written_here else ""
 
     rows: list[tuple[str, str]] = []
     bullet_lists: list[tuple[str, list[str], str]] = []
 
     for name in spec.doc_names:
-        value = attrs.get(name)
+        value = resolved.doc.get(name)
         if isinstance(value, str) and value:
-            rows.append((_field_label(name), value + marker(name)))
+            rows.append((_field_label(name), value + marker(DOC, name)))
             continue
         values = _string_values(value)
         if values:
-            bullet_lists.append((_field_label(name), values, marker(name)))
+            bullet_lists.append((_field_label(name), values, marker(DOC, name)))
 
-    for name in spec.grouping_names:
-        values = _string_values(attrs.get(name))
+    for name in spec.group_names:
+        values = _string_values(resolved.group.get(name))
         if values:
             linked = ", ".join(f"[`{v}`](#{slug_for('section', 'enums')})" for v in values)
-            rows.append((_field_label(name), linked + marker(name)))
+            rows.append((_field_label(name), linked + marker(GROUP, name)))
 
     for name in spec.control_names:
-        if attrs.get(name):
+        if resolved.control.get(name):
             label, text = CONTROL_FIELD_ROWS.get(name, (_field_label(name), "yes"))
             rows.append((label, text))
 
@@ -395,10 +401,10 @@ def render_grouping_index(b: DocBuilder, entries: dict[str, ResolvedEntry], spec
     """One bucket list per grouping field - the reason grouping fields are
     declared apart from free-form documentation ones. Entries with no
     value for a field simply don't appear under it."""
-    for name in spec.grouping_names:
+    for name in spec.group_names:
         buckets: dict[str, list[str]] = {}
         for key in sorted(entries):
-            for value in _string_values(entries[key].attributes.get(name)):
+            for value in _string_values(entries[key].group.get(name)):
                 buckets.setdefault(value, []).append(key)
         if not buckets:
             continue
@@ -469,6 +475,8 @@ def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
             b.line("| Rule | Reason | Params |")
             b.line("|---|---|---|")
             for rule_id, instances in sorted(rules_table.items()):
+                if rule_id in ALL_CONTROL_FIELDS:
+                    continue
                 if not isinstance(instances, list):
                     instances = [instances]
                 rule_slug = slug_for("rule", rule_id)
@@ -553,30 +561,30 @@ def render_rules(b: DocBuilder, rule_catalog: dict[str, RuleEntry], sites_by_rul
 
 
 def render_enums(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> None:
-    """One table per vocabulary, under whichever namespace declared it -
-    the two namespaces name their own grouping fields, so neither the set
-    of tables nor their names is known ahead of time. The heading is the
-    dotted key itself, so a reader of the docs can find it in the TOML."""
+    """One table per vocabulary, under the kind of field it belongs to -
+    a standard names its own fields, so neither the set of tables nor
+    their names is known ahead of time. The heading is the dotted key
+    itself, so a reader of the docs can find it in the TOML."""
     enums = data.get("enums", {})
     if not isinstance(enums, dict):
         return
 
     vocabularies: list[tuple[str, str, dict[str, Any]]] = []
-    for namespace in ("paths", "folders"):
-        namespace_enums = enums.get(namespace, {})
-        if not isinstance(namespace_enums, dict):
+    for kind in (GROUP, DOC):
+        kind_enums = enums.get(kind, {})
+        if not isinstance(kind_enums, dict):
             continue
-        for name, values in namespace_enums.items():
+        for name, values in kind_enums.items():
             if isinstance(values, dict) and values:
-                vocabularies.append((namespace, name, values))
+                vocabularies.append((kind, name, values))
 
     if not vocabularies:
         return
 
     b.heading(2, "Enums", slug_for("section", "enums"))
 
-    for namespace, name, values in vocabularies:
-        b.line(f"**`enums.{namespace}.{name}`:**")
+    for kind, name, values in vocabularies:
+        b.line(f"**`enums.{kind}.{name}`:**")
         b.line()
         b.line("| Value | Meaning |")
         b.line("|---|---|")
@@ -585,7 +593,7 @@ def render_enums(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
         b.line()
         # The one vocabulary with an inherent order rather than just a set
         # of values - drawn only when it's exactly the known one.
-        if namespace == "paths" and name == "lifecycle" and "lifecycle" in diagrams:
+        if kind == GROUP and name == "lifecycle" and "lifecycle" in diagrams:
             diagram = build_lifecycle_diagram(values)
             if diagram:
                 b.line(diagram)

@@ -287,7 +287,7 @@ def _resolve_active_targets(
             if abs_path.is_dir():
                 active.append((key, abs_path))
                 continue
-        if not bool(resolved.attributes.get("allow_missing", False)):
+        if not bool(resolved.control.get("allow_missing", False)):
             missing_and_not_allowed.append(key)
     return active, missing_and_not_allowed
 

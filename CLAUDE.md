@@ -83,7 +83,7 @@ ends at the doc updates `test_docs_current.py` checks.
 ### Two file types, two rates of change
 
 - **The standard** (`fs-org-std.toml`, user-owned, grammar in
-  `fs-org-std.template.toml`) — paths, their attributes, and which rules
+  `fs-org-std.template.toml`) — paths, their fields, and which rules
   attach where. Changes constantly.
 - **Rules** — small versioned units living on disk in three trust tiers,
   each a directory with a manifest + scripts:
@@ -116,9 +116,9 @@ ends at the doc updates `test_docs_current.py` checks.
   location) by not caching at all.
 - `path_keys.py` — the single place a catalog key becomes a real path
   (`resolve_key`). A key resolving outside `root` (absolute, `~`, or
-  `..`) is legal only on an entry declaring `outside_root = true`,
-  which is deliberately **never inherited and never defaulted** — the
-  same stance as `reason`. Note the accident it exists for:
+  `..`) is legal only on an entry whose `rules` table declares
+  `outside_root = true`, which is deliberately **never inherited and
+  never defaulted** — the same stance as `reason`. Note the accident it exists for:
   `root / "/etc/x"` is `/etc/x`, so a stray leading slash used to
   silently redirect rules to another tree. Never use a bare join.
 - `sandbox.py` — the audit-hook harness every rule script runs inside
@@ -130,11 +130,21 @@ ends at the doc updates `test_docs_current.py` checks.
   declaration and never special-cases a rule by name. It is a guard
   against accidents, **not** a security boundary; don't describe it as
   one. `--no-sandbox` disables it.
-- `inherit.py` — resolves `[paths."...".inherit]` (attribute/rule
-  inheritance for the PARA-style "state via folder location" pattern) and
-  standard-wide attribute defaults, once, before validation.
-  `resolve_entries()` produces a flattened `ResolvedEntry` per catalog key
-  so nothing downstream needs its own inheritance-walking logic.
+- `fields.py` — the three tables an entry is made of (`doc` /
+  `group` / `rules`) and the per-namespace declaration of what may go
+  in the first two. Nothing in the package knows what `purpose` or
+  `lifecycle` mean; only the control fields `allow_missing` and
+  `outside_root` are hardcoded, because the tool acts on those itself.
+  Parsed once by the validator (`path_fields` / `folder_fields`) and
+  reused by the doc generator.
+- `inherit.py` — resolves `[paths."...".inherit]` (per-table
+  inheritance for the PARA-style "state via folder location" pattern)
+  and standard-wide defaults, once, before validation. One `inherit`
+  key per table (`doc` / `group` / `rules`, plus `exclude_rules`), each
+  free to name a different source. `resolve_entries()` produces a
+  flattened `ResolvedEntry` per catalog key (`.doc` / `.group` /
+  `.control` / `.rules`) so nothing downstream needs its own
+  inheritance-walking logic.
 - `validator.py` — read-only. Validates TOML structure, resolved rule
   attachments/scope compatibility, resolved inheritance, and lint checks.
   Issues are tagged `kind` (`validation`/`lint`) and `level`
@@ -187,7 +197,7 @@ doc/RULES.md for the full authoring guide; the essentials:
 - **Resolve once, flatten, reuse** — this pattern recurs for rule
   discovery (validator discovers, runner/doc reuse `rule_catalog`) and
   for inheritance (`resolve_entries()` runs once; validator and runner
-  both just read `resolved.attributes`/`resolved.rules`). Don't
+  both just read `resolved.doc`/`.group`/`.control`/`.rules`). Don't
   reintroduce a second discovery/resolution pass when adding a new
   consumer — thread the existing resolved data through instead.
 - **Fixability is structural** — a rule is fixable iff its `-fix.py`
@@ -196,9 +206,10 @@ doc/RULES.md for the full authoring guide; the essentials:
   inherited/defaulted** — hardcoded in the validator, deliberately, to
   force per-attachment justification.
 - **`allow_missing`** is resolved by the runner only, never the
-  validator (which never touches the filesystem). Both sides of a
-  state-varying path pair (e.g. `active/x/` / `archive/x/`) need it set,
-  not just the currently-absent one.
+  validator (which never touches the filesystem). It lives in an
+  entry's `rules` table, with the attachments that read it. Both sides
+  of a state-varying path pair (e.g. `active/x/` / `archive/x/`) need
+  it set, not just the currently-absent one.
 - **Checkers really can't write now** — `sandbox.py` enforces it. A rule
   that needs a blocked capability declares it in `[sandbox]`; never add
   a runner-side exception for a specific rule. Rule scripts run

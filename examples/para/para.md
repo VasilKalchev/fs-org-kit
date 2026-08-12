@@ -353,7 +353,7 @@ Checks each direct child of a path against an age threshold - either flagging th
 <a id="section-enums"></a>
 ## Enums
 
-**`enums.paths.lifecycle`:**
+**`enums.group.lifecycle`:**
 
 | Value | Meaning |
 |---|---|
@@ -373,7 +373,7 @@ graph LR
     l2 --> l3
 ```
 
-**`enums.paths.origin`:**
+**`enums.group.origin`:**
 
 | Value | Meaning |
 |---|---|

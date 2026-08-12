@@ -153,26 +153,28 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 The validator reads its field lists and defaults from the file being checked:
 
-- `<ns>.attributes.names` / `<ns>.attributes.required` declare the free-form documentation fields an entry may carry, and which of them may not be left empty
-- `<ns>.grouping.names` / `.multi` / `.required` declare the enum-backed grouping fields
-- `<ns>.attributes.defaults` provides standard-wide default values
-- `enums.<ns>.<field>` defines the valid values for one grouping field
+- `<ns>.doc.names` / `<ns>.doc.required` declare the free-form documentation fields an entry may carry, and which of them may not be left empty
+- `<ns>.group.names` / `.multi` / `.required` declare the enum-backed grouping fields
+- `<ns>.doc.defaults` / `<ns>.group.defaults` provide standard-wide default values, and `<ns>.rules` does the same for the control fields
+- `enums.group.<field>` (and optionally `enums.doc.<field>`) defines the valid values for one field
 
 This means the validator doesn't need code edits when the schema evolves - it adapts automatically.
 
-### Entry fields come in three kinds, declared apart
+### An entry is three tables, named for who reads them
 
-`purpose` and `allow_missing` sat in the same list and read as the same kind of thing, but only one of them does anything: the tool acted on `allow_missing` and `outside_root` while `purpose`, `notes`, `use_for` and the rest were documentation the code never looked at - except that `purpose`, `lifecycle` and `origin` were also hardcoded by name in the validator, contradicting the self-describing claim directly above. So the three kinds are now declared separately (`fs_org_kit/fields.py`):
+`purpose` and `allow_missing` sat in the same flat entry and read as the same kind of thing, but only one of them does anything: the tool acts on `allow_missing` and `outside_root`, while `purpose`, `notes`, `use_for` and the rest are documentation the code never looks at - except that `purpose`, `lifecycle` and `origin` were also hardcoded by name in the validator, contradicting the self-describing claim directly above. Structure now carries the distinction (`fs_org_kit/fields.py`), at both levels: the same three names declare a namespace and make up every entry in it.
 
-- **control** - `allow_missing`, `outside_root`. A fixed set owned by the package, never declared in a standard, because they change what the runner and the sandbox actually *do*. Declaring one as a user field is an error, not a silent shadow.
-- **grouping** - enum-backed, listed in `<ns>.grouping.names`, checked against `enums.<ns>.<field>`. Separate from documentation because a closed vocabulary is what makes bucketing entries possible at all; the doc generator emits a "by `<field>`" index per grouping field, which free-form prose could never support.
-- **documentation** - everything else. A string or a list of strings; nothing reads the value, and the doc generator renders whatever is there, in the order declared.
+| Table | Holds | Declared by |
+|---|---|---|
+| `doc` | free-form prose: a string, or a list of strings | `<ns>.doc.names` / `.required` |
+| `group` | enum-backed values, checked against `enums.group.<field>` | `<ns>.group.names` / `.multi` / `.required` |
+| `rules` | rule attachments, plus the control fields `allow_missing` and `outside_root` | nobody - the control set is fixed, the attachments are references |
 
-Nothing in the code knows what `purpose` or `lifecycle` mean - including the ones this project's own template ships with. A standard that wants `sensitivity` and `owner` instead gets the same validation and the same rendering.
+Grouping is separate from documentation because a closed vocabulary is what makes bucketing entries possible at all: the doc generator emits a "by `<field>`" index per grouping field, which free-form prose could never support. The control fields sit with the rule attachments because that is who reads them - `allow_missing` decides whether the runner expects a target on disk, `outside_root` decides where a fixer may write - so an entry's `rules` table holds everything the rule machinery needs, and nothing that only humans read.
 
-Both namespaces declare independently, and `folders` deliberately gets no control fields (see "Why there is no `allow_missing` here"). A vocabulary is never shared across namespaces either: `folders` grouping by `lifecycle` needs its own `[enums.folders.lifecycle]`. Sharing by name would make one namespace's edit silently retune the other's validation, and the two are only ever the same vocabulary by the author's choice.
+Nothing in the code knows what `purpose` or `lifecycle` mean - including the ones this project's own template ships with. A standard that wants `sensitivity` and `owner` instead gets the same validation and the same rendering. Requiredness moved into the standard along with the names: a validator that no longer knows `purpose` exists can't insist on it either.
 
-Requiredness moved into the standard with the names (`attributes.required` / `grouping.required`). It has to: a validator that no longer knows `purpose` exists can't insist on it either.
+Field lists are per namespace, so `folders` can carry a different set from `paths` (and gets no control fields at all - see "Why there is no `allow_missing` here"). Vocabularies are not: `enums.group.lifecycle` is one table both namespaces read, because a value set describes the field, not who carries it.
 
 ### Paths use flat TOML keys
 
@@ -295,7 +297,7 @@ A path attribute, independent of `inherit` (a path can be `allow_missing` withou
 
 ### Why `allow_missing` gets a defaults table entry, and other path attributes normally don't
 
-Most entry fields (`purpose`, `notes`, `lifecycle`, ...) have no sensible standard-wide default - there's no universal answer to "what is this folder for." `allow_missing` is the exception: `false` (must exist) is a reasonable default for anything not marked otherwise. Rather than special-case this in code, `paths.attributes.defaults` is a real, generic mechanism - any attribute can have a standard-wide default declared there, resolved with the same precedence as everything else (explicit > inherited > standard-wide default > unset). It's just that in practice, `allow_missing` is currently the only field where declaring one makes sense.
+Most entry fields (`purpose`, `notes`, `lifecycle`, ...) have no sensible standard-wide default - there's no universal answer to "what is this folder for." `allow_missing` is the exception: `false` (must exist) is a reasonable default for anything not marked otherwise. Rather than special-case this in code, defaults are a generic mechanism - any field can have a standard-wide value declared in the table its kind lives in (`<ns>.doc.defaults`, `<ns>.group.defaults`, or `[<ns>.rules]` for the control fields), resolved with the same precedence as everything else (explicit > inherited > standard-wide default > unset). It's just that in practice, `allow_missing` is currently the only field where declaring one makes sense - which is also why its default sits directly in `[paths.rules]`, beside the field it defaults.
 
 ### Why this is a separate module (`fs_org_kit/inherit.py`), not inline in the validator
 
@@ -319,7 +321,7 @@ Three routes escape and all three need the flag - absolute (`/etc/`), home-relat
 
 ### Why it is never inherited or defaulted
 
-Hardcoded, like `reason`. A flag whose only job is to make one thing deliberate is worth nothing if it can arrive from somewhere else - a one-word edit to an unrelated entry must not be able to widen the set of directories the tool will walk into and, under `--fix`, write to. Arriving via `inherit` or `paths.attributes.defaults` is an error rather than a quiet acceptance.
+Hardcoded, like `reason`. A flag whose only job is to make one thing deliberate is worth nothing if it can arrive from somewhere else - a one-word edit to an unrelated entry must not be able to widen the set of directories the tool will walk into and, under `--fix`, write to. Arriving via `inherit` or the `[paths.rules]` default is an error rather than a quiet acceptance.
 
 ### What it feeds
 
@@ -351,7 +353,7 @@ Two catalog keys that could both match the same real folder is a structural prob
 
 The check is deliberately conservative (segment-by-segment comparison; `[abc]` vs `[xyz]` at the same position are treated as "may overlap" even though they could never actually share a character; `**`'s variable-length matching is approximated via each side's fixed prefix before its first `**`, not proven exactly). A false positive here costs a human a rename; a false negative would be a silently-broken standard where two entries fight over the same real folder and nothing ever says so.
 
-Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.attributes` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared attributes/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
+Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.doc`, `inherit.group` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared fields/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
 
 When the runner actually expands a pattern against real disk, any real match that's *also* its own explicit literal catalog entry is excluded from that pattern's own expansion - since the validator already guarantees any such overlap was sanctioned, the literal entry's own resolved attributes/rules (already including whatever it inherited from the pattern) are authoritative for that one folder, not a second, separate invocation via the pattern. A pattern whose real matches are *all* claimed this way still isn't "missing" - the folders exist, they're just individually cataloged elsewhere.
 

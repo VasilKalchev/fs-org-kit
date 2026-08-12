@@ -90,28 +90,29 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Structure validation**: broken TOML, missing checker script, directory name format, version major mismatch, invalid severity/scope values
 - **Metadata**: RuleEntry fields are properly populated
 
-### Inherit tests (13 tests, `tests/test_inherit.py`)
+### Inherit tests (17 tests, `tests/test_inherit.py`)
 
-- **Basic inheritance**: full attribute inherit with per-field override, standard-wide defaults, an explicit `false` correctly overriding an inherited `true` (the trickiest edge case - booleans have no "empty" state)
-- **Rule inheritance**: `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `attributes` and `rules` inheriting from different sources
-- **Errors and cycles**: undefined references, 2- and 3-level cycles, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
+- **Basic inheritance**: full inherit with per-field override, standard-wide defaults, each table inheriting only from its own source, an explicit `false` correctly overriding an inherited `true` (the trickiest edge case - booleans have no "empty" state)
+- **Rule inheritance**: a control field sharing the `rules` table never reaches the resolved rule set; `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `doc` and `rules` inheriting from different sources
+- **Errors and cycles**: undefined references from each of the three keys, 2- and 3-level cycles, a cycle in one table not stopping the others, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
 
-### Field declaration tests (19 tests, `tests/test_fields.py`)
+### Field declaration tests (21 tests, `tests/test_fields.py`)
 
 `parse_field_spec` reads what one namespace declares its entries may carry; checking values against that is the validator's job, tested below.
 
-- **Parsing**: the three kinds stay apart, declared order is preserved (the doc generator renders in it), `required` spans both kinds with documentation fields first, `multi` and the enum vocabulary are read from the declaration, and a namespace that declares nothing still knows its control fields
-- **Namespaces are independent**: `folders` reads its own lists and its own `enums.folders.*`, has no control fields at all, and a vocabulary declared for `paths` does *not* reach a same-named `folders` grouping field
-- **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a control field claimed as a documentation or grouping field; one name declared as both kinds; a name listed twice; a grouping field with no vocabulary (a warning - it still groups)
+- **Parsing**: the three tables stay apart, declared order is preserved (the doc generator renders in it), `required` and `multi` are read per table, a control default comes from the namespace's own `rules` table while its blanket attachments do not, and a namespace that declares nothing is still usable
+- **Vocabularies**: a grouping field reads `enums.group.<field>`, both namespaces read the same table for the same field name, a documentation field's vocabulary is optional (`enums.doc.<field>`), and a grouping field with none warns but still groups
+- **Namespaces are independent**: `folders` reads its own field lists, and has no control fields at all
+- **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a control field claimed as a documentation or grouping field; one name declared as both kinds; a name listed twice
 
-### Validator tests (36 tests, `tests/test_validator.py`)
+### Validator tests (38 tests, `tests/test_validator.py`)
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
-- **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.attributes`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
+- **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.doc`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
 - **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment, `allow_missing` must be a boolean
-- **Entry fields**: a documentation field may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a control field needs no declaration; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
-- **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against its own `enums.folders.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered
+- **Entry fields**: an entry is its three tables and `inherit`, and a field written directly on it is an error; a documentation field may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a control field needs no declaration; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
+- **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against the shared `enums.group.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered; a control field on a reserved entry is an error, since a name isn't one location
 - **Param refs**: a `{ref = "..."}` value to `folders.reserved` or `abbreviations` resolves with no errors, a broken ref is an error naming the bad path, a ref satisfies a required-param-with-no-default check the same as a literal would
 - **Discovery options**: `include_external` threaded through to the rule catalog used for validation
 
@@ -133,7 +134,7 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Escape detection**: a relative key stays inside; absolute, `~`-relative and `..`-walking keys each escape; `a/../b/` returns to root and doesn't; a key dipping above root and back is still an escape; `./` and dot-containing filenames aren't escapes
 - **`resolve_key`**: relative joins onto root, absolute ignores root, `~` expands - plus the two tests that pin the accident this exists for: a plain join silently discards root for an absolute key, and never expands `~` at all
 - **`comparison_key`**: relative and absolute lookalikes stay distinct; two spellings of the same out-of-root place normalize together; trailing slashes are irrelevant
-- **Validator**: absolute/`~`/`..` keys are errors without `outside_root`, fine with it; the flag on an inside-root key is an error too; it must be boolean; it can arrive neither through `inherit` nor from `paths.attributes.defaults`; `[[paths.cross]]` carries the same flag with the same both-ways checks
+- **Validator**: absolute/`~`/`..` keys are errors without `outside_root`, fine with it; the flag on an inside-root key is an error too; it must be boolean; it can arrive neither through `inherit` nor from the `[paths.rules]` default; `[[paths.cross]]` carries the same flag with the same both-ways checks
 - **Overlap across the root boundary**: `/srv/*/` and `srv/*/` don't collide, while `~/shared/*/` and `/home/me/shared/*/` still do
 - **Runner**: an out-of-root target is found where it actually lives, an absent one is reported missing, and `allow_missing` applies to it identically; `expand_pattern` globs an absolute pattern from the filesystem anchor (`Path.glob` refuses one outright) while a relative pattern still globs from root
 

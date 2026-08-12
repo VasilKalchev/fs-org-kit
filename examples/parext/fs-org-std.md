@@ -1751,7 +1751,7 @@ Checks for folders that use the standard's reserved-name prefix (e.g. "_") but a
 <a id="section-enums"></a>
 ## Enums
 
-**`enums.paths.lifecycle`:**
+**`enums.group.lifecycle`:**
 
 | Value | Meaning |
 |---|---|
@@ -1771,24 +1771,7 @@ graph LR
     l2 --> l3
 ```
 
-**`enums.paths.origin`:**
-
-| Value | Meaning |
-|---|---|
-| `self` | authored directly by you - nothing to re-fetch or resync from elsewhere |
-| `external` | sourced from outside this system - downloaded, received, or otherwise not authored by you |
-| `generated` | produced automatically by a tool, script, or model - not hand-authored, not fetched externally |
-
-**`enums.folders.lifecycle`:**
-
-| Value | Meaning |
-|---|---|
-| `transient` | meant to be emptied constantly, nothing lingers |
-| `temporary` | has a completion condition, then gets archived |
-| `ongoing` | continuously active/maintained, no end state |
-| `archival` | already at rest, rarely touched |
-
-**`enums.folders.origin`:**
+**`enums.group.origin`:**
 
 | Value | Meaning |
 |---|---|

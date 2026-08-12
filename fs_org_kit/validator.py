@@ -88,7 +88,15 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
-from fs_org_kit.fields import STRUCTURAL_KEYS, FieldSpec, parse_field_spec
+from fs_org_kit.fields import (
+    ALL_CONTROL_FIELDS,
+    DOC,
+    GROUP,
+    RULES,
+    STRUCTURAL_KEYS,
+    FieldSpec,
+    parse_field_spec,
+)
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, resolve_entries
 from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
 from fs_org_kit.path_keys import OUTSIDE_ROOT_ATTR, comparison_key, escapes_root
@@ -417,7 +425,7 @@ class Validator:
         """Read what each namespace says its entries may carry, before any
         entry is checked against it. Both namespaces are read the same way
         and independently - `folders` can declare a different set of fields
-        from `paths`, with its own vocabularies under `enums.folders.*`."""
+        from `paths` - though the vocabularies under `enums` are shared."""
         for namespace, attr in (("paths", "path_fields"), ("folders", "folder_fields")):
             spec, issues = parse_field_spec(self.data, namespace)
             setattr(self, attr, spec)
@@ -458,19 +466,16 @@ class Validator:
         only from another reserved folder entry."""
         paths = self.data.get("paths", {})
         path_entries = {k: v for k, v in paths.items() if k not in META_KEYS_UNDER_PATHS and isinstance(v, dict)}
-        path_defaults = paths.get("attributes", {}).get("defaults", {})
-        if not isinstance(path_defaults, dict):
-            path_defaults = {}
-        self.resolved_paths, path_issues = resolve_entries(path_entries, path_defaults, "paths")
+        self.resolved_paths, path_issues = resolve_entries(
+            path_entries, self.path_fields.defaults, "paths", self.path_fields.control_names
+        )
         self._bridge_inherit_issues(path_issues, "paths")
 
-        folders = self.data.get("folders", {})
-        reserved = folders.get("reserved", {})
+        reserved = self.data.get("folders", {}).get("reserved", {})
         folder_entries = {k: v for k, v in reserved.items() if k not in META_KEYS_UNDER_RESERVED and isinstance(v, dict)}
-        folder_defaults = folders.get("attributes", {}).get("defaults", {})
-        if not isinstance(folder_defaults, dict):
-            folder_defaults = {}
-        self.resolved_folders, folder_issues = resolve_entries(folder_entries, folder_defaults, "folders.reserved")
+        self.resolved_folders, folder_issues = resolve_entries(
+            folder_entries, self.folder_fields.defaults, "folders.reserved", self.folder_fields.control_names
+        )
         self._bridge_inherit_issues(folder_issues, 'folders.reserved')
 
     def _bridge_inherit_issues(self, issues: list[InheritIssue], loc_prefix: str) -> None:
@@ -484,13 +489,24 @@ class Validator:
     # -- rule instances (attached under paths / folders / cross) --------------
 
     def _check_rule_instances(
-        self, rules_table: Any, location: str, context: str = "single", component_category: str | None = None
+        self, rules_table: Any, location: str, context: str = "single",
+        component_category: str | None = None, spec: FieldSpec | None = None,
     ) -> None:
         if not isinstance(rules_table, dict):
             return
 
+        control = set(spec.control_names) if spec is not None else set()
         for rule_name, instances in rules_table.items():
             loc = f"{location}.rules.{rule_name}"
+            if rule_name in control:
+                continue  # a control field, not an attachment
+            if rule_name in ALL_CONTROL_FIELDS:
+                self.error(
+                    loc,
+                    f"`{rule_name}` is a control field, and doesn't apply in this namespace "
+                    f"(it describes one location, which a reserved name isn't)",
+                )
+                continue
             if rule_name not in self.rule_catalog:
                 self.error(loc, f"rule `{rule_name}` not found in any rules tier (bundled, rules.own/, rules.external/)")
                 continue
@@ -563,7 +579,7 @@ class Validator:
         one's attributes/rules should win is genuinely ambiguous.
 
         A pattern overlapping a LITERAL is also an error, UNLESS that
-        literal entry explicitly declares inherit.attributes or
+        literal entry explicitly declares inherit.doc, inherit.group or
         inherit.rules pointing at that exact pattern key - the
         deliberate, documented way to override one instance of a
         pattern's shared attributes/rules for a specific real folder
@@ -588,8 +604,8 @@ class Validator:
             self.error(
                 f'paths."{a}"',
                 f'may match the same folder(s) as paths."{b}" - overlapping catalog entries would leave it '
-                f"ambiguous which entry's attributes/rules actually apply (a literal entry can override one "
-                f"instance of a pattern via inherit.attributes/inherit.rules - see doc/DESIGN.md)",
+                f"ambiguous which entry's fields/rules actually apply (a literal entry can override one "
+                f"instance of a pattern via inherit.doc/inherit.group/inherit.rules - see doc/DESIGN.md)",
             )
 
     @staticmethod
@@ -601,7 +617,7 @@ class Validator:
         inherit = entry.get("inherit") if isinstance(entry, dict) else None
         if not isinstance(inherit, dict):
             return False
-        return inherit.get("attributes") == pattern or inherit.get("rules") == pattern
+        return any(inherit.get(source) == pattern for source in (DOC, GROUP, RULES))
 
     # -- alphabetical order (lint) ------------------------------------------
 
@@ -630,12 +646,15 @@ class Validator:
 
         self._check_pattern_overlaps(ordered_path_keys, paths)
 
-        self._check_rule_instances(paths.get("rules"), "paths", context="single", component_category="paths.rules")
+        self._check_rule_instances(
+            paths.get("rules"), "paths", context="single",
+            component_category="paths.rules", spec=self.path_fields,
+        )
 
         if not self.path_fields.is_declared():
             self.warning(
-                "paths.attributes.names",
-                "no fields declared for path entries (paths.attributes.names / paths.grouping.names) - "
+                "paths.doc.names",
+                "no fields declared for path entries (paths.doc.names / paths.group.names) - "
                 "can't check unknown fields",
                 "missing-path-attribute-list",
             )
@@ -653,29 +672,27 @@ class Validator:
                 continue
 
             self._check_outside_root(key, entry, loc)
-            self._check_inherit_shape(entry, loc)
+            self._check_entry_shape(entry, loc)
 
-            # a table that ONLY has a `rules` key (and no `inherit`) exists
-            # purely because TOML implicitly creates parent tables -
+            # an entry carrying ONLY a `rules` table (and no `inherit`)
+            # exists purely because TOML implicitly creates parent tables -
             # someone wrote [paths."<key>".rules.<rule-name>] without ever
-            # declaring [paths."<key>"] itself. That's a mistaken/misattached
-            # rule, not an under-filled-out entry. A table whose only OTHER
-            # content is `inherit` is different - a purely-inherited entry
-            # is legitimate, its own fields all come from its source.
-            content_keys = set(entry.keys()) - {"rules", "inherit"}
+            # declaring what the path is. That's a mistaken/misattached
+            # rule, not an under-filled-out entry. An entry whose only
+            # other content is `inherit` is different - a purely-inherited
+            # entry is legitimate, its own fields all come from its source.
+            resolved = self.resolved_paths.get(key)
+            declared = any(isinstance(entry.get(t), dict) and entry[t] for t in (DOC, GROUP))
             has_inherit = isinstance(entry.get("inherit"), dict) and bool(entry.get("inherit"))
-            if not content_keys and not has_inherit:
+            if not declared and not has_inherit:
                 self.error(
                     loc,
                     f"path isn't declared - a rule is attached under paths.\"{key}\".rules, "
-                    f"but there's no [paths.\"{key}\"] entry for it",
+                    f"but there's no [paths.\"{key}\".doc] or [paths.\"{key}\".group] entry for it",
                 )
             else:
-                resolved = self.resolved_paths.get(key)
-                resolved_attrs = resolved.attributes if resolved else {}
-                self._check_entry_fields(entry, resolved_attrs, loc, self.path_fields)
+                self._check_entry_fields(entry, resolved, loc, self.path_fields)
 
-            resolved = self.resolved_paths.get(key)
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
 
@@ -692,13 +709,16 @@ class Validator:
                 self.error(f"{loc}.paths", "must be a list of path strings")
             else:
                 self._check_cross_outside_root(cross, referenced, loc)
-            self._check_rule_instances(cross.get("rules"), loc, context="cross")
+            self._check_rule_instances(cross.get("rules"), loc, context="cross", spec=self.path_fields)
 
     # -- folders ------------------------------------------------------------
 
     def _check_folders(self) -> None:
         folders = self.data.get("folders", {})
-        self._check_rule_instances(folders.get("rules"), "folders", context="single", component_category="folders.rules")
+        self._check_rule_instances(
+            folders.get("rules"), "folders", context="single",
+            component_category="folders.rules", spec=self.folder_fields,
+        )
 
         reserved = folders.get("reserved", {})
         reserved_prefix = reserved.get("prefix", DEFAULT_RESERVED_PREFIX)
@@ -711,9 +731,9 @@ class Validator:
             # every field on these entries is then both unchecked and
             # unrendered - the generated docs would show the names alone
             self.warning(
-                "folders.attributes.names",
+                "folders.doc.names",
                 "reserved folder entries exist, but the folders namespace declares no fields "
-                "(folders.attributes.names / folders.grouping.names)",
+                "(folders.doc.names / folders.group.names)",
                 "missing-path-attribute-list",
             )
         self._check_alphabetical_order(reserved_names, "folders.reserved")
@@ -727,11 +747,10 @@ class Validator:
                 self.error(loc, "expected a table")
                 continue
 
-            self._check_inherit_shape(entry, loc)
+            self._check_entry_shape(entry, loc)
 
             resolved = self.resolved_folders.get(name)
-            resolved_attrs = resolved.attributes if resolved else {}
-            self._check_entry_fields(entry, resolved_attrs, loc, self.folder_fields)
+            self._check_entry_fields(entry, resolved, loc, self.folder_fields)
 
             if resolved is not None:
                 self._check_resolved_rule_instances(resolved.rules, loc, context="single")
@@ -752,30 +771,32 @@ class Validator:
         up) and why an accidental escape used to pass silently.
 
         The flag must be written on the escaping entry ITSELF. Arriving via
-        `inherit` or paths.attributes.defaults doesn't count, and is an error
+        `inherit` or the paths.rules default doesn't count, and is an error
         rather than a quiet acceptance: this is the same reasoning that keeps
         `reason` un-inheritable at rule attachment sites. A one-word edit to
         an unrelated entry must never be able to widen the set of directories
         the tool will walk into and, under --fix, write to."""
-        declared = entry.get(OUTSIDE_ROOT_ATTR)
+        own_rules = entry.get(RULES)
+        declared = own_rules.get(OUTSIDE_ROOT_ATTR) if isinstance(own_rules, dict) else None
         resolved = self.resolved_paths.get(key)
-        inherited = bool(resolved.attributes.get(OUTSIDE_ROOT_ATTR)) if resolved else False
+        inherited = bool(resolved.control.get(OUTSIDE_ROOT_ATTR)) if resolved else False
 
         if declared is not True and inherited:
             self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
-                f"resolved to true through inheritance or paths.attributes.defaults, but "
+                f"{loc}.rules.{OUTSIDE_ROOT_ATTR}",
+                f"resolved to true through inheritance or the paths.rules default, but "
                 f"{OUTSIDE_ROOT_ATTR} is never inherited or defaulted - write it on this entry itself",
             )
         elif escapes_root(key) and declared is not True:
             self.error(
                 loc,
-                f"resolves outside root - set {OUTSIDE_ROOT_ATTR} = true on this entry to confirm that's "
-                f"intended (an absolute key silently discards root, so this is opt-in rather than implicit)",
+                f"resolves outside root - set {OUTSIDE_ROOT_ATTR} = true under this entry's [.rules] table "
+                f"to confirm that's intended (an absolute key silently discards root, so this is opt-in "
+                f"rather than implicit)",
             )
         elif declared is True and not escapes_root(key):
             self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
+                f"{loc}.rules.{OUTSIDE_ROOT_ATTR}",
                 "is set, but this key resolves inside root - drop the flag, or make the key absolute",
             )
 
@@ -783,31 +804,48 @@ class Validator:
         """[[paths.cross]] lists raw path strings rather than catalog entries,
         so the opt-in lives on the cross table and covers every path it
         lists - one place to look, same as the per-entry flag."""
-        declared = cross.get(OUTSIDE_ROOT_ATTR) is True
+        cross_rules = cross.get(RULES)
+        declared = isinstance(cross_rules, dict) and cross_rules.get(OUTSIDE_ROOT_ATTR) is True
         outside = [p for p in referenced if isinstance(p, str) and escapes_root(p)]
         if outside and not declared:
             self.error(
                 f"{loc}.paths",
                 f"{', '.join(repr(p) for p in outside)} resolve(s) outside root - set "
-                f"{OUTSIDE_ROOT_ATTR} = true on this [[paths.cross]] entry to confirm that's intended",
+                f"{OUTSIDE_ROOT_ATTR} = true under this [[paths.cross]] entry's [.rules] table to "
+                f"confirm that's intended",
             )
         elif declared and not outside:
             self.error(
-                f"{loc}.{OUTSIDE_ROOT_ATTR}",
+                f"{loc}.rules.{OUTSIDE_ROOT_ATTR}",
                 "is set, but every path listed here resolves inside root - drop the flag",
             )
 
-    def _check_inherit_shape(self, entry: dict[str, Any], loc: str) -> None:
+    def _check_entry_shape(self, entry: dict[str, Any], loc: str) -> None:
+        """An entry is made of the three tables and `inherit`, nothing
+        else. A field written directly on the entry is an error rather
+        than a warning: it would be silently dropped by every check and
+        by the doc generator, which is worse than being rejected."""
+        for key, value in entry.items():
+            if key not in STRUCTURAL_KEYS:
+                self.error(
+                    f"{loc}.{key}",
+                    f"an entry's fields live in its [.{DOC}], [.{GROUP}] and [.{RULES}] tables - "
+                    f"`{key}` is written directly on the entry, where nothing reads it",
+                )
+            elif not isinstance(value, dict):
+                self.error(f"{loc}.{key}", "expected a table")
+
         inherit = entry.get("inherit")
-        if inherit is None:
+        if inherit is None or not isinstance(inherit, dict):
             return
-        if not isinstance(inherit, dict):
-            self.error(f"{loc}.inherit", "expected a table")
-            return
-        known_keys = {"attributes", "rules", "exclude_rules"}
+        known_keys = {DOC, GROUP, RULES, "exclude_rules"}
         for key in inherit:
             if key not in known_keys:
-                self.warning(f"{loc}.inherit.{key}", "field isn't a recognized `inherit` key (attributes/rules/exclude_rules)", "unknown-path-field")
+                self.warning(
+                    f"{loc}.inherit.{key}",
+                    "field isn't a recognized `inherit` key (doc/group/rules/exclude_rules)",
+                    "unknown-path-field",
+                )
 
     # -- resolved rule instances (attached to a path or reserved folder,
     #    after inheritance has already been flattened) ----------------------
@@ -817,6 +855,15 @@ class Validator:
     ) -> None:
         for rule_id, attachments in resolved_rules.items():
             loc = f"{location}.rules.{rule_id}"
+            if rule_id in ALL_CONTROL_FIELDS:
+                # only reachable in a namespace with no control fields -
+                # its own are filtered out before resolution
+                self.error(
+                    loc,
+                    f"`{rule_id}` is a control field, and doesn't apply in this namespace "
+                    f"(it describes one location, which a reserved name isn't)",
+                )
+                continue
             if rule_id not in self.rule_catalog:
                 self.error(loc, f"rule `{rule_id}` not found in any rules tier (bundled, rules.own/, rules.external/)")
                 continue
@@ -872,73 +919,97 @@ class Validator:
     # -- shared entry-field checks (paths + reserved folders) ------------------
 
     def _check_entry_fields(
-        self, raw_entry: dict[str, Any], resolved_attrs: dict[str, Any], loc: str, spec: FieldSpec
+        self, raw_entry: dict[str, Any], resolved: ResolvedEntry | None, loc: str, spec: FieldSpec
     ) -> None:
-        if spec.is_declared():
-            known = spec.known_names()
-            for key in raw_entry:
-                # `rules` is where rule instances attach, `inherit` is the
-                # inheritance sub-table - both structural, neither is a
-                # content field, so neither is declared anywhere
-                if key in STRUCTURAL_KEYS:
-                    continue
-                if key not in known:
-                    self.warning(
-                        f"{loc}.{key}",
-                        f"field isn't declared in {spec.namespace}.attributes.names or "
-                        f"{spec.namespace}.grouping.names",
-                        "unknown-path-field",
+        """Each of an entry's three tables is checked against what its
+        namespace declared for it - see fs_org_kit.fields. Values come
+        from the RESOLVED entry (inheritance and defaults already
+        applied); the raw entry is only consulted for what was written
+        where."""
+        resolved_by_kind = {
+            DOC: resolved.doc if resolved else {},
+            GROUP: resolved.group if resolved else {},
+        }
+
+        for kind in (DOC, GROUP):
+            declared = set(spec.names(kind))
+            own = raw_entry.get(kind)
+            if spec.is_declared() and isinstance(own, dict):
+                for field_name in own:
+                    if field_name not in declared:
+                        self.warning(
+                            f"{loc}.{kind}.{field_name}",
+                            f"field isn't declared in {spec.namespace}.{kind}.names",
+                            "unknown-path-field",
+                        )
+
+            values = resolved_by_kind[kind]
+            for field_name in spec.names(kind):
+                if field_name in spec.required(kind) and not values.get(field_name):
+                    self.error(
+                        f"{loc}.{kind}.{field_name}",
+                        "required field is empty or missing, even after inheritance/defaults",
                     )
+                if kind == DOC:
+                    self._check_documentation_field(values.get(field_name), field_name, loc, spec)
+                else:
+                    self._check_grouping_field(values.get(field_name), field_name, loc, spec)
 
-        for field_name in spec.required_names:
-            if not resolved_attrs.get(field_name):
-                self.error(f"{loc}.{field_name}", "required field is empty or missing, even after inheritance/defaults")
-
-        for field_name in spec.doc_names:
-            self._check_documentation_field(resolved_attrs.get(field_name), field_name, loc)
-
-        for field_name in spec.grouping_names:
-            self._check_grouping_field(resolved_attrs.get(field_name), field_name, loc, spec)
-
+        control = resolved.control if resolved else {}
         for flag_name in spec.control_names:
-            if flag_name in resolved_attrs and not isinstance(resolved_attrs[flag_name], bool):
-                self.error(f"{loc}.{flag_name}", "must be a boolean (true/false) if present")
+            if flag_name in control and not isinstance(control[flag_name], bool):
+                self.error(f"{loc}.{RULES}.{flag_name}", "must be a boolean (true/false) if present")
 
-    def _check_documentation_field(self, value: Any, field_name: str, loc: str) -> None:
+    def _check_documentation_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
         """A documentation field is free-form prose - nothing reads its
         value, so the only structural claim worth making is that it's
-        renderable: a string, or a list of strings."""
+        renderable: a string, or a list of strings. A standard may still
+        close its value set by declaring one under `enums.doc.<field>`."""
         if value is None:
             return  # requiredness is checked separately, from the declaration
+        field_loc = f"{loc}.{DOC}.{field_name}"
+
         if isinstance(value, str):
+            values = [value]
+        elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+            values = value
+            if any(not item for item in value):
+                self.warning(field_loc, "contains empty placeholder entries", "empty-list-item")
+        else:
+            self.error(field_loc, "must be a string or a list of strings")
             return
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            self.error(f"{loc}.{field_name}", "must be a string or a list of strings")
-        elif any(not item for item in value):
-            self.warning(f"{loc}.{field_name}", "contains empty placeholder entries", "empty-list-item")
+
+        allowed = spec.doc_values.get(field_name)
+        if not allowed:
+            return
+        enum_loc = spec.enum_location(DOC, field_name)
+        for item in values:
+            if item and item not in allowed:
+                self.error(field_loc, f"'{item}' is not a value in {enum_loc}")
 
     def _check_grouping_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
         """A grouping field's whole point is a closed vocabulary - entries
         only sort into buckets if they agree on what the buckets are. A
-        field declared in `<namespace>.grouping.multi` holds a LIST of
-        values (content that's partly self-authored and partly generated,
-        say); every other one holds exactly one."""
+        field declared in `<namespace>.group.multi` holds a LIST of values
+        (content that's partly self-authored and partly generated, say);
+        every other one holds exactly one."""
         if value is None:
             return  # requiredness is checked separately, from the declaration
 
-        enum_loc = spec.enum_location(field_name)
-        allowed = spec.grouping_values.get(field_name, frozenset())
+        field_loc = f"{loc}.{GROUP}.{field_name}"
+        enum_loc = spec.enum_location(GROUP, field_name)
+        allowed = spec.group_values.get(field_name, frozenset())
 
         if spec.is_multi(field_name):
             if not isinstance(value, list):
-                self.error(f"{loc}.{field_name}", f'must be a list of values from {enum_loc}, e.g. ["self"]')
+                self.error(field_loc, f'must be a list of values from {enum_loc}, e.g. ["self"]')
                 return
             values = value
         else:
             if isinstance(value, list):
                 self.error(
-                    f"{loc}.{field_name}",
-                    f"must be a single value from {enum_loc} - add it to {spec.namespace}.grouping.multi "
+                    field_loc,
+                    f"must be a single value from {enum_loc} - add it to {spec.namespace}.group.multi "
                     f"to allow several",
                 )
                 return
@@ -946,9 +1017,9 @@ class Validator:
 
         for item in values:
             if not isinstance(item, str):
-                self.error(f"{loc}.{field_name}", f"'{item}' should be a string from {enum_loc}")
+                self.error(field_loc, f"'{item}' should be a string from {enum_loc}")
             elif allowed and item not in allowed:
-                self.error(f"{loc}.{field_name}", f"'{item}' is not a value in {enum_loc}")
+                self.error(field_loc, f"'{item}' is not a value in {enum_loc}")
 
 
 def _parse_version(value: str) -> tuple[int, ...] | None:

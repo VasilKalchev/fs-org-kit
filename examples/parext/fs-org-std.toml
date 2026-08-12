@@ -83,27 +83,29 @@ tool_dirs = [
 
 # Free-form documentation fields on a [paths."..."] entry - most have no
 # default, since a path's own content is what's supposed to fill them in.
-[paths.attributes]
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.attributes.defaults]
-allow_missing = false
-# `outside_root` deliberately has no default and can't be given one - it
-# must be written on each escaping entry itself. Nothing here escapes.
-
-# Enum-backed fields, checked against enums.paths.* and used to group
+# Enum-backed fields, checked against enums.group.* and used to group
 # paths in the generated docs.
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
+
+# The namespace's own rules table: the standard-wide control defaults,
+# then any blanket attachments (none here - see [folders.rules]).
+# `outside_root` deliberately has no default and can't be given one - it
+# must be written on each escaping entry itself. Nothing here escapes.
+[paths.rules]
+allow_missing = false
 
 
 # ---------------------------------------------------------------------
 #  area/  -  long-lived responsibilities and interests
 # ---------------------------------------------------------------------
-[paths."area/"]
+[paths."area/".doc]
 purpose = "Long-lived areas of responsibility, ownership, or interest."
 notes = "Areas require maintenance but do not have a fixed completion date. If it can be finished, it is a project or a task."
 use_for = [
@@ -114,13 +116,13 @@ not_for = [
   "storing referential materials",
   "projects or tasks",
 ]
-lifecycle = "ongoing"
-origin = ["external", "self"]
 see_also = ["prj/", "task/"]
 
+[paths."area/".group]
+lifecycle = "ongoing"
+origin = ["external", "self"]
 
-# --- area/3dp/ -------------------------------------------------------
-[paths."area/3dp/"]
+[paths."area/3dp/".doc]
 purpose = "3D printing hobby and its associated files."
 notes = ""
 use_for = [
@@ -131,13 +133,13 @@ not_for = [
   "active design projects",
   "general 3D printing knowledge",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external", "generated"]
 see_also = ["prj/", "knwl/"]
 
+[paths."area/3dp/".group]
+lifecycle = "ongoing"
+origin = ["self", "external", "generated"]
 
-# --- area/fin/ -------------------------------------------------------
-[paths."area/fin/"]
+[paths."area/fin/".doc]
 purpose = "Personal financial administration."
 notes = ""
 use_for = [
@@ -150,14 +152,12 @@ use_for = [
 not_for = [
   "shopping",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["area/paper/"]
 
-# Financial records are documents and spreadsheets. Anything else that
-# lands here - an installer, a screenshot, an archive someone mailed -
-# arrived by accident and should be filed elsewhere before it is lost
-# among things that must be kept for years.
+[paths."area/fin/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
+
 [[paths."area/fin/".rules.file-extensions-v1]]
 reason = "financial records must stay documents; anything else here arrived by accident"
 
@@ -166,7 +166,7 @@ allowed = ["pdf", "xlsx"]
 
 
 # --- area/infra/ -----------------------------------------------------
-[paths."area/infra/"]
+[paths."area/infra/".doc]
 purpose = "Infrastructure documentation."
 notes = "Separated by system."
 use_for = [
@@ -178,13 +178,13 @@ not_for = [
   "files consumed by the system",
   "technical reference material",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["sys/"]
 
+[paths."area/infra/".group]
+lifecycle = "ongoing"
+origin = ["self"]
 
-# --- area/inv/ -------------------------------------------------------
-[paths."area/inv/"]
+[paths."area/inv/".doc]
 purpose = "Inventory of owned items."
 notes = "Indexes describing collections of items."
 use_for = [
@@ -194,13 +194,13 @@ not_for = [
   "reference materials unrelated to owned items",
   "shopping materials",
 ]
-lifecycle = "ongoing"
-origin = ["self", "generated"]
 see_also = ["area/inv/item/"]
 
+[paths."area/inv/".group]
+lifecycle = "ongoing"
+origin = ["self", "generated"]
 
-# --- area/inv/item/ --------------------------------------------------
-[paths."area/inv/item/"]
+[paths."area/inv/item/".doc]
 purpose = "Information belonging to individual owned items."
 notes = "Separated by item."
 use_for = [
@@ -214,13 +214,13 @@ not_for = [
   "indexes of multiple items",
   "general items information",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["area/inv/"]
 
+[paths."area/inv/item/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- area/lrn/ -------------------------------------------------------
-[paths."area/lrn/"]
+[paths."area/lrn/".doc]
 purpose = "Active learning subjects."
 notes = "Similar to projects, but the output is knowledge rather than a product."
 use_for = [
@@ -233,13 +233,13 @@ not_for = [
   "finished distilled knowledge",
   "storing resources",
 ]
-lifecycle = "temporary"
-origin = ["self", "external"]
 see_also = ["res/", "knwl/"]
 
+[paths."area/lrn/".group]
+lifecycle = "temporary"
+origin = ["self", "external"]
 
-# --- area/paper/ -----------------------------------------------------
-[paths."area/paper/"]
+[paths."area/paper/".doc]
 purpose = "Official documents that are retained as records."
 notes = ""
 use_for = [
@@ -250,13 +250,13 @@ not_for = [
   "unofficial documents",
   "actively managed domains",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["area/fin/"]
 
+[paths."area/paper/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- area/rc/ --------------------------------------------------------
-[paths."area/rc/"]
+[paths."area/rc/".doc]
 purpose = "RC hobby and its associated working material."
 notes = "Should include links to RC related folders."
 use_for = [
@@ -268,13 +268,13 @@ not_for = [
   "personal firmware/PCB projects",
   "general technical material",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["prj/", "res/", "knwl/", "area/inv/", "media/cam/"]
 
+[paths."area/rc/".group]
+lifecycle = "ongoing"
+origin = ["self"]
 
-# --- area/std/ -------------------------------------------------------
-[paths."area/std/"]
+[paths."area/std/".doc]
 purpose = "Personal standards and conventions."
 notes = "This file's own home."
 use_for = [
@@ -288,15 +288,13 @@ not_for = [
   "transient notes",
   "documentation",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["sys/scr/", "area/infra/"]
 
+[paths."area/std/".group]
+lifecycle = "ongoing"
+origin = ["self"]
 
-# ---------------------------------------------------------------------
-#  inbox/  -  the one place allowed to hold undecided files
-# ---------------------------------------------------------------------
-[paths."inbox/"]
+[paths."inbox/".doc]
 purpose = "Temporary location for files that have not yet been classified."
 notes = "Files must eventually be moved to their final location, deleted, transformed into knowledge, or archived."
 use_for = [
@@ -305,13 +303,12 @@ use_for = [
 not_for = [
   "permanent files",
 ]
-lifecycle = "transient"
-origin = ["external"]
 see_also = ["tmp/", "_inbox", "_unsorted"]
 
-# An interrupted download or a failed export leaves a zero-byte file
-# that looks like real content in a listing. Empty folders are left
-# alone - an empty folder in an inbox is just an inbox.
+[paths."inbox/".group]
+lifecycle = "transient"
+origin = ["external"]
+
 [[paths."inbox/".rules.empty-v1]]
 reason = "a zero-byte file here is a failed transfer, not something waiting to be filed"
 
@@ -338,7 +335,7 @@ exclude = ["_*", ".*"]
 # ---------------------------------------------------------------------
 #  knwl/  -  what has been understood, in your own words
 # ---------------------------------------------------------------------
-[paths."knwl/"]
+[paths."knwl/".doc]
 purpose = "Personal distilled knowledge."
 notes = "Used with Obsidian. A completed note must not exist simultaneously with its source in res/ - enforced by the cross-path rule at the end of this section."
 use_for = [
@@ -352,15 +349,13 @@ not_for = [
   "manuals",
   "unprocessed documents",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["res/", "area/lrn/"]
 
+[paths."knwl/".group]
+lifecycle = "ongoing"
+origin = ["self"]
 
-# ---------------------------------------------------------------------
-#  media/  -  entertainment, not reference
-# ---------------------------------------------------------------------
-[paths."media/"]
+[paths."media/".doc]
 purpose = "Entertainment media."
 notes = ""
 use_for = [
@@ -373,13 +368,13 @@ not_for = [
   "technical literature",
   "video courses",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["res/"]
 
+[paths."media/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- media/book/ -----------------------------------------------------
-[paths."media/book/"]
+[paths."media/book/".doc]
 purpose = "Books intended for leisure reading."
 notes = "Separated by genre."
 use_for = [
@@ -393,13 +388,13 @@ not_for = [
   "manuals",
   "datasheets",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["res/"]
 
+[paths."media/book/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- media/cam/ ------------------------------------------------------
-[paths."media/cam/"]
+[paths."media/cam/".doc]
 purpose = "Personal photos and video."
 notes = "Separated by year and optionally date."
 use_for = [
@@ -410,14 +405,12 @@ not_for = [
   "project photos",
   "inventory photos",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["area/inv/item/"]
 
-# "Separated by year and optionally date" is only an organizing scheme
-# if the dates agree with each other. This catches a file dated
-# 2026-03-06 filed under a 2026-03-05 folder, or a 2026 folder nested
-# under 2025 - each individually valid, together a contradiction.
+[paths."media/cam/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
+
 [[paths."media/cam/".rules.timestamp-consistency-v1]]
 reason = "a photo filed under a date that contradicts its own name is lost, not misfiled"
 
@@ -445,7 +438,7 @@ min_size = 65536        # bytes, not a size string - skips thumbnails and sideca
 
 
 # --- media/music/ ----------------------------------------------------
-[paths."media/music/"]
+[paths."media/music/".doc]
 purpose = "Music collection."
 notes = "Separated primarily by artist."
 use_for = [
@@ -455,13 +448,13 @@ not_for = [
   "sounds",
   "ringtones",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = []
 
+[paths."media/music/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- media/pic/ ------------------------------------------------------
-[paths."media/pic/"]
+[paths."media/pic/".doc]
 purpose = "Pictures."
 notes = ""
 use_for = [
@@ -473,13 +466,13 @@ not_for = [
   "general personal photos",
   "general project photos",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["media/cam/"]
 
+[paths."media/pic/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- media/vid/ ------------------------------------------------------
-[paths."media/vid/"]
+[paths."media/vid/".doc]
 purpose = "Videos."
 notes = ""
 use_for = [
@@ -493,15 +486,13 @@ not_for = [
   "courses",
   "personal videography",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["media/cam/"]
 
+[paths."media/vid/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# ---------------------------------------------------------------------
-#  prj/  -  efforts with an outcome, and where they go when they end
-# ---------------------------------------------------------------------
-[paths."prj/"]
+[paths."prj/".doc]
 purpose = "Active projects."
 notes = "A project is a transient effort which produces an outcome based on defined goals."
 use_for = [
@@ -513,20 +504,12 @@ not_for = [
   "small tasks",
   "reusable resources",
 ]
-lifecycle = "temporary"
-origin = ["self"]
 see_also = ["task/", "prj/_arch/"]
 
-# A project that has gone quiet has stopped being a project - it is
-# finished or abandoned, and either way it belongs in _arch/. This rule
-# ships a fixer, so `fs-org-run --fix` performs the move.
-# `destination` is relative to the scanned path's parent and expands
-# strftime placeholders, so `%Y` files each archived project under the
-# year it was archived - which is what keeps the fixer from violating
-# _arch/'s own year rule below. `create_destination` is what lets it
-# open a new year folder the first time that year is archived into.
-# Reserved and hidden folders are excluded: _arch/ is the destination,
-# and neither it nor _next/ is a project that can go stale.
+[paths."prj/".group]
+lifecycle = "temporary"
+origin = ["self"]
+
 [[paths."prj/".rules.staleness-v1]]
 reason = "a project untouched for half a year is finished or abandoned; leaving it in prj/ hides the ones that aren't"
 
@@ -539,7 +522,7 @@ exclude = ["_*", ".*"]
 
 
 # --- prj/_arch/ ------------------------------------------------------
-[paths."prj/_arch/"]
+[paths."prj/_arch/".doc]
 purpose = "Inactive projects."
 notes = "Separated by year."
 use_for = [
@@ -552,14 +535,12 @@ not_for = [
   "active projects",
   "backups",
 ]
-lifecycle = "archival"
-origin = ["self"]
 see_also = ["prj/", "_arch"]
 
-# "Separated by year" made checkable. Only the direct children are
-# looked at - what a given year folder contains is its own business -
-# and only folders, so a stray note left at this level is not reported
-# here.
+[paths."prj/_arch/".group]
+lifecycle = "archival"
+origin = ["self"]
+
 [[paths."prj/_arch/".rules.naming-pattern-v1]]
 reason = "the archive is only navigable while every folder at this level is a year"
 
@@ -573,7 +554,7 @@ recursive = false
 # ---------------------------------------------------------------------
 #  res/  -  what someone else wrote, kept until it is distilled
 # ---------------------------------------------------------------------
-[paths."res/"]
+[paths."res/".doc]
 purpose = "External knowledge materials."
 notes = "Organized by subject. Must mirror knwl/'s structure."
 use_for = [
@@ -589,15 +570,13 @@ not_for = [
   "device manuals",
   "project files",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["knwl/", "area/lrn/"]
 
+[paths."res/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# ---------------------------------------------------------------------
-#  strg/  -  cold storage: kept, not used
-# ---------------------------------------------------------------------
-[paths."strg/"]
+[paths."strg/".doc]
 purpose = "Long-term storage for files that are rarely accessed but need to be preserved."
 notes = ""
 use_for = [
@@ -609,13 +588,13 @@ not_for = [
   "backup scripts",
   "game reference materials",
 ]
-lifecycle = "archival"
-origin = ["self", "external"]
 see_also = ["sys/"]
 
+[paths."strg/".group]
+lifecycle = "archival"
+origin = ["self", "external"]
 
-# --- strg/app/ -------------------------------------------------------
-[paths."strg/app/"]
+[paths."strg/app/".doc]
 purpose = "Application installers."
 notes = "Separated by platform."
 use_for = [
@@ -627,13 +606,13 @@ not_for = [
   "application/games configuration",
   "game saves",
 ]
-lifecycle = "archival"
-origin = ["external"]
 see_also = ["sys/prog/"]
 
+[paths."strg/app/".group]
+lifecycle = "archival"
+origin = ["external"]
 
-# --- strg/bkup/ ------------------------------------------------------
-[paths."strg/bkup/"]
+[paths."strg/bkup/".doc]
 purpose = "Recovery data."
 notes = ""
 use_for = [
@@ -646,13 +625,13 @@ not_for = [
   "scripts",
   "active files",
 ]
-lifecycle = "archival"
-origin = ["self", "external"]
 see_also = ["sys/scr/"]
 
+[paths."strg/bkup/".group]
+lifecycle = "archival"
+origin = ["self", "external"]
 
-# --- strg/driver/ ----------------------------------------------------
-[paths."strg/driver/"]
+[paths."strg/driver/".doc]
 purpose = "Hardware drivers."
 notes = "Separated by platform."
 use_for = [
@@ -663,13 +642,13 @@ not_for = [
   "applications",
   "hardware documentation",
 ]
-lifecycle = "archival"
-origin = ["external"]
 see_also = ["strg/app/"]
 
+[paths."strg/driver/".group]
+lifecycle = "archival"
+origin = ["external"]
 
-# --- strg/game/ ------------------------------------------------------
-[paths."strg/game/"]
+[paths."strg/game/".doc]
 purpose = "Game saves."
 notes = ""
 use_for = [
@@ -679,13 +658,13 @@ not_for = [
   "game reference",
   "game clips",
 ]
-lifecycle = "archival"
-origin = ["self"]
 see_also = ["strg/app/"]
 
+[paths."strg/game/".group]
+lifecycle = "archival"
+origin = ["self"]
 
-# --- strg/unk/ -------------------------------------------------------
-[paths."strg/unk/"]
+[paths."strg/unk/".doc]
 purpose = "Unknown files that might be important."
 notes = "A holding pen, not a destination: anything identified here moves to where it belongs."
 use_for = [
@@ -695,15 +674,13 @@ use_for = [
 not_for = [
   "files with known purpose",
 ]
-lifecycle = "archival"
-origin = ["external", "generated"]
 see_also = ["inbox/"]
 
+[paths."strg/unk/".group]
+lifecycle = "archival"
+origin = ["external", "generated"]
 
-# ---------------------------------------------------------------------
-#  sys/  -  what this machine consumes, and nothing portable
-# ---------------------------------------------------------------------
-[paths."sys/"]
+[paths."sys/".doc]
 purpose = "Files consumed by this system and specific to it."
 notes = ""
 use_for = [
@@ -716,13 +693,13 @@ not_for = [
   "project dependencies",
   "documentation",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["area/infra/", "ws/"]
 
+[paths."sys/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- sys/lnk/ --------------------------------------------------------
-[paths."sys/lnk/"]
+[paths."sys/lnk/".doc]
 purpose = "Curated navigation spaces."
 notes = "Nothing is stored here; every leaf points somewhere else. The two rules below apply to the whole subtree, so cur/, nav/ and os/ declare none of their own."
 use_for = [
@@ -733,13 +710,12 @@ not_for = [
   "canonical file storage",
   "machine-specific files unrelated to navigation",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["sys/lnk/cur/", "sys/lnk/nav/", "sys/lnk/os/"]
 
-# The whole point of a view is that it holds no content of its own. A
-# real file appearing here is a file with exactly one copy, in the place
-# nobody backs up or looks for it.
+[paths."sys/lnk/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
 [[paths."sys/lnk/".rules.link-policy-v1]]
 reason = "a real file in a navigation view is a file that exists only here, where nothing looks for it"
 
@@ -762,7 +738,7 @@ follow_chains = true
 
 
 # --- sys/lnk/cur/ ----------------------------------------------------
-[paths."sys/lnk/cur/"]
+[paths."sys/lnk/cur/".doc]
 purpose = "Links to files and folders currently being worked on or used."
 notes = "Contents change as current work and interests change."
 use_for = [
@@ -772,13 +748,13 @@ use_for = [
 not_for = [
   "long-term navigation links",
 ]
-lifecycle = "ongoing"
-origin = ["self", "generated"]
 see_also = ["prj/", "task/", "res/", "knwl/"]
 
+[paths."sys/lnk/cur/".group]
+lifecycle = "ongoing"
+origin = ["self", "generated"]
 
-# --- sys/lnk/nav/ ----------------------------------------------------
-[paths."sys/lnk/nav/"]
+[paths."sys/lnk/nav/".doc]
 purpose = "Curated navigation view of frequently accessed locations."
 notes = "Organized for navigation rather than by the purpose of the linked files."
 use_for = [
@@ -788,13 +764,13 @@ use_for = [
 not_for = [
   "temporary current-work links",
 ]
-lifecycle = "ongoing"
-origin = ["self", "generated"]
 see_also = ["sys/lnk/cur/"]
 
+[paths."sys/lnk/nav/".group]
+lifecycle = "ongoing"
+origin = ["self", "generated"]
 
-# --- sys/lnk/os/ -----------------------------------------------------
-[paths."sys/lnk/os/"]
+[paths."sys/lnk/os/".doc]
 purpose = "Links to OS specific locations."
 notes = ""
 use_for = [
@@ -803,13 +779,13 @@ use_for = [
 not_for = [
   "general purpose OS locations",
 ]
-lifecycle = "ongoing"
-origin = ["self"]
 see_also = ["area/infra/"]
 
+[paths."sys/lnk/os/".group]
+lifecycle = "ongoing"
+origin = ["self"]
 
-# --- sys/prog/ -------------------------------------------------------
-[paths."sys/prog/"]
+[paths."sys/prog/".doc]
 purpose = "Installed programs."
 notes = ""
 use_for = [
@@ -822,13 +798,13 @@ not_for = [
   "installers",
   "project tools",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["ws/tool/", "strg/app/"]
 
+[paths."sys/prog/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# --- sys/scr/ --------------------------------------------------------
-[paths."sys/scr/"]
+[paths."sys/scr/".doc]
 purpose = "Machine-specific scripts."
 notes = ""
 use_for = [
@@ -841,13 +817,13 @@ not_for = [
   "project scripts",
   "snippets",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["prj/", "area/std/"]
 
+[paths."sys/scr/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- sys/vm/ ---------------------------------------------------------
-[paths."sys/vm/"]
+[paths."sys/vm/".doc]
 purpose = "Virtual machines."
 notes = ""
 use_for = [
@@ -857,15 +833,13 @@ use_for = [
 not_for = [
   "VM backups",
 ]
-lifecycle = "ongoing"
-origin = ["external"]
 see_also = ["strg/bkup/"]
 
+[paths."sys/vm/".group]
+lifecycle = "ongoing"
+origin = ["external"]
 
-# ---------------------------------------------------------------------
-#  task/  -  smaller than a project, same lifecycle
-# ---------------------------------------------------------------------
-[paths."task/"]
+[paths."task/".doc]
 purpose = "Small tasks with defined goals."
 notes = "Tasks are smaller than projects in regards to effort and complexity."
 use_for = [
@@ -879,12 +853,12 @@ not_for = [
   "creating distilled knowledge",
   "complex scripts",
 ]
-lifecycle = "temporary"
-origin = ["self", "external"]
 see_also = ["prj/", "task/_arch/"]
 
-# Same contract as prj/, on a shorter clock: a task is meant to be small
-# enough to finish. One that has been open a quarter is not small.
+[paths."task/".group]
+lifecycle = "temporary"
+origin = ["self", "external"]
+
 [[paths."task/".rules.staleness-v1]]
 reason = "a task open for a quarter has outgrown being a task; archive it or promote it to a project"
 
@@ -897,7 +871,7 @@ exclude = ["_*", ".*"]
 
 
 # --- task/_arch/ -----------------------------------------------------
-[paths."task/_arch/"]
+[paths."task/_arch/".doc]
 purpose = "Inactive tasks."
 notes = "Separated by year."
 use_for = [
@@ -909,9 +883,11 @@ use_for = [
 not_for = [
   "active tasks",
 ]
+see_also = ["task/", "_arch"]
+
+[paths."task/_arch/".group]
 lifecycle = "archival"
 origin = ["self"]
-see_also = ["task/", "_arch"]
 
 [[paths."task/_arch/".rules.naming-pattern-v1]]
 reason = "the archive is only navigable while every folder at this level is a year"
@@ -926,7 +902,7 @@ recursive = false
 # ---------------------------------------------------------------------
 #  tmp/  -  disposable by declaration
 # ---------------------------------------------------------------------
-[paths."tmp/"]
+[paths."tmp/".doc]
 purpose = "Transient files."
 notes = "Separated by activity or collection. A sub-folder name may identify a deletion trigger."
 use_for = [
@@ -937,14 +913,12 @@ not_for = [
   "files whose destination has not yet been decided",
   "files that may need to be retained indefinitely",
 ]
-lifecycle = "transient"
-origin = ["self", "external", "generated"]
 see_also = ["inbox/", "task/"]
 
-# The difference between tmp/ and inbox/ is that tmp/ was a decision:
-# these files are disposable. Something still here a month later either
-# was not disposable or was never decided about - both of which make it
-# an inbox item, so that is where --fix puts it.
+[paths."tmp/".group]
+lifecycle = "transient"
+origin = ["self", "external", "generated"]
+
 [[paths."tmp/".rules.staleness-v1]]
 reason = "a file declared disposable a month ago and still here was never actually decided about"
 
@@ -958,7 +932,7 @@ exclude = ["_*", ".*"]
 # ---------------------------------------------------------------------
 #  ws/  -  reusable across projects, owned by none of them
 # ---------------------------------------------------------------------
-[paths."ws/"]
+[paths."ws/".doc]
 purpose = "Reusable assets and building blocks."
 notes = "Primarily for projects, but not specific to one project."
 use_for = [
@@ -969,13 +943,13 @@ use_for = [
 not_for = [
   "project-specific dependencies",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["prj/", "sys/"]
 
+[paths."ws/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- ws/lib/ ---------------------------------------------------------
-[paths."ws/lib/"]
+[paths."ws/lib/".doc]
 purpose = "Libraries and dependencies."
 notes = ""
 use_for = [
@@ -987,13 +961,13 @@ not_for = [
   "frozen dependencies",
   "project-specific libraries",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["prj/"]
 
+[paths."ws/lib/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- ws/tmpl/ --------------------------------------------------------
-[paths."ws/tmpl/"]
+[paths."ws/tmpl/".doc]
 purpose = "Reusable starting points."
 notes = ""
 use_for = [
@@ -1004,13 +978,13 @@ not_for = [
   "projects",
   "directly usable files",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["prj/"]
 
+[paths."ws/tmpl/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# --- ws/tool/ --------------------------------------------------------
-[paths."ws/tool/"]
+[paths."ws/tool/".doc]
 purpose = "Tools that support projects."
 notes = ""
 use_for = [
@@ -1021,22 +995,12 @@ use_for = [
 not_for = [
   "general applications",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["sys/prog/"]
 
+[paths."ws/tool/".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
 
-# ---------------------------------------------------------------------
-#  Cross-path constraints
-# ---------------------------------------------------------------------
-# Rules over a SET of paths, checking a relationship no single path can
-# see on its own.
-
-# knwl/ and res/ are the two halves of one pipeline: material arrives in
-# res/, and what survives being understood becomes a note in knwl/.
-# res/ mirrors knwl/'s structure, so the same subject occupying the same
-# relative path in both means the source outlived its distillation - the
-# one state this pair must never be in.
 [[paths.cross]]
 paths = ["knwl/", "res/"]
 
@@ -1058,13 +1022,11 @@ recursive = true
 # What a [folders.reserved."..."] entry may carry. Same two declarations
 # as paths, and no control fields at all: a reserved NAME is not one
 # location, so "does it exist" has nothing to apply to.
-[folders.attributes]
+[folders.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[folders.attributes.defaults]
-
-[folders.grouping]
+[folders.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
@@ -1130,7 +1092,7 @@ prefix = "_"
 
 
 # --- _arch -----------------------------------------------------------
-[folders.reserved."_arch"]
+[folders.reserved."_arch".doc]
 purpose = "Archive of inactive information/containers."
 notes = "Indicates that contents are no longer part of the active workflow. Exception to the principle of tagging state rather than moving things."
 use_for = [
@@ -1142,13 +1104,13 @@ not_for = [
   "general archival",
   "backups",
 ]
-lifecycle = "archival"
-origin = ["self", "external"]
 see_also = ["prj/_arch/", "task/_arch/", "strg/"]
 
+[folders.reserved."_arch".group]
+lifecycle = "archival"
+origin = ["self", "external"]
 
-# --- _inbox ----------------------------------------------------------
-[folders.reserved."_inbox"]
+[folders.reserved."_inbox".doc]
 purpose = "Local landing zone for arrivals belonging to the parent directory."
 notes = "The inline counterpart to inbox/: something arrived for this area specifically, but where it goes inside it hasn't been decided. Distinct from _unsorted, where the destination IS known and only the shelf isn't."
 use_for = [
@@ -1159,12 +1121,12 @@ not_for = [
   "files whose area hasn't been decided at all",
   "files already known to belong somewhere specific here",
 ]
-lifecycle = "transient"
-origin = ["external"]
 see_also = ["inbox/", "_unsorted"]
 
-# The same failed-transfer check the top-level inbox/ gets, applied
-# wherever a local one appears - none of which are cataloged paths.
+[folders.reserved."_inbox".group]
+lifecycle = "transient"
+origin = ["external"]
+
 [[folders.reserved."_inbox".rules.empty-v1]]
 reason = "a zero-byte file here is a failed transfer, not something waiting to be filed"
 
@@ -1173,7 +1135,7 @@ check_folders = false
 
 
 # --- _unsorted -------------------------------------------------------
-[folders.reserved."_unsorted"]
+[folders.reserved."_unsorted".doc]
 purpose = "Local unsorted files."
 notes = "Files that belong under the parent directory but need additional classification. Unlike _inbox, the destination is already known - only the shelf isn't."
 use_for = [
@@ -1186,13 +1148,13 @@ not_for = [
   "long-term storage",
   "archived information",
 ]
-lifecycle = "transient"
-origin = ["self", "external"]
 see_also = ["inbox/", "tmp/"]
 
+[folders.reserved."_unsorted".group]
+lifecycle = "transient"
+origin = ["self", "external"]
 
-# --- _util -----------------------------------------------------------
-[folders.reserved."_util"]
+[folders.reserved."_util".doc]
 purpose = "Frequently used utilities related to the parent directory."
 notes = "Contains links to utilities that are commonly used with the parent directory."
 use_for = [
@@ -1205,14 +1167,12 @@ not_for = [
   "general scripts",
   "installers",
 ]
-lifecycle = "ongoing"
-origin = ["self", "external"]
 see_also = ["sys/scr/", "sys/prog/", "ws/tool/"]
 
-# A _util folder is links to things that live elsewhere, so it goes
-# stale the same way sys/lnk/ does - the utility gets renamed, upgraded,
-# or removed, and the shortcut beside the folder that used it keeps
-# looking fine. Runs in every _util in the tree.
+[folders.reserved."_util".group]
+lifecycle = "ongoing"
+origin = ["self", "external"]
+
 [[folders.reserved."_util".rules.link-integrity-v1]]
 reason = "a shortcut to a utility outlives the utility, and nothing about the folder looks wrong when it does"
 
@@ -1226,31 +1186,18 @@ recursive = true
 #  ENUMS
 # =====================================================================
 [enums]
-purpose = "Closed value sets. A path or reserved-folder entry's `lifecycle` and `origin` are checked against these."
+purpose = "Closed value sets, one per field that has one, named for the KIND of field rather than the namespace - paths and reserved folders share them."
 
 # A rule's own `severity` and `scope` enums are NOT here - they moved
 # into rule.template.toml, next to the manifests they validate.
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 transient = "meant to be emptied constantly, nothing lingers"
 temporary = "has a completion condition, then gets archived"
 ongoing = "continuously active/maintained, no end state"
 archival = "already at rest, rarely touched"
 
-[enums.paths.origin]
-self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
-external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
-generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
-
-# Reserved folders group by the same two vocabularies, declared for their
-# own namespace - the tool never shares one across namespaces.
-[enums.folders.lifecycle]
-transient = "meant to be emptied constantly, nothing lingers"
-temporary = "has a completion condition, then gets archived"
-ongoing = "continuously active/maintained, no end state"
-archival = "already at rest, rarely touched"
-
-[enums.folders.origin]
+[enums.group.origin]
 self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
 external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"

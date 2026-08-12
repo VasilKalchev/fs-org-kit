@@ -26,34 +26,43 @@ standard_date = 2026-08-12
 # ===================================================================
 # Paths
 # ===================================================================
+# Every entry below is the same three tables: `doc` (what it is, in
+# prose), `group` (how it sorts, from a closed vocabulary), and `rules`
+# (what the tool does with it). This section declares what may go in the
+# first two.
 [paths]
 
-# Free-form documentation fields: whatever this standard wants to say
-# about a path, rendered as written.
-[paths.attributes]
+# Free-form: whatever this standard wants to say about a path, rendered
+# as written.
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.attributes.defaults]
-allow_missing = false
-
-# Enum-backed fields, checked against enums.paths.* below and used to
-# group paths in the generated docs.
-[paths.grouping]
+# Enum-backed, checked against enums.group.* below and used to group
+# paths in the generated docs.
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
+
+# The namespace's own rules table: control-field defaults first, then any
+# blanket attachments (this standard has none).
+[paths.rules]
+allow_missing = false
 
 
 # -------------------------------------------------------------------
 # Paths > archive/
 # -------------------------------------------------------------------
-[paths."archive/"]
+[paths."archive/".doc]
 purpose = "Everything from the other three categories that is no longer active - kept, not deleted."
 use_for = ["finished or abandoned projects", "areas you no longer maintain"]
 not_for = ["anything you still expect to touch this month"]
+
+[paths."archive/".group]
 lifecycle = "archival"
 origin = ["self"]
+
 
 # -------------------------------------------------------------------
 # Paths > archive/*/ - one archived project (worked `inherit` example)
@@ -63,22 +72,25 @@ origin = ["self"]
 # lifecycle changes. Rather than restate any of that, this entry
 # inherits it - so a project moving between projects/ and archive/ (by
 # hand, or by this standard's own fixer) needs no edit to this file.
-[paths."archive/*/"]
+[paths."archive/*/".group]
 lifecycle = "archival"                 # the one thing that differs
 
 [paths."archive/*/".inherit]
-attributes = "projects/*/"             # purpose, use_for, not_for, origin...
+doc = "projects/*/"                    # purpose, use_for, not_for...
+group = "projects/*/"                  # ...origin, with lifecycle above winning
 rules = "projects/*/"                  # ...and the README requirement
 
 
 # -------------------------------------------------------------------
 # Paths > areas/
 # -------------------------------------------------------------------
-[paths."areas/"]
+[paths."areas/".doc]
 purpose = "Ongoing responsibilities with a standard to maintain and no finish line - health, finances, the car."
 notes = "The PARA distinction that does the most work: an area is never 'done'. If it can be finished, it belongs in projects/."
 use_for = ["a responsibility you hold indefinitely"]
 not_for = ["anything with a deadline or a definition of done"]
+
+[paths."areas/".group]
 lifecycle = "ongoing"
 origin = ["self"]
 
@@ -86,11 +98,13 @@ origin = ["self"]
 # -------------------------------------------------------------------
 # Paths > inbox/
 # -------------------------------------------------------------------
-[paths."inbox/"]
+[paths."inbox/".doc]
 purpose = "Landing zone for anything not yet filed - scans, downloads, half-written notes."
 notes = "Not part of canonical PARA, but a common addition: without it, filing pressure lands on the four real categories."
 use_for = ["anything you haven't decided about yet"]
 not_for = ["anything you've already decided about"]
+
+[paths."inbox/".group]
 lifecycle = "transient"
 origin = ["external", "self"]
 
@@ -107,10 +121,12 @@ check_folders = false
 # -------------------------------------------------------------------
 # Paths > projects/
 # -------------------------------------------------------------------
-[paths."projects/"]
+[paths."projects/".doc]
 purpose = "Short-term efforts with a definition of done and (usually) a deadline."
 use_for = ["anything you can finish"]
 not_for = ["standing responsibilities - those are areas/", "reference material - that's resources/"]
+
+[paths."projects/".group]
 lifecycle = "temporary"
 origin = ["self"]
 
@@ -132,10 +148,12 @@ destination = "archive"
 # -------------------------------------------------------------------
 # A GLOB KEY: one entry, applied to every real folder it matches. Add a
 # project on disk and it is covered with no edit here.
-[paths."projects/*/"]
+[paths."projects/*/".doc]
 purpose = "One project: its notes, its files, and a README stating what 'done' means."
 use_for = ["working files for this project only"]
 not_for = ["reference material that outlives the project - move it to resources/ when you finish"]
+
+[paths."projects/*/".group]
 lifecycle = "temporary"
 origin = ["self"]
 
@@ -149,10 +167,12 @@ required = ["README.md"]
 # -------------------------------------------------------------------
 # Paths > resources/
 # -------------------------------------------------------------------
-[paths."resources/"]
+[paths."resources/".doc]
 purpose = "Topics of ongoing interest - reference material that belongs to no single project."
 use_for = ["notes, clippings and references you'll want again"]
 not_for = ["anything you're actively working on"]
+
+[paths."resources/".group]
 lifecycle = "ongoing"
 origin = ["self", "external"]
 
@@ -179,16 +199,17 @@ mode = "allow"
 # ===================================================================
 # Enums
 # ===================================================================
+# Closed value sets, one per field that has one, named for the KIND of
+# field rather than the namespace - `paths` and `folders` share them.
 [enums]
-purpose = "Closed value sets. A path entry's `lifecycle` and `origin` are checked against these."
 
-[enums.paths.lifecycle]
+[enums.group.lifecycle]
 transient = "meant to be emptied constantly, nothing lingers"
 temporary = "has a completion condition, then gets archived"
 ongoing = "continuously active/maintained, no end state"
 archival = "already at rest, rarely touched"
 
-[enums.paths.origin]
+[enums.group.origin]
 self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
 external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"

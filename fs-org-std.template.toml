@@ -31,45 +31,53 @@
 #               (e.g. "rule-a-v1"), since that's the compatibility unit:
 #               a breaking change to a rule is a new directory, not an
 #               edit to the old one.
-#   enums     - closed value sets used to validate specific fields.
+#   enums     - closed value sets, one per field that has one, grouped by
+#               the KIND of field they belong to (enums.group.<field>,
+#               enums.doc.<field>) and shared by both namespaces.
 #               (enums.severity and enums.scope, for rules specifically,
 #               now live in rule.template.toml alongside what they
 #               validate.)
 #
-# An entry under [paths."..."] or [folders.reserved."..."] carries three
-# KINDS of field, declared apart from each other because they're read
-# differently:
+# An entry under [paths."..."] or [folders.reserved."..."] is THREE
+# TABLES, named for who reads them - and each namespace declares, once,
+# what may go in the first two:
 #
-#   documentation - listed in <ns>.attributes.names. Free-form: a string,
-#                   or a list of strings. Nothing reads the values; the
-#                   doc generator renders whatever is there.
-#                   <ns>.attributes.required says which of them may not
-#                   be left empty.
-#   grouping      - listed in <ns>.grouping.names. Enum-backed, checked
-#                   against enums.<ns>.<field>, and used to sort entries
-#                   into buckets in the generated docs - a closed
-#                   vocabulary is what makes that possible. A field named
-#                   in <ns>.grouping.multi holds a LIST of values (e.g.
-#                   content that's partly self-authored and partly
-#                   generated); every other one holds exactly one.
-#   control       - `allow_missing` and `outside_root` (below). A fixed
-#                   set, read by the tool itself, never declared in
-#                   either list: a standard can't rename or invent one,
-#                   and they're always allowed on a path entry.
+#   <entry>.doc    documentation. Free-form: a string, or a list of
+#                  strings. Nothing reads the values; the doc generator
+#                  renders whatever is there. Declared in <ns>.doc.names,
+#                  with <ns>.doc.required naming the ones that may not be
+#                  left empty.
+#   <entry>.group  grouping. Enum-backed, checked against
+#                  enums.group.<field>, and used to sort entries into
+#                  buckets in the generated docs - a closed vocabulary is
+#                  what makes that possible. Declared in <ns>.group.names;
+#                  a field named in <ns>.group.multi holds a LIST of
+#                  values (e.g. content that's partly self-authored and
+#                  partly generated), every other one holds exactly one.
+#   <entry>.rules  everything the rule machinery reads: the rule
+#                  attachments, plus the CONTROL fields `allow_missing`
+#                  and `outside_root` described below. Those two are the
+#                  tool's own - a fixed set, never declared in either
+#                  list, and a standard can't rename or invent one.
 #
-# Which names appear in the first two kinds is entirely yours - nothing
-# in the code knows what `purpose` or `lifecycle` mean. The two
-# namespaces declare independently, so `folders` can carry a different
-# set of fields from `paths`, with its own vocabularies under
-# enums.folders.*.
+# The same three tables appear one level up, on the namespace itself:
+# [paths.doc] / [paths.group] declare the fields, [paths.rules] holds the
+# standard-wide control defaults and the blanket attachments.
 #
-# <ns>.attributes.defaults applies wherever an entry sets a field neither
-# itself nor by inheritance. Most fields have no sensible standard-wide
-# default - nothing about a specific path's `purpose` is universal - so
-# it's normally near-empty; `allow_missing` is the one field that ships
-# with a real default out of the box.
+# Which names appear in `doc` and `group` is entirely yours - nothing in
+# the code knows what `purpose` or `lifecycle` mean. The two namespaces
+# declare independently, so `folders` can carry a different set of fields
+# from `paths`; the vocabularies under enums are shared between them,
+# since a value set describes the field, not who carries it.
 #
-# `allow_missing` (bool, default false via paths.attributes.defaults) -
+# <ns>.doc.defaults / <ns>.group.defaults apply wherever an entry sets a
+# field neither itself nor by inheritance. Most fields have no sensible
+# standard-wide default - nothing about a specific path's `purpose` is
+# universal - so both are normally empty; `allow_missing` is the one
+# field that ships with a real default, declared in [paths.rules] beside
+# the field it defaults.
+#
+# `allow_missing` (bool, default false via [paths.rules]) -
 # marks a cataloged path as one that may not currently exist on disk.
 # Without it, a cataloged path the runner can't find on disk is reported
 # as a problem. With it, that's expected - the runner skips it silently
@@ -89,29 +97,32 @@
 # accident - joining an absolute key onto root DISCARDS root entirely - so
 # a stray leading slash would have quietly pointed rules at the wrong tree.
 # Unlike every other field here, it is never inherited and never picks up a
-# value from paths.attributes.defaults; it has to be written on the entry
+# default from [paths.rules]; it has to be written on the entry
 # that escapes. That's the same stance `reason` takes at rule attachment
 # sites: a field whose whole job is to make one thing deliberate is worth
 # nothing if it can arrive from somewhere else. The runner's sandbox also
 # reads it - an out-of-root path is a place a fixer is allowed to write,
 # and it can only know that if the standard says so.
-# [[paths.cross]] carries the same flag on the cross entry itself, covering
+# [[paths.cross]] carries the same flag in its own `rules` table, covering
 # every path it lists.
 #
 # `inherit` (optional sub-table on a [paths."..."] or
 # [folders.reserved."..."] entry) - lets one entry reuse another's
-# attributes and/or rule attachments instead of redeclaring them:
+# tables instead of redeclaring them. One key per table, named for it:
 #   [paths."archive/project-x/".inherit]
-#   attributes = "active/project-x/"   # full inherit, this entry's own
+#   doc = "active/project-x/"          # full inherit, this entry's own
 #                                       # explicit fields still override
+#   group = "active/project-x/"        # same, per field
 #   rules = "active/project-x/"        # inherited rules MERGE with this
 #                                       # entry's own attachments (both
 #                                       # apply) - use exclude_rules to
-#                                       # drop specific inherited ones
+#                                       # drop specific inherited ones.
+#                                       # Control fields come with it,
+#                                       # overriding per field like above.
 #   exclude_rules = ["rule-a-v2"]      # rule ids to drop from what
 #                                       # `rules` would otherwise bring in
-# `attributes` and `rules` may point at different source entries, or be
-# omitted independently (e.g. inherit attributes only, declare all rules
+# The three may point at different source entries, or be omitted
+# independently (e.g. inherit `doc` only, declare all rules
 # fresh). Chains are allowed (C inherits from B inherits from A);
 # cycles are a validation error. `exclude_rules` without `rules` set is
 # a validation error - there's nothing to exclude from. To CHANGE an
@@ -127,13 +138,14 @@
 # location - same vocabulary as `exclude` params elsewhere (fnmatch/
 # pathlib.Path.glob: *, **, ?, [abc] - no brace-expansion, no stdlib
 # support for it; [1-3] already covers a numeric range):
-#   [paths."clients/*/"]
+#   [paths."clients/*/".doc]
 #   purpose = "A client's workspace"
+#   [paths."clients/*/".group]
 #   lifecycle = "ongoing"
 #   origin = ["self"]
 #   [[paths."clients/*/".rules.rule-a-v1]]
 #   reason = "..."
-# One entry, every real match sharing its attributes/rules - invoked
+# One entry, every real match sharing its fields/rules - invoked
 # once per match, exactly like [[folders.rules]] invokes once per real
 # folder on disk. A pattern matching zero real folders follows
 # `allow_missing`, same as a literal path not existing - no separate
@@ -141,12 +153,11 @@
 # validation error (checked statically, from the key strings alone, no
 # filesystem access) UNLESS a literal entry explicitly opts in via
 # inherit - the sanctioned way to override one instance:
-#   [paths."clients/acme/"]
+#   [paths."clients/acme/".doc]
 #   purpose = "Acme specifically"
-#   lifecycle = "ongoing"
-#   origin = ["self"]
 #   [paths."clients/acme/".inherit]
-#   attributes = "clients/*/"
+#   doc = "clients/*/"
+#   group = "clients/*/"
 #   rules = "clients/*/"
 # Without that inherit link, `clients/acme/` colliding with
 # `clients/*/` is rejected, not silently resolved by precedence - see
@@ -157,7 +168,7 @@
 # `instance_attributes` (must be supplied fresh at every attachment site,
 # currently just `reason`) - never has a default; that's what distinguishes
 # it from a rule's own attributes (purpose/severity/exclude/scope),
-# which now live in that rule's own manifest instead of here.
+# which live in that rule's own manifest instead of here.
 #
 # Whether a rule can be fixed is determined structurally by the presence
 # of the -fix.py script file, not by a manifest field. Omission is
@@ -199,36 +210,37 @@ standard_date = 2026-08-12
 [enums]
 purpose = "Validate the specified values."
 
-# One table per GROUPING field, named enums.<namespace>.<field> - the
-# closed set of values entries in that namespace may use for it. A
-# grouping field with no table here still groups, but its values go
-# unchecked (the validator warns).
+# One table per field with a closed value set, named enums.<kind>.<field>
+# for the kind of field it belongs to. Vocabularies are shared by both
+# namespaces: a value set describes the FIELD, so `paths` and `folders`
+# grouping by `lifecycle` mean the same four values. There's no
+# enums.rules - the control fields are the tool's, not yours.
 
 # -------------------------------------------------------------------
-# Enums > Paths
+# Enums > Group
 # -------------------------------------------------------------------
-[enums.paths.lifecycle]
+# Required for every grouping field: one that has no table here still
+# groups, but its values go unchecked (the validator warns).
+[enums.group.lifecycle]
 transient = "meant to be emptied constantly, nothing lingers"
 temporary = "has a completion condition, then gets archived"
 ongoing = "continuously active/maintained, no end state"
 archival = "already at rest, rarely touched"
 
-[enums.paths.origin]
+[enums.group.origin]
 self = "authored directly by you - nothing to re-fetch or resync from elsewhere"
 external = "sourced from outside this system - downloaded, received, or otherwise not authored by you"
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
 
 # -------------------------------------------------------------------
-# Enums > Folders
+# Enums > Doc
 # -------------------------------------------------------------------
-# Declared separately from enums.paths.lifecycle on purpose: the two
-# namespaces group by their own vocabularies, and a name meaning the
-# same thing in both is a choice, not a shared definition.
-[enums.folders.lifecycle]
-transient = "meant to be emptied constantly, nothing lingers"
-temporary = "has a completion condition, then gets archived"
-ongoing = "continuously active/maintained, no end state"
-archival = "already at rest, rarely touched"
+# Optional, and normally absent: a documentation field is prose. Declare
+# a table here only for one whose values really are a closed set - it's
+# then checked the same way a grouping field is, without becoming one.
+#   [enums.doc.review_cycle]
+#   annual = "..."
+#   quarterly = "..."
 
 # `exclude` is a native TOML array of glob strings and needs no enum table.
 # (Whether a rule can be fixed is structural - it's the presence of the
@@ -243,26 +255,28 @@ archival = "already at rest, rarely touched"
 # blanket rules over every folder under root, and reserved folder-name patterns
 # that apply independent of location.
 
-# What a [folders.reserved."..."] entry may carry - same two declarations
-# as paths below, and deliberately a SMALLER set here: this namespace
-# needs no `origin`, and gets no control fields at all (a reserved-name
-# pattern isn't one location, so "does it exist on disk" and "does it
-# point outside root" have nothing to apply to). `inherit` works
-# identically here too - see the worked example under
+# What a [folders.reserved."..."] entry may carry - the same two
+# declarations as paths below, and deliberately a SMALLER set here: this
+# namespace needs no `origin`, and gets no control fields at all (a
+# reserved-name pattern isn't one location, so "does it exist on disk"
+# and "does it point outside root" have nothing to apply to). `inherit`
+# works identically here too - see the worked example under
 # [paths."path/a/archived/"] below; the mechanism is namespace-scoped, so
 # a reserved folder entry can only inherit from another reserved folder
 # entry, never from a [paths."..."] entry.
-[folders.attributes]
+[folders.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[folders.attributes.defaults]
+[folders.doc.defaults]
 
-# enum-backed, checked against enums.folders.<field>, used to group
+# enum-backed, checked against enums.group.<field>, used to group
 # reserved folders in the generated docs
-[folders.grouping]
+[folders.group]
 names = ["lifecycle"]
 required = ["lifecycle"]
+
+[folders.group.defaults]
 
 # rules applying to EVERY folder under root, cataloged or not - use this to
 # catch folders that exist on disk but aren't part of the documented standard.
@@ -285,7 +299,7 @@ key-a-1 = "custom value"
 [folders.reserved]
 prefix = "_"
 
-[folders.reserved."_folder-name"]
+[folders.reserved."_folder-name".doc]
 purpose = "Example - describe what this specific reserved folder name means, wherever it appears in the tree."
 notes = "E.g.: caveats..."
 use_for = [
@@ -296,6 +310,8 @@ not_for = [
   "",
   ""
 ]
+
+[folders.reserved."_folder-name".group]
 lifecycle = ""
 
 # Rules attach here exactly as they do on a path, but the target set is
@@ -326,30 +342,41 @@ key-a-1 = "custom value"
 # Specific, individually documented locations under root - each gets its own
 # [paths."..."] entry describing what it's for, its lifecycle, and its origin.
 
-# free-form documentation fields on a [paths."..."] entry - a string or a
-# list of strings each, rendered as-is by the doc generator. Most have no
-# default since a path's own content is what's supposed to fill them in.
-[paths.attributes]
+# free-form documentation fields on a [paths."...".doc] table - a string
+# or a list of strings each, rendered as-is by the doc generator. Most
+# have no default since a path's own content is what's supposed to fill
+# them in; whatever is declared under `defaults` applies wherever an
+# entry sets that field neither itself nor by inheritance.
+[paths.doc]
 names = ["purpose", "notes", "use_for", "not_for", "see_also"]
 required = ["purpose"]
 
-[paths.attributes.defaults]
-allow_missing = false
-# `outside_root` deliberately has NO default here, and can't be given one:
-# it must be written on each escaping entry itself (see below).
+[paths.doc.defaults]
 
-# enum-backed fields, checked against enums.paths.<field> and used to
+# enum-backed fields, checked against enums.group.<field> and used to
 # group paths in the generated docs. `origin` is listed in `multi` because
 # content can be partly self-authored and partly generated; `lifecycle`
 # holds exactly one value.
-[paths.grouping]
+[paths.group]
 names = ["lifecycle", "origin"]
 multi = ["origin"]
 required = ["lifecycle", "origin"]
 
-# rules applying to every *standardized* path (i.e. every path with its own
+[paths.group.defaults]
+
+# Everything the rule machinery reads, for the whole namespace: the
+# standard-wide default for each control field, then the rules applying
+# to every *standardized* path (i.e. every path with its own
 # [paths."..."] entry below) - not every folder under root. See
 # [[folders.rules]] for that broader scope.
+# TOML note: bare keys must come before any [paths.rules.<...>] sub-table,
+# here and on every entry below - a table can't be reopened once a
+# sub-table of it has been declared.
+[paths.rules]
+allow_missing = false
+# `outside_root` deliberately has NO default here, and can't be given one:
+# it must be written on each escaping entry itself (see below).
+
 [[paths.rules.rule-a-v1]]
 reason = "Why is this rule applied to all standardized paths?"
 
@@ -357,7 +384,9 @@ reason = "Why is this rule applied to all standardized paths?"
 # -------------------------------------------------------------------
 # Paths > path/a/
 # -------------------------------------------------------------------
-[paths."path/a/"]
+# Every entry is the same three tables: what it is (`doc`), how it sorts
+# (`group`), and what the rule machinery does with it (`rules`).
+[paths."path/a/".doc]
 purpose = ""
 notes = ""
 use_for = [
@@ -368,9 +397,11 @@ not_for = [
   "",
   ""
 ]
+see_also = ""
+
+[paths."path/a/".group]
 lifecycle = ""
 origin = []
-see_also = ""
 
 [[paths."path/a/".rules.rule-a-v1]]
 reason = "Why is this rule applied to this path?"
@@ -389,7 +420,7 @@ key-a-1 = "custom value"
 # -------------------------------------------------------------------
 # Paths > path/b/
 # -------------------------------------------------------------------
-[paths."path/b/"]
+[paths."path/b/".doc]
 purpose = ""
 notes = ""
 use_for = [
@@ -400,15 +431,17 @@ not_for = [
   "",
   ""
 ]
+see_also = ""
+
+[paths."path/b/".group]
 lifecycle = ""
 origin = []
-see_also = ""
 
 
 # -------------------------------------------------------------------
 # Paths > path/a/aa/
 # -------------------------------------------------------------------
-[paths."path/a/aa/"]
+[paths."path/a/aa/".doc]
 purpose = ""
 notes = ""
 use_for = [
@@ -419,9 +452,11 @@ not_for = [
   "",
   ""
 ]
+see_also = ""
+
+[paths."path/a/aa/".group]
 lifecycle = ""
 origin = []
-see_also = ""
 
 
 # -------------------------------------------------------------------
@@ -432,14 +467,18 @@ see_also = ""
 # on every move, both locations are cataloged once; whichever one isn't
 # currently real on disk is simply skipped by the runner, because of
 # allow_missing below.
-[paths."path/a/archived/"]
+[paths."path/a/archived/".group]
 lifecycle = "archival"          # overrides path/a/'s inherited lifecycle
+
+[paths."path/a/archived/".rules]
 allow_missing = true            # this location may not currently exist
 
 [paths."path/a/archived/".inherit]
-attributes = "path/a/"          # purpose, notes, use_for, etc. - full
+doc = "path/a/"                  # purpose, notes, use_for, etc. - full
                                  # inherit, this entry's own explicit
                                  # fields above still win
+group = "path/a/"                # same, for the grouping fields - so only
+                                 # `lifecycle` above had to be restated
 rules = "path/a/"                # inherited rule attachments MERGE with
                                  # any this entry declares itself
 exclude_rules = ["rule-a-v1"]    # dropped from what `rules` brings in -
@@ -452,6 +491,11 @@ exclude_rules = ["rule-a-v1"]    # dropped from what `rules` brings in -
 # -------------------------------------------------------------------
 [[paths.cross]]
 paths = ["path/a/", "path/b/"]
+
+# A cross entry has the same `rules` table as a path entry - control
+# fields first, then the attachments. `outside_root` here covers every
+# path the set lists.
+[paths.cross.rules]
 
 [[paths.cross.rules.rule-a-v1]]
 reason = "Why is this rule applied to this set of paths?"
