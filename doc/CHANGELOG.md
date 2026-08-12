@@ -11,6 +11,12 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `see_also` renders as Markdown
+
+A list-valued `see_also` reached the generated attribute table as its
+Python repr (`['prj/', 'task/']`); it's now joined like every other list
+field, with a bare string still passing through.
+
 ### `examples/`
 
 `examples/para/` - a toy PARA tree, a standard governing it, and a

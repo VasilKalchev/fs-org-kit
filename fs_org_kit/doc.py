@@ -334,7 +334,14 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
         origin_str = ", ".join(f"`{o}`" for o in attrs["origin"])
         rows.append(("Origin", f"{origin_str}{marker('origin')}"))
     if attrs.get("see_also"):
-        rows.append(("See also", attrs["see_also"]))
+        # a list of catalog keys, or a single one as a bare string - both
+        # shapes are in the wild, and a list must not reach the table as
+        # its Python repr
+        see_also = attrs["see_also"]
+        if isinstance(see_also, list):
+            see_also = ", ".join(f"`{s}`" for s in see_also if s)
+        if see_also:
+            rows.append(("See also", see_also))
     if attrs.get("allow_missing"):
         rows.append(("May be missing", "yes"))
     if attrs.get("outside_root"):

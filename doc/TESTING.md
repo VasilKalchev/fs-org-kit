@@ -151,14 +151,14 @@ what did or didn't happen on disk.
 - **Cache-dir wiring**: a rule declaring `uses_cache` is handed `--cache-dir` and really writes into `<root>/rules/<rule-id>/`; a rule that doesn't declare it never receives the flag (which is what keeps the change additive - every existing rule's argparse would reject an unknown flag) and causes no cache root to be created at all; an unusable cache location still produces the correct verdict
 - **Full integration through `main()`**: clean run exits 0, a violation exits 1, a missing path with/without `allow_missing` exits 1/0, an invalid standard exits 2, and the core PARA scenario end-to-end - moving a real folder on disk between two `allow_missing`-marked, inheritance-linked locations needs zero standard edits and the run stays clean before and after
 
-### Doc generator tests (28 tests, `tests/test_doc.py`)
+### Doc generator tests (31 tests, `tests/test_doc.py`)
 
 - **Helpers**: slug generation (`/` becomes `-`, special characters stripped, empty falls back), value formatting for booleans/strings/lists
 - **Validate first**: an invalid or missing standard exits 2 and generates nothing; warnings don't block
 - **Sections**: all present sections by default, `--sections`/`--exclude-sections` filtering, an unknown section name errors, an empty section is omitted rather than emitted blank
 - **Diagrams**: `--no-diagrams`, `--diagrams` filtering, the tree reflects real nesting, the 40-node guard, the lifecycle diagram appears only for the known vocabulary, and Mermaid-breaking characters in a path key are sanitized
 - **ToC**: present by default, `--no-toc`, and every link has a matching anchor
-- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site
+- **Rendering**: an inherited field shows its value marked as inherited; the rules section lists every attachment site; a list-valued `see_also` is joined into readable Markdown rather than reaching the table as a Python repr, a bare-string one passes through, and one holding only empty placeholders is omitted
 - **Output style**: generated Markdown contains no em dashes
 
 ### Bundled rule tests (612 tests, inside `rules/`)
