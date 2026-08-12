@@ -19,32 +19,15 @@ Rules now live in three trust tiers:
 
 This three-tier model is enforced structurally (not as a convention or config option) - the runner, validator, and discovery module all understand these exact paths.
 
-### Discovery is centralized
+### Discovery is centralized, and shared rather than repeated
 
-`fs_org_kit/discovery.py` is the single source of truth for "what rules exist right now." It's imported directly by the validator (to resolve rule references in a standard); the runner and doc generator both reuse `validator.rule_catalog` afterward rather than calling `discover_rules()` again themselves - one discovery pass per invocation, not two or three.
+`fs_org_kit/discovery.py` is the single source of truth for "what rules exist right now." It's imported directly by the validator, to resolve rule references in a standard; the runner and doc generator then reuse `validator.rule_catalog` rather than calling `discover_rules()` again themselves - one discovery pass per invocation, not two or three.
 
-This prevents the tools from having subtly different views of what rules exist, which would be a silent correctness bug.
-
-### Validator and runner share the rule catalog
-
-Once validation passes, the runner doesn't call `discover_rules()` again - it reuses `validator.rule_catalog` directly. This ensures:
-
-1. The runner never acts on a rule that validation rejected
-2. The same collision/precedence logic (own overrides bundled, external never overrides) applies consistently
-3. If validation sees `include_external=True`, the runner sees it too
-
-The validator's `Validator.__init__` now takes `include_external` and `bundled_rules_dir` parameters, threading the runner's CLI flags through to the discovery step.
+This is more than an optimization: two passes could disagree - a rule installed or removed between them, or `Validator.__init__`'s `include_external`/`bundled_rules_dir` args passed differently - and the runner would then act on a rule validation never saw, or vice versa. Reusing the same catalog object makes that class of bug structurally impossible rather than something to keep in sync by convention.
 
 ### Fixability is structural, not declared
 
-Originally, rule manifests had a `fix` field saying whether a rule could be fixed. This was changed to infer fixability from what files exist on disk:
-
-- A rule is fixable if its `-fix.py` file exists
-- The runner discovers this at runtime, not from the manifest
-
-This has two benefits:
-1. One less field that can fall out of sync with reality
-2. Clearer intent - either the fixer exists on disk or it doesn't, with no possibility of a manifest claiming something that isn't true
+Originally, rule manifests had a `fix` field saying whether a rule could be fixed. That was dropped in favor of inferring fixability from what's actually on disk: a rule is fixable iff its `-fix.py` file exists, discovered by the runner at invocation time rather than read from the manifest. One less field to fall out of sync with reality, and no possibility of a manifest claiming a fixer that isn't there.
 
 ### The core owns where rules cache, not the rules
 
@@ -164,11 +147,7 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 ### Schema versioning is separate from standard versioning
 
-`fs-org-std.template.toml` tracks `schema_version` (the grammar it uses, e.g., 1.0) separately from `standard_version` (the content version, e.g., 3.2). This allows:
-
-- The grammar to evolve independently of a user's personal standard
-- Multiple standards to coexist at different schema versions
-- Clear error messages when a standard is incompatible with a validator
+`fs-org-std.template.toml` tracks `schema_version` (the grammar it uses, e.g., 1.0) separately from `standard_version` (the content version, e.g., 3.2), so the grammar can evolve independently of any one person's standard: different standards can sit at different schema versions, and a validator that doesn't recognize one gives a clear error rather than a flood of misleading ones.
 
 ### Attributes are self-describing
 
@@ -240,11 +219,7 @@ What that file was genuinely good at - handing an author a correct starting poin
 
 ### Rule-to-runner protocol is versioned independently
 
-Rule manifests include `protocol_version`, separate from the rule's own `version`. This allows:
-
-- The runner's command-line interface to evolve
-- Old rules (v1 protocol) to coexist with new rules (v2 protocol) without rewriting
-- Clear error messages when a rule uses an unsupported protocol version
+Rule manifests include `protocol_version`, separate from the rule's own `version`, so the runner's command-line interface can evolve without forcing every existing rule to be rewritten in step - an old-protocol rule and a new-protocol one coexist, and a rule declaring an unsupported version gets a clear error instead of a mysterious argparse failure.
 
 ### Fixer-specific protocol: self-contained, not check-then-fix
 
@@ -255,11 +230,7 @@ When a fixer is invoked, it doesn't check first and then fix - the `-fix.py` scr
 - `fixed` - found problems and fixed them
 - `unfixable` - found problems that are logically unfixable by the rule
 
-This design:
-
-1. Avoids redundant passes (check, then fix, then recheck)
-2. Makes it clear that a fixer owns the full problem-solving, not the runner
-3. Simplifies the runner's logic - just invoke once, read status
+This avoids a redundant check-then-fix-then-recheck cycle, keeps the runner's logic to "invoke once, read status," and makes the fixer own the full problem end to end rather than sharing it with the runner.
 
 ### `skipped` - the runner's own status, for a plan a fixer outran
 
@@ -297,10 +268,7 @@ The validator **never** modifies anything on disk. It reads a `.toml` file, pars
 
 ### Runner validates first, always
 
-The runner's first step is to reuse the validator. If validation fails, the runner exits with code 2 and never touches the filesystem. This ensures:
-
-- The standard is structurally sound before any rule runs
-- Validation errors are reported consistently, whether running the validator or the runner
+The runner's first step is to reuse the validator. If validation fails, the runner exits with code 2 and never touches the filesystem - a rule only ever runs against a standard already confirmed structurally sound, and a validation error reads the same whether it came from `fs-org-validate` or `fs-org-run`.
 
 ### Exit codes are meaningful
 
@@ -423,19 +391,4 @@ Every applied rule is documentation: its `reason` says why it's there, and its p
 
 ## Packaging and CLI Commands
 
-Entry points are now wired up in `pyproject.toml`:
-
-```toml
-[project.scripts]
-fs-org-validate = "fs_org_kit.validator:main"
-fs-org-run = "fs_org_kit.runner:main"
-```
-
-This means you can call the tools as short commands:
-
-```bash
-fs-org-validate my-standard.toml
-fs-org-run my-standard.toml --fix
-```
-
-After `pip install -e .`, these commands are available directly in your PATH. If you installed from PyPI (`pip install fs-org-kit`), they'd be installed the same way.
+`pyproject.toml`'s `[project.scripts]` wires each tool's `main()` to a short command (`fs-org-validate`, `fs-org-run`, ...), available in `PATH` after `pip install -e .` the same way a PyPI install would provide them.

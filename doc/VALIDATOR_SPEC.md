@@ -120,9 +120,9 @@ doc/DESIGN.md.
   checker script, invalid TOML, or an out-of-enum `severity`/`scope`
   is an error for that rule (it doesn't enter the catalog at all)
 - an external-tier rule falsely claiming `overrides_bundled = true` is
-  flagged (see DESIGN.md - this is a correctness/integrity concern
-  about *which rule actually runs*, not a formatting one, so it's
-  validate-level even though it's a warning rather than an error)
+  flagged - validate-level even though it's a warning, since it's about
+  which rule actually runs (see doc/DESIGN.md for why external never
+  overrides)
 
 ---
 

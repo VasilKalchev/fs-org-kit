@@ -2,17 +2,13 @@
 
 ## Quick start
 
-Install pytest and run the test suite:
-
 ```bash
 pip install -e ".[dev]"    # installs the package + pytest
 pytest                      # runs everything: core package + bundled rules
-pytest tests/                       # core package only
-pytest rules/                       # bundled rules only
-pytest tests/test_inherit.py -v     # run just inheritance tests
-pytest tests/test_runner.py -v      # run just runner tests
-pytest -k "scope_mismatch"          # run a single test by name
 ```
+
+More invocations (single module, single test, single rule) are in
+[CLAUDE.md](../CLAUDE.md#commands).
 
 ## Test organization
 
@@ -51,15 +47,11 @@ rules/basename-sync-v1/
   test_basename_sync_v1.py         <- tests live here
 ```
 
-This is the same convention documented in `RULES.md` for anyone writing
-their own rule: a rule in `rules.own/` or `rules.external/` has no
-access to (and shouldn't need) fs-org-kit's own `tests/` - putting a
-rule's tests in its own directory means they travel with it wherever it
-goes, and can be run standalone (`pytest test_my_rule_v1.py`, from
-inside that directory) with zero dependency on this project's
-structure. `pytest.ini`'s `testpaths` includes both `tests` and `rules`,
-so a bare `pytest` at the project root still picks up everything -
-that's a convenience for *this* repo, not something a rule depends on.
+Same convention as `RULES.md`: tests travel with their rule, runnable
+standalone (`pytest test_my_rule_v1.py`) with zero dependency on this
+repo's structure - which matters once a rule is copied into someone's
+`rules.own/` or `rules.external/`. `pytest.ini`'s `testpaths` covers
+both `tests` and `rules`, so a bare `pytest` here still runs everything.
 
 ## Test coverage
 

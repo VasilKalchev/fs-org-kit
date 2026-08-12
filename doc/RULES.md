@@ -36,15 +36,10 @@ you somewhere to park a half-written rule without deleting it.
 Claude Code users: the `new-rule` skill does the copy and the renames.
 
 Checking and fixing are **always separate files**, never one script that
-branches on a flag. This means:
-
-- Whether a rule can *mutate* anything is visible on the filesystem
-  itself - `-fix.py` exists, or it doesn't - not something you have to
-  read code to find out
-- A rule's checker can be run and trusted even in contexts where its
-  fixer isn't (or doesn't exist at all)
-- The runner never has to guess intent from a flag; file existence is
-  the whole signal
+branches on a flag - whether a rule can *mutate* anything is then
+visible on the filesystem itself, and a checker can be run and trusted
+even where its fixer isn't. See doc/DESIGN.md, "Fixability is
+structural, not declared", for why.
 
 ---
 
@@ -316,9 +311,9 @@ Two things worth knowing while developing:
   harness is something the runner wraps around it. So a rule can pass
   its own tests and still fail under `fs-org-run`. If that happens, the
   stderr message names the exact operation and lists what was writable.
-- **This is a guard against accidents, not a security boundary.** It
-  lives inside the interpreter it polices. Don't design a rule around it
-  holding against anything deliberate.
+- **This is a guard against accidents, not a security boundary** - see
+  doc/DESIGN.md, "Scripts run inside an audit-hook harness", for why,
+  and don't design a rule around it holding against anything deliberate.
 
 `fs-org-run --no-sandbox` turns it off entirely.
 
@@ -337,14 +332,11 @@ passes it as `--cache-dir`. Put whatever you like inside it - a SQLite
 database, JSON, whatever fits.
 
 **You do not choose where it goes, and you must not resolve a location
-yourself.** The core owns the location (`fs_org_kit/cache.py`), for
-three reasons: it keeps an inventory of every cache that exists, so it
-can report on them and clear them (`fs-org-cache --list`,
-`fs-org-cache --clear <rule-id>`); the per-platform path logic lives in
-exactly one place rather than being copied into every caching rule,
-free to drift; and a user who wants their disk back has one command
-that works for every rule, present and future, instead of needing to
-know what each one does.
+yourself.** The core owns the location (`fs_org_kit/cache.py`) so it can
+inventory, report on, and clear every rule's cache with one command
+(`fs-org-cache --list`, `fs-org-cache --clear <rule-id>`). See
+doc/DESIGN.md, "The core owns where rules cache, not the rules", for
+the full reasoning.
 
 Two obligations come with the flag:
 
@@ -421,7 +413,9 @@ choice, not a stub waiting to be finished.
 A fixer is **self-contained**: it detects the problem *and* resolves it
 in one pass, not "check first, then get told to fix." The runner does
 not run your checker before your fixer in `--fix` mode - it invokes
-`-fix.py` directly whenever it exists and `--fix` was passed.
+`-fix.py` directly whenever it exists and `--fix` was passed. See
+doc/DESIGN.md, "Fixer-specific protocol: self-contained, not
+check-then-fix", for why.
 
 Arguments are identical to a checker's (`--path`/`--paths`, `--params`),
 with `--fix` added. Your fixer's stdout must be exactly one JSON line,

@@ -183,23 +183,15 @@ close its value set.
 ### `allow_missing` and `outside_root` are gone
 
 Both were flags asking a standard to restate something, and both are
-removed rather than relocated.
+removed rather than relocated - see DESIGN.md's
+[cataloged-path-not-on-disk](DESIGN.md#a-cataloged-path-that-isnt-on-disk-is-skipped-not-reported)
+and [out-of-root](DESIGN.md#out-of-root-path-keys) sections for why.
 
-A cataloged path that isn't on disk is now simply skipped, silently.
-`allow_missing` defaulted to "must exist", so an absent path failed the
-run unless marked - which made state-via-location schemes depend on
-remembering to mark *both* sides of a pair, since either could be the
-absent one. A catalog says where things go, not which locations exist at
-this instant; "this path should exist" is a question about the
-filesystem, which is what rules are for. No such rule ships yet.
-
-`outside_root` confirmed that a key deliberately named somewhere outside
-`root`. The sharp edge it guarded - `root / "/etc/x"` being `/etc/x` -
-is handled by `path_keys.resolve_key` being the only place a key becomes
-a path, which is where it belonged. A key now names a location and the
-tool goes there, so `path_keys` loses its escape-detection half
-entirely, and the runner loses its missing-path reporting and the exit-1
-that went with it.
+A cataloged path that isn't on disk is now simply skipped, silently. No
+rule for "this path should exist" ships yet. `path_keys.resolve_key` is
+now the only place a key becomes a path, so `path_keys` loses its
+escape-detection half entirely, and the runner loses its missing-path
+reporting and the exit-1 that went with it.
 
 Together these also retire standard-wide field defaults
 (`attributes.defaults`): `allow_missing = false` was the only value
@@ -213,21 +205,14 @@ into `[<key>.group]`, and delete `allow_missing` / `outside_root`.
 
 ### `skipped` - an invocation a fixer outran
 
-Targets are expanded once, up front, so a fixer moving a folder left
-later invocations pointed at where it used to be. Those exited nonzero
-and were reported `broken` - the signal meaning a rule is misconfigured -
-for a fixer doing exactly its job, and held the run at exit 1.
-
-The runner now checks a target still exists immediately before invoking
-and reports `skipped` instead, which doesn't affect the exit code. Not a
-fifth script status: no rule can return it and the protocol in
-`rule.template.toml` is unchanged. Only a target that was really there
-when the plan was built can be skipped - one that never existed is a
-misconfigured attachment and still reports `broken`, which is reachable
-through `paths.cross`, the one shape that resolves its references
-without the exists-on-disk filter. Re-expanding glob keys after each fix
-would also re-check the moved folder in the same pass, but makes the
-invocation list mutate mid-run; it's checked on the next run instead.
+A fixer moving a folder left later invocations pointed at where it used
+to be; those exited nonzero and were reported `broken` - the signal for
+"this rule is misconfigured" - holding the run at exit 1 for a fixer
+doing its job correctly. The runner now checks a target still exists
+immediately before invoking and reports `skipped` instead, which doesn't
+affect the exit code. See [DESIGN.md](DESIGN.md#skipped---the-runners-own-status-for-a-plan-a-fixer-outran)
+for why it isn't a fifth script status and how a genuinely-missing target
+still reports `broken`.
 
 Surfaced by `examples/para`, where `staleness-v1` archives a project that
 `projects/*/` was queued against.
@@ -361,35 +346,26 @@ edits when not - exactly what `recursive = false` says not to look at.
 `sys.addaudithook` blocking network, subprocess, native calls, and
 writes outside what an invocation may touch: cache and temp for a
 checker, plus root and its own targets for a fixer. So "checkers never
-write" is enforced rather than merely documented.
+write" is enforced rather than merely documented - see
+[DESIGN.md](DESIGN.md#scripts-run-inside-an-audit-hook-harness) for the
+capability-declaration shape and why it's a guard against accidents, not
+a security boundary.
 
-Capabilities are declared in a manifest's `[sandbox]` table, the same
-shape as `uses_cache` - the runner reads a declaration and never
-special-cases a rule by name. `basename-sync-v1` declares `subprocess`
-(its fixer delegates to a user script); `collect-v1` declares
-`unrestricted_writes` (its destination comes from the standard).
-
-A guard against accidents, explicitly not a security boundary - the
-hook lives inside the interpreter it polices. `SandboxViolation` derives
-from `BaseException` so a rule's `except Exception` can't swallow it,
-and violations are recorded besides, so even a bare `except:` can't
-report success. Building it surfaced that `runpy.run_path` doesn't put
-the script's directory on `sys.path` the way direct execution does,
-which broke `staleness-v1`'s import of its `_shared` module.
+`basename-sync-v1` declares `subprocess` (its fixer delegates to a user
+script); `collect-v1` declares `unrestricted_writes` (its destination
+comes from the standard). Building it surfaced that `runpy.run_path`
+doesn't put the script's directory on `sys.path` the way direct
+execution does, which broke `staleness-v1`'s import of its `_shared`
+module.
 
 ### `fs_org_kit/path_keys.py` - out-of-root path keys
 
 A catalog key may resolve outside `root` - `/etc/nginx/`, `~/.config/`,
-`../sibling/` - on an entry declaring `outside_root = true`.
-
-The flag exists because the escape was already silent: joining an
-absolute key onto root *discards* root, so a stray leading slash pointed
-rules at another tree with nothing saying so. Never inherited, never
-defaulted, for the same reason `reason` isn't - a one-word edit
-elsewhere must not widen what the tool walks into and, under `--fix`,
-writes to. `resolve_key` is now the single place a key becomes a real
-path; the previous `path-leading-slash` lint is gone, replaced by a
-validation error.
+`../sibling/` - on an entry declaring `outside_root = true`. See
+[DESIGN.md](DESIGN.md#out-of-root-path-keys) for why the flag exists and
+why it's never inherited or defaulted. `resolve_key` is now the single
+place a key becomes a real path; the previous `path-leading-slash` lint
+is gone, replaced by a validation error.
 
 ---
 
@@ -444,15 +420,12 @@ above checks.
 `fs-org-cache --list | --clear [RULE_ID] | --path`. A rule declares
 `uses_cache = true` in its manifest; the runner creates
 `<cache-root>/rules/<rule-id>/` and passes it as `--cache-dir`. A rule
-never resolves a location itself.
+never resolves a location itself - see
+[DESIGN.md](DESIGN.md#the-core-owns-where-rules-cache-not-the-rules) for
+why.
 
 This inverted the first implementation, where `duplicate-files-v1`
-computed its own per-platform path — that works, and leaves the core
-with no inventory to report on or clear, and copies the path logic into
-every caching rule. Additive by construction: a rule that doesn't
-declare `uses_cache` never receives the flag, so no existing rule's
-argument parsing broke. Nothing clears these automatically — `pip
-uninstall` included — which is why the management CLI exists.
+computed its own per-platform path.
 
 ### `duplicate-files-v1`
 
@@ -584,9 +557,10 @@ was added to the runner — not specific to this rule.
 ### Path/folder inheritance (`fs_org_kit/inherit.py`)
 
 Solves state-via-location (PARA-style archiving: a folder moves between
-`active/x/` and `archive/x/`). Catalog both locations; whichever isn't
-real on disk is skipped, not flagged, so moving it needs zero standard
-edits.
+`active/x/` and `archive/x/`). See
+[DESIGN.md](DESIGN.md#pathfolder-inheritance) for the mechanism, the
+`attributes`/`rules`/`exclude_rules` split, and why `resolve_entries()`
+runs once before validation.
 
 ```toml
 [paths."archive/project-x/".inherit]
@@ -595,15 +569,9 @@ rules = "active/project-x/"        # separate opt-in, merges
 exclude_rules = ["staleness-v1"]
 ```
 
-- `attributes` and `rules` may point at different sources or be omitted
-  independently; chains allowed, cycles are a validation error
-- A rule both inherited and declared directly applies twice — never a
-  silent override
-- `allow_missing` is resolved by the runner only, never the validator
-- `paths.attributes.defaults` / `folders.attributes.defaults` are generic
-  standard-wide defaults; precedence is explicit > inherited > default
-- `resolve_entries()` runs once, before validation, producing a flattened
-  `ResolvedEntry` per key — nothing downstream walks inheritance itself
+`allow_missing` is resolved by the runner only, never the validator.
+`paths.attributes.defaults` / `folders.attributes.defaults` are generic
+standard-wide defaults; precedence is explicit > inherited > default.
 
 ### The runner (`fs_org_kit/runner.py`)
 
