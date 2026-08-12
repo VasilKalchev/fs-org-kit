@@ -11,7 +11,6 @@ offsets can't show the bounds checks work.
 """
 
 import json
-import plistlib
 import struct
 import subprocess
 import sys
@@ -193,7 +192,7 @@ class TestWindowsShortcuts:
 
     def test_windows_path_is_reported_when_asked_for(self, tmp_path):
         (tmp_path / "s.lnk").write_bytes(make_lnk(r"C:\Users\someone\file.txt"))
-        result = verdict(run_check({"foreign_links": "report"}, tmp_path))
+        result = verdict(run_check({"report_foreign": True}, tmp_path))
         assert result["status"] == "violation"
         assert "another platform" in result["message"]
 
@@ -236,37 +235,6 @@ class TestWindowsShortcuts:
     def test_url_file_with_no_url_line_is_reported(self, tmp_path):
         (tmp_path / "s.url").write_text("[InternetShortcut]\nIconIndex=0\n")
         assert verdict(run_check({}, tmp_path))["status"] == "violation"
-
-
-class TestMacFormats:
-
-    def test_webloc_pointing_at_a_missing_file_is_reported(self, tmp_path):
-        (tmp_path / "b.webloc").write_bytes(
-            plistlib.dumps({"URL": f"file://{tmp_path}/gone.txt"})
-        )
-        assert verdict(run_check({}, tmp_path))["status"] == "violation"
-
-    def test_webloc_with_a_web_url_is_not_judged(self, tmp_path):
-        (tmp_path / "b.webloc").write_bytes(plistlib.dumps({"URL": "https://example.com"}))
-        assert verdict(run_check({}, tmp_path))["status"] == "ok"
-
-    def test_binary_plist_is_read_too(self, tmp_path):
-        (tmp_path / "b.webloc").write_bytes(
-            plistlib.dumps({"URL": f"file://{tmp_path}/gone.txt"}, fmt=plistlib.FMT_BINARY)
-        )
-        assert verdict(run_check({}, tmp_path))["status"] == "violation"
-
-    def test_unreadable_webloc_is_reported(self, tmp_path):
-        (tmp_path / "b.webloc").write_text("not a plist")
-        assert verdict(run_check({}, tmp_path))["status"] == "violation"
-
-    def test_finder_alias_is_counted_not_guessed_at(self, tmp_path):
-        """An alias stores an opaque bookmark blob; resolving it is a Cocoa
-        call, not a path lookup."""
-        (tmp_path / "broken").symlink_to(tmp_path / "gone")
-        (tmp_path / "old.alias").write_bytes(b"\x00\x00\x00\x00book\x00\x00mark")
-        result = verdict(run_check({}, tmp_path))
-        assert "could not be verified" in result["message"]
 
 
 class TestTraversal:
@@ -314,8 +282,11 @@ class TestArgumentHandling:
     def test_rejects_empty_kinds(self, tmp_path):
         assert run_check({"kinds": []}, tmp_path).returncode != 0
 
-    def test_rejects_unknown_foreign_mode(self, tmp_path):
-        assert run_check({"foreign_links": "maybe"}, tmp_path).returncode != 0
+    def test_webloc_is_no_longer_a_known_kind(self, tmp_path):
+        """Out of scope - this rule only checks filesystem links."""
+        result = run_check({"kinds": ["webloc"]}, tmp_path)
+        assert result.returncode != 0
+        assert "webloc" in result.stderr
 
     def test_rejects_non_list_exclude(self, tmp_path):
         assert run_check({"exclude": "*.lnk"}, tmp_path).returncode != 0

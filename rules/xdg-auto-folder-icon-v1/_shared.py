@@ -1,5 +1,5 @@
 """
-Matching and .directory handling shared by folder-icon-auto-v1's checker
+Matching and .directory handling shared by xdg-auto-folder-icon-v1's checker
 and fixer.
 
 The checker reports which icon a folder should get and the fixer writes
@@ -9,7 +9,7 @@ sit in this directory, so the import resolves whether they run standalone
 or through the runner.
 
 The .directory reading and writing here is deliberately a copy of
-folder-icon-inherit-v1's, not a shared import: a rule is a standalone
+xdg-inherit-folder-icon-color-v1's, not a shared import: a rule is a standalone
 unit that has to keep working when copied into someone's rules.own/, and
 one rule reaching into another's directory would break the moment either
 moved. The icon-name grammar is identical on purpose - the two rules are
@@ -67,7 +67,7 @@ class Settings:
 
 def parse_color(icon: str, prefix: str, colors: list) -> str:
     """The color token in an existing icon name, or "" when it has none.
-    Same grammar as folder-icon-inherit-v1: <prefix>-<color>-<variant>."""
+    Same grammar as xdg-inherit-folder-icon-color-v1: <prefix>-<color>-<variant>."""
     if not icon or (icon != prefix and not icon.startswith(prefix + "-")):
         return ""
     remainder = icon[len(prefix):].lstrip("-")

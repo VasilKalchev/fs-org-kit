@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-folder-icon-inherit-v1-fix.py - writes the parent's color into each child
+xdg-inherit-folder-icon-color-v1-fix.py - writes the parent's color into each child
 folder's .directory, keeping the child's own icon variant. Self-contained
 per the protocol: it evaluates and writes in one pass rather than
 re-running the checker first.
 
 Protocol (protocol_version 1.0, single scope):
-    python folder-icon-inherit-v1-fix.py --path <dir> --params '<json>' --fix
+    python xdg-inherit-folder-icon-color-v1-fix.py --path <dir> --params '<json>' --fix
 
 stdout: exactly one JSON line - {"status": "ok"}
                                | {"status": "fixed", "message": "..."}
@@ -52,7 +52,7 @@ def main() -> int:
     if not args.fix:
         # The runner always passes --fix to a fixer. Without it this would
         # rewrite .directory files while looking like a dry run.
-        print("error: folder-icon-inherit-v1-fix.py must be invoked with --fix", file=sys.stderr)
+        print("error: xdg-inherit-folder-icon-color-v1-fix.py must be invoked with --fix", file=sys.stderr)
         return 1
 
     try:

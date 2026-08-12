@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-folder-icon-auto-v1-fix.py - writes the icon each folder's name or
+xdg-auto-folder-icon-v1-fix.py - writes the icon each folder's name or
 contents call for. Self-contained per the protocol: it evaluates and
 writes in one pass rather than re-running the checker first.
 
 Protocol (protocol_version 1.0, single scope):
-    python folder-icon-auto-v1-fix.py --path <dir> --params '<json>' --fix
+    python xdg-auto-folder-icon-v1-fix.py --path <dir> --params '<json>' --fix
 
 stdout: exactly one JSON line - {"status": "ok"}
                                | {"status": "fixed", "message": "..."}
@@ -44,7 +44,7 @@ def main() -> int:
     if not args.fix:
         # The runner always passes --fix to a fixer. Without it this would
         # rewrite .directory files while looking like a dry run.
-        print("error: folder-icon-auto-v1-fix.py must be invoked with --fix", file=sys.stderr)
+        print("error: xdg-auto-folder-icon-v1-fix.py must be invoked with --fix", file=sys.stderr)
         return 1
 
     try:

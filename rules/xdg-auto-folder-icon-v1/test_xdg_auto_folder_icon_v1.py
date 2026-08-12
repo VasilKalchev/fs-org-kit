@@ -1,5 +1,5 @@
 """
-Tests for folder-icon-auto-v1.
+Tests for xdg-auto-folder-icon-v1.
 
 Scripts are invoked via subprocess exactly as the runner does - never by
 importing their internals. That subprocess call IS the documented
@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 RULE_DIR = Path(__file__).parent
-CHECK_SCRIPT = RULE_DIR / "folder-icon-auto-v1-check.py"
-FIX_SCRIPT = RULE_DIR / "folder-icon-auto-v1-fix.py"
+CHECK_SCRIPT = RULE_DIR / "xdg-auto-folder-icon-v1-check.py"
+FIX_SCRIPT = RULE_DIR / "xdg-auto-folder-icon-v1-fix.py"
 
 GIT_RULE = {"name": r"^\.?git$", "icon": "folder-{color}-git"}
 

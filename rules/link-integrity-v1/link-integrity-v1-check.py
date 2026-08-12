@@ -24,8 +24,7 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-KINDS = ("symlink", "desktop", "shortcut", "webloc")
-FOREIGN_MODES = ("skip", "report")
+KINDS = ("symlink", "desktop", "shortcut")
 MAX_REPORTED = 8
 MAX_CHAIN = 40
 
@@ -176,21 +175,6 @@ def check_url_file(path: Path) -> tuple[str, str]:
     return BROKEN, "no URL= line"
 
 
-def check_webloc(path: Path) -> tuple[str, str]:
-    """.webloc - a plist with one URL. plistlib handles both the XML and
-    the binary form, which is what makes this worth doing properly."""
-    import plistlib
-    try:
-        with path.open("rb") as f:
-            data = plistlib.load(f)
-    except Exception:
-        return BROKEN, "not a readable plist"
-    url = data.get("URL") if isinstance(data, dict) else None
-    if not isinstance(url, str) or not url:
-        return BROKEN, "plist has no URL"
-    return check_url(url, path.parent)
-
-
 # --- Windows .lnk ----------------------------------------------------
 
 def read_lnk_target(path: Path) -> tuple[str, str]:
@@ -264,10 +248,7 @@ def check_lnk(path: Path) -> tuple[str, str]:
 
 def classify(item: Path, kinds: set) -> str:
     """Which checker applies, or "" for something that isn't a link.
-    Symlink wins over suffix: a symlink named x.desktop is a symlink.
-    Finder aliases ride along with "webloc" rather than getting a kind of
-    their own - both are macOS-only, and an alias is only ever counted,
-    never resolved, so a separate switch would control nothing."""
+    Symlink wins over suffix: a symlink named x.desktop is a symlink."""
     if item.is_symlink():
         return "symlink" if "symlink" in kinds else ""
     suffix = item.suffix.lower()
@@ -275,10 +256,6 @@ def classify(item: Path, kinds: set) -> str:
         return "desktop"
     if suffix in (".lnk", ".url") and "shortcut" in kinds:
         return "shortcut"
-    if suffix == ".webloc" and "webloc" in kinds:
-        return "webloc"
-    if suffix == ".alias" and "webloc" in kinds:
-        return "alias"
     return ""
 
 
@@ -287,12 +264,7 @@ def check_one(item: Path, kind: str, follow_chains: bool) -> tuple[str, str]:
         return check_symlink(item, follow_chains)
     if kind == "desktop":
         return check_desktop(item)
-    if kind == "shortcut":
-        return check_lnk(item) if item.suffix.lower() == ".lnk" else check_url_file(item)
-    if kind == "webloc":
-        return check_webloc(item)
-    # macOS Finder alias - see the manifest; counted, never guessed at.
-    return UNVERIFIABLE, "macOS Finder alias (opaque bookmark blob)"
+    return check_lnk(item) if item.suffix.lower() == ".lnk" else check_url_file(item)
 
 
 def walk(root: Path, base: Path, recursive: bool, exclude: list, kinds: set,
@@ -339,7 +311,7 @@ def main() -> int:
     kinds = params.get("kinds", list(KINDS))
     recursive = bool(params.get("recursive", True))
     exclude = params.get("exclude", [])
-    foreign_mode = params.get("foreign_links", "skip")
+    report_foreign = bool(params.get("report_foreign", False))
     follow_chains = bool(params.get("follow_chains", True))
 
     if not isinstance(kinds, list) or not kinds:
@@ -352,9 +324,6 @@ def main() -> int:
     if not isinstance(exclude, list):
         print("error: exclude must be a list of glob strings", file=sys.stderr)
         return 1
-    if foreign_mode not in FOREIGN_MODES:
-        print(f"error: foreign_links must be one of {list(FOREIGN_MODES)}, got {foreign_mode!r}", file=sys.stderr)
-        return 1
 
     results: list[tuple[str, str, str]] = []
     walk(root, root, recursive, exclude, set(kinds), follow_chains, results)
@@ -364,7 +333,7 @@ def main() -> int:
     unverifiable = sum(1 for verdict, _, _ in results if verdict == UNVERIFIABLE)
 
     reported = list(broken)
-    if foreign_mode == "report":
+    if report_foreign:
         reported += [(rel, "target belongs to another platform") for rel in foreign]
 
     if not reported:
@@ -376,8 +345,8 @@ def main() -> int:
         shown += f", ... ({len(reported) - MAX_REPORTED} more)"
     message = f"{len(reported)} broken link(s) of {len(results)} checked: {shown}"
     if unverifiable:
-        message += f"; {unverifiable} link(s) could not be verified (remote URL or opaque alias)"
-    if foreign and foreign_mode == "skip":
+        message += f"; {unverifiable} link(s) could not be verified (remote URL)"
+    if foreign and not report_foreign:
         message += f"; {len(foreign)} link(s) target another platform and were skipped"
     print(json.dumps({"status": "violation", "message": message}))
     return 0

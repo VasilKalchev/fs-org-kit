@@ -1,5 +1,5 @@
 """
-.directory reading and writing, shared by folder-icon-inherit-v1's
+.directory reading and writing, shared by xdg-inherit-folder-icon-color-v1's
 checker and fixer.
 
 The two scripts must agree exactly on how an icon name decomposes and on
@@ -10,15 +10,15 @@ import resolves whether they run standalone or through the runner.
 
 THE FILE
 
-KDE stores a folder's appearance in a `.directory` file inside it, in
-freedesktop desktop-entry format:
+A folder's custom icon lives in a `.directory` file inside it, in
+freedesktop desktop-entry format - a freedesktop.org standard:
 
     [Desktop Entry]
     Icon=folder-yellow-public
 
-The format is shared with .desktop entries, but the folder-icon behavior
-is Dolphin's - GNOME keeps custom folder icons in gvfs metadata instead,
-which is not a file and can't be edited this way.
+It doesn't work on Windows or macOS. The file may not exist at all, and
+when it does it often carries other keys and other groups unrelated to
+the icon - only `Icon=` under `[Desktop Entry]` is ever touched.
 
 THE NAME
 

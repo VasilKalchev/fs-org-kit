@@ -11,6 +11,40 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `transfer-v1` — cross-scope move/copy/sync
+
+Twentieth bundled rule. Moves, copies, or syncs non-excluded entries
+from one declared cross-path to another - `operation` (move/copy/sync)
+and `direction` (which declared path is the source), both required with
+no default. A dated destination (`~/inbox/%Y-%m-%d-dump/`) is expressed
+in the target's own path string, expanded with strftime at run time,
+rather than as a separate param.
+
+This picks back up the question `collect-v1` (see below) was shelved
+over - whether a fixer's destination has to be an opaque param - and
+answers it: no, not when the destination is a second declared
+cross-path instead of a free-standing string. That's also why this rule
+still needs `[sandbox] unrestricted_writes`: the runner grants a fixer
+write access to a target exactly as declared, before this rule expands
+`%Y-%m-%d`/`{name}` in it, so the expanded destination's text doesn't
+match what was granted whenever either placeholder is used.
+
+### `link-integrity-v1` drops `.webloc`/Finder alias support — **behavior change**
+
+Scope narrowed to filesystem links: `symlink`, `desktop`, `shortcut`.
+`.webloc` and macOS Finder aliases are gone rather than left unverified,
+since neither names a local file this rule can actually check.
+`foreign_links` ("skip"/"report") is now `report_foreign` (bool, default
+`false`) - same behavior, plainer shape for a switch with only two
+states. Version 1.1.
+
+### `folder-icon-inherit-v1` and `folder-icon-auto-v1` renamed to `xdg-inherit-folder-icon-color-v1` and `xdg-auto-folder-icon-v1`
+
+Both manifests overstated platform support (KDE/Dolphin specifics,
+claims about how GNOME/macOS/Windows store folder icons); corrected to
+state only what's verified: `.directory` is a freedesktop.org standard,
+unsupported on Windows and macOS. No behavior change.
+
 ### A param `{ref}` now substitutes the whole value — **behavior change**
 
 **If you wrote a rule that takes a `{ref = "..."}` pointing at a table,
@@ -312,7 +346,7 @@ data, and it never overwrites under any conflict setting).
 lists rather than tables with a severity each, since severity is a
 property of the rule, not the attachment). `changed-since-v1` (cached
 snapshot diff, optionally drawn as a tree with unchanged branches
-collapsed). `folder-icon-inherit-v1` and `folder-icon-auto-v1` (KDE
+collapsed). `xdg-inherit-folder-icon-color-v1` and `xdg-auto-folder-icon-v1` (freedesktop
 `.directory` icons: one propagates a parent's color while keeping each
 child's variant, the other assigns variants from name or content
 conditions while preserving color, so the two compose in either order).

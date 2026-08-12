@@ -1,5 +1,5 @@
 """
-Tests for folder-icon-inherit-v1.
+Tests for xdg-inherit-folder-icon-color-v1.
 
 Scripts are invoked via subprocess exactly as the runner does - never by
 importing their internals. That subprocess call IS the documented
@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 RULE_DIR = Path(__file__).parent
-CHECK_SCRIPT = RULE_DIR / "folder-icon-inherit-v1-check.py"
-FIX_SCRIPT = RULE_DIR / "folder-icon-inherit-v1-fix.py"
+CHECK_SCRIPT = RULE_DIR / "xdg-inherit-folder-icon-color-v1-check.py"
+FIX_SCRIPT = RULE_DIR / "xdg-inherit-folder-icon-color-v1-fix.py"
 
 
 def run_check(params: dict, path, fix: bool = False) -> subprocess.CompletedProcess:

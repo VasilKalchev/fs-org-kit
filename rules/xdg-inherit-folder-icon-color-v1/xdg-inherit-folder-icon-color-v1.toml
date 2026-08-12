@@ -1,5 +1,5 @@
 version = "1.0"
-purpose = "Checks that child folders' icons share their parent's color while keeping their own icon variant, via KDE .directory files."
+purpose = "Checks that child folders' icons share their parent's color while keeping their own icon variant, via freedesktop .directory files."
 severity = "info"
 scope = "single"
 protocol_version = "1.0"
@@ -36,14 +36,15 @@ protocol_version = "1.0"
 #
 # PLATFORM
 #
-# This is KDE/Dolphin. The .directory file itself is freedesktop
-# desktop-entry format, but reading it for a folder's icon is Dolphin's
-# behavior - GNOME/Nautilus stores custom folder icons as gvfs metadata
-# (metadata::custom-icon), which is not a file and would need `gio` to
-# be shelled out to. macOS stores an icns image in the folder's resource
-# fork, and Windows points desktop.ini at a resource index inside a DLL;
-# in both, the icon is an image or an index, with no color/variant to
-# decompose, so this rule's whole model has nothing to attach to.
+# `.directory` (freedesktop desktop-entry format, `Icon=` under
+# `[Desktop Entry]`) is the freedesktop.org standard for a folder's
+# custom icon. It doesn't work on Windows or macOS - neither reads it.
+#
+# A folder's `.directory` may not exist at all (treated as having no
+# icon), and when it does exist it commonly carries other keys and other
+# groups (sort order, view mode, a custom display name) that have
+# nothing to do with the icon - both scripts only ever touch `Icon=`
+# under `[Desktop Entry]` and leave everything else in the file intact.
 #
 # The theme is never consulted: the rule composes and compares NAMES,
 # and doesn't know or care whether `folder-yellow-public` resolves to

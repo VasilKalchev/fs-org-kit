@@ -6,15 +6,15 @@ protocol_version = "1.0"
 
 # THE RULES ARE A LIST, FIRST MATCH WINS
 #
-#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   [[paths."prj/".rules.xdg-auto-folder-icon-v1.params.match]]
 #   name = "^\\.?git$"
 #   icon = "folder-{color}-git"
 #
-#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   [[paths."prj/".rules.xdg-auto-folder-icon-v1.params.match]]
 #   contains = ["package.json"]
 #   icon = "folder-{color}-script"
 #
-#   [[paths."prj/".rules.folder-icon-auto-v1.params.match]]
+#   [[paths."prj/".rules.xdg-auto-folder-icon-v1.params.match]]
 #   contains_any = ["*.jpg", "*.png", "*.raw"]
 #   ratio = 0.6
 #   icon = "folder-{color}-images"
@@ -46,8 +46,8 @@ protocol_version = "1.0"
 #
 # `{color}` in an icon expands to the color the folder ALREADY has, so
 # this rule assigns meaning without disturbing whatever colour scheme is
-# in place - including one folder-icon-inherit-v1 established. Only when
-# a folder has no color does `default_color` fill in.
+# in place - including one xdg-inherit-folder-icon-color-v1 established.
+# Only when a folder has no color does `default_color` fill in.
 #
 # The two rules are meant to be attached together and compose in either
 # order: this one sets `folder-<existing>-git`, the other rewrites the
@@ -58,8 +58,8 @@ protocol_version = "1.0"
 #
 # PLATFORM
 #
-# KDE/Dolphin .directory files - see folder-icon-inherit-v1's manifest
-# for why the other desktops can't work this way.
+# freedesktop.org `.directory` files - see xdg-inherit-folder-icon-color-v1's
+# manifest for the format and why it doesn't work on Windows or macOS.
 
 [params]
 names = ["match", "default_color", "colors", "icon_prefix", "recursive", "exclude"]

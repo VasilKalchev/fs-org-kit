@@ -1,0 +1,95 @@
+version = "1.0"
+purpose = "Moves, copies, or syncs non-excluded entries from one cataloged path to another, e.g. sweeping a desktop into a dated inbox folder."
+severity = "info"
+scope = "cross"
+protocol_version = "1.0"
+
+# THE TWO PATHS, AND WHICH WAY THINGS FLOW
+#
+#   [[paths.cross]]
+#   paths = ["~/Desktop/", "~/inbox/%Y-%m-%d-desktop-dump/"]
+#
+#   [[paths.cross.rules.transfer-v1]]
+#   reason = "the desktop is a staging area, not storage"
+#
+#   [paths.cross.rules.transfer-v1.params]
+#   operation = "move"
+#   direction = "forward"
+#   exclude = ["*.desktop"]      # launchers live here on purpose
+#
+# `direction` says which declared path is the source: "forward" is
+# paths[0] -> paths[1], "reverse" is paths[1] -> paths[0]. Neither
+# defaults - the order two paths were declared in isn't self-explanatory
+# to a reader, so every attachment states which way things move.
+#
+# `operation` has no default either, for the same reason `mode` doesn't
+# in basename-sync-v1: the three are equally likely, so nothing should
+# fall back silently.
+#
+#   "move"  entries are relocated - gone from the source once transferred
+#   "copy"  entries are duplicated - source untouched
+#   "sync"  like copy, but an entry already present at the target (same
+#           name) is left alone without being reported - re-running a
+#           sync after the first one is expected to find nothing to do
+#
+# THE TARGET MAY BE DATED - IN ITS OWN PATH, NOT A PARAM
+#
+# The target path is expanded with strftime, so `%Y-%m-%d` (or any other
+# grouping - `%Y/%m`, `%Y-W%V`) names a different folder each day. That
+# comes from the path string itself, declared like any other catalog
+# path, rather than a separate "dated" flag: say it once, where it's
+# declared. `{name}` expands to the source's own basename, useful when
+# one attachment's params are reused across several `paths.cross`
+# blocks. Both are expanded after the runner has already resolved the
+# declared path (so `~` and a relative path are handled the normal way,
+# by `fs_org_kit.path_keys`, before either placeholder ever runs) - see
+# `[sandbox]` below for the one consequence of that ordering.
+#
+# A target that happens to resolve inside the source it's fed from
+# (a dated archive folder living under the tree being swept, say) isn't
+# rejected - it's skipped during the scan instead, so it can't collect
+# itself. Only the exact same path for both is refused outright.
+#
+# WHAT MOVES
+#
+# By default: every entry directly in the source. `exclude` (globs)
+# holds entries back. `min_age` (3d, 2w, 1m) leaves recent arrivals
+# alone, which is what makes this safe to run on a folder still being
+# added to. `recursive = true` transfers entries out of subfolders
+# individually, flattening them into the target - off by default, since
+# moving a folder whole is nearly always what's meant.
+#
+# CONFLICTS
+#
+# `on_conflict` governs "move" and "copy" only: "rename" (default -
+# appends -2, -3, ...), "skip" (leave it, report it), or "fail" (stop,
+# report unfixable). Nothing is ever overwritten under any setting -
+# this rule transfers things the standard said were fine to relocate,
+# which is exactly when silently destroying an existing copy would go
+# unnoticed. "sync" ignores `on_conflict`: an entry the target already
+# has (by name) is treated as already synced, not a conflict.
+#
+# [sandbox] unrestricted_writes
+#
+# The runner grants a fixer write access to the invocation's declared
+# targets exactly as written in the standard - before `%Y-%m-%d` or
+# `{name}` has been expanded. Once this script expands them, the real
+# destination's text no longer matches what was granted, the same gap
+# `collect-v1` used to declare this capability for. A target with
+# neither placeholder needs nothing beyond what's already granted; this
+# rule can't tell that case apart from a templated one at manifest time,
+# so it declares the capability unconditionally.
+
+[sandbox]
+unrestricted_writes = true
+
+[params]
+names = ["operation", "direction", "exclude", "recursive", "on_conflict", "min_age", "create_target"]
+
+[params.defaults]
+exclude = []
+recursive = false
+on_conflict = "rename"
+min_age = ""
+create_target = true
+# `operation` and `direction` have NO default - see above.
