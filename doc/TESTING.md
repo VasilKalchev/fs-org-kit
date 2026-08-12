@@ -63,7 +63,7 @@ that's a convenience for *this* repo, not something a rule depends on.
 
 ## Test coverage
 
-### Docs-currency tests (11 tests, `tests/test_docs_current.py`)
+### Docs-currency tests (13 tests, `tests/test_docs_current.py`)
 
 Guards every count and inventory in the sections below, so they can't
 quietly go stale.
@@ -72,6 +72,7 @@ quietly go stale.
 - **Rule inventory**: the bundled tier discovers with no errors and no surprises; every manifest's `version` major matches its directory suffix; `README.md` states the real rule count, in words, in exactly one form
 - **Counts**: every `(N tests, path)` claim in this file matches what pytest collects, the bundled total matches the sum, and no collected test file is left undocumented
 - **References**: every relative Markdown link resolves, and every `doc/<name>.md` mentioned in prose or in a docstring exists - the case a link check misses
+- **Rule templates**: there's a `rules/_template-<scope>-v1/` for every value in `discovery.SCOPE`, and every field in `discovery.MANIFEST_KEYS` appears in every template manifest (commented out counts). Nothing in the package parses those templates - deliberately, since a file the tool reads to learn its own schema is what `rule.template.toml` was - so this is the only thing holding them level with the code
 
 ### Cache tests (22 tests, `tests/test_cache.py`)
 
