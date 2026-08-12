@@ -199,46 +199,6 @@ generated = "produced automatically by a tool, script, or model - not hand-autho
 
 
 # ===================================================================
-# Tags
-# ===================================================================
-[tags]
-
-
-
-
-# ===================================================================
-# Abbreviations
-# ===================================================================
-[abbreviations]
-area = "Area of responsibility"
-arch = "Archive"
-app = "Application"
-bkup = "Backup"
-career = "Career information"
-embd = "Embedded"
-fin = "Finance"
-fw = "Firmware"
-inv = "Inventory"
-item = "Individual owned item"
-knwl = "Knowledge"
-lib = "Library"
-lnk = "Link"
-lrn = "Learn"
-med = "Medical"
-ndx = "Index"
-prj = "Project"
-res = "Resource"
-scr = "Script"
-std = "Standard"
-strg = "Storage"
-sys = "System"
-task = "Task"
-tmpl = "Template"
-tool = "Tool"
-vm = "Virtual machine"
-ws = "Workspace"
-
-# ===================================================================
 # Folders
 # ===================================================================
 [folders]
@@ -442,3 +402,44 @@ reason = "Why is this rule applied to this set of paths?"
 
 [paths.cross.rules.rule-a-v1.params]
 key-a-1 = "custom value"
+
+
+# ===================================================================
+# Tags
+# ===================================================================
+[tags]
+
+
+
+
+# ===================================================================
+# Abbreviations
+# ===================================================================
+[abbreviations]
+area = "Area of responsibility"
+arch = "Archive"
+app = "Application"
+bkup = "Backup"
+career = "Career information"
+embd = "Embedded"
+fin = "Finance"
+fw = "Firmware"
+inv = "Inventory"
+item = "Individual owned item"
+knwl = "Knowledge"
+lib = "Library"
+lnk = "Link"
+lrn = "Learn"
+med = "Medical"
+ndx = "Index"
+prj = "Project"
+res = "Resource"
+scr = "Script"
+std = "Standard"
+strg = "Storage"
+sys = "System"
+task = "Task"
+tmpl = "Template"
+tool = "Tool"
+vm = "Virtual machine"
+ws = "Workspace"
