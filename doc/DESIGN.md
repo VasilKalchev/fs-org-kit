@@ -131,7 +131,8 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 ### File naming
 
-- **Templates use kebab-case with `.template.` suffix** - `fs-org-std.template.toml`, `rule.template.toml` - so they visibly match the real file names and sort together
+- **The standard's template uses kebab-case with a `.template.` suffix** - `fs-org-std.template.toml` - so it visibly matches the real file name and sorts beside it
+- **A template rule is a real rule directory, prefixed `_`** - `rules/_template-single-v1/` - see [The rule manifest schema lives in code](#the-rule-manifest-schema-lives-in-code)
 - **Python modules use underscores** - `fs_org_kit`, `validator.py`, `discovery.py` - because they need to be importable
 - **Rule directories and manifests use the rule ID** - `file-extensions-v1/file-extensions-v1.toml`, `file-extensions-v1-check.py`, `file-extensions-v1-fix.py` - self-identifying outside their directory context
 
@@ -199,6 +200,14 @@ When a rule is attached (`[[paths."x/".rules.file-extensions-v1]]`), the attachm
 
 ## Protocol and Invocation
 
+### The rule manifest schema lives in code
+
+`rule.template.toml` used to be two things at once: the manifest grammar, and the file discovery read `enums.severity`/`enums.scope` out of at every invocation. The intent was transparency - the valid values visible in a file rather than buried in application logic. What it produced was a configuration surface with nothing behind it: a fifth `severity` added to that file would be accepted by every rule and implemented by none. Its `[attributes]` table compounded the confusion by mimicking `paths.attributes` in a standard - where the names genuinely are the user's to choose - to declare a field set that is not negotiable, and that nothing enforced anyway.
+
+The schema now lives in `fs_org_kit/discovery.py` (`SEVERITY`, `SCOPE`, `MANIFEST_KEYS`), beside the code that acts on it, and the field list became enforced rather than decorative: an unknown manifest field is a warning, not a silently ignored typo.
+
+What that file was genuinely good at - handing an author a correct starting point - moved to `rules/_template-single-v1/`, `_template-cross-v1/` and `_template-both-v1/`: real rule directories, one per scope, each with a manifest, a checker, a fixer and tests that run in this repo's suite, so a template that drifts from the protocol fails here rather than in whatever someone copied it into. Discovery skips any rule directory whose name begins with `_`, in every tier, silently - that prefix is the entire disabling mechanism, and it doubles as somewhere a user can park a half-written rule.
+
 ### Rule-to-runner protocol is versioned independently
 
 Rule manifests include `protocol_version`, separate from the rule's own `version`. This allows:
@@ -228,7 +237,7 @@ Targets are expanded once, up front, from a single snapshot (one discovery/resol
 
 Handing the vanished path to the script anyway makes it exit nonzero, which the protocol reads as *the script itself is broken*. That is the one signal meaning "this rule is misconfigured, go look at it", and spending it on a fixer doing its job trains people to ignore it - and holds the run at exit 1.
 
-So the runner checks a target still exists immediately before invoking, and reports `skipped` instead. It is deliberately **not** a fifth script status: no rule can return it, and `rule.template.toml`'s contract is unchanged. It doesn't affect the exit code.
+So the runner checks a target still exists immediately before invoking, and reports `skipped` instead. It is deliberately **not** a fifth script status: no rule can return it, and the checker/fixer contract is unchanged. It doesn't affect the exit code.
 
 Absence alone isn't enough to justify skipping, though - "a fixer moved this" and "this was never here" look identical at that moment, and the second is a misconfigured attachment that must still be reported. So `collect_invocations` stamps each invocation with the targets that really existed when the plan was built, and only those can go on to be skipped. This matters for `paths.cross`, which resolves its references directly rather than through the exists-on-disk filter every path-derived target passes: it's the one attachment shape that can name somewhere that never existed.
 

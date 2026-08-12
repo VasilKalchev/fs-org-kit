@@ -232,7 +232,7 @@ def main() -> int:
         return 1
 
     # scope = "both": the script itself is responsible for rejecting a
-    # nonsensical combination, per rule.template.toml.
+    # nonsensical combination, per doc/RULES.md.
     if args.path and args.paths:
         print("error: pass either --path or --paths, not both", file=sys.stderr)
         return 1

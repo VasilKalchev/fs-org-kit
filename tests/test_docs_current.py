@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from fs_org_kit.discovery import IssueLevel, discover_rules
+from fs_org_kit.discovery import MANIFEST_KEYS, SCOPE, IssueLevel, discover_rules
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RULES_DIR = REPO_ROOT / "rules"
@@ -133,6 +133,32 @@ class TestRuleInventory:
                       for w in NUMBER_WORDS.values()
                       if w != correct and f"{w} bundled rules" in text]
         assert not stale
+
+
+class TestRuleTemplates:
+    """`rules/_template-*-v1/` are documentation the tooling can't read -
+    nothing in the package parses them, which is the point. So the only
+    thing keeping them level with the schema in `discovery.py` is here."""
+
+    def templates(self) -> list[Path]:
+        found = sorted(RULES_DIR.glob("_template-*-v1"))
+        assert found, "expected template rules under rules/"
+        return found
+
+    def test_a_template_exists_for_every_scope(self):
+        assert {d.name for d in self.templates()} == {f"_template-{scope}-v1" for scope in SCOPE}
+
+    def test_every_manifest_field_appears_in_every_template(self):
+        """A field added to MANIFEST_KEYS and mentioned in no template is
+        one nobody starting from a template learns exists. Commented out
+        counts - most of them should be, being optional."""
+        missing = {}
+        for directory in self.templates():
+            manifest = (directory / f"{directory.name}.toml").read_text()
+            absent = sorted(field for field in MANIFEST_KEYS if field not in manifest)
+            if absent:
+                missing[directory.name] = absent
+        assert not missing
 
 
 class TestTestingMdCounts:

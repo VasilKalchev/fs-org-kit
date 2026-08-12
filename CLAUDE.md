@@ -74,9 +74,12 @@ it also fails when a new bundled rule arrives without tests.
 
 ### Adding a rule
 
-Use the `new-rule` skill (`.claude/skills/new-rule/`) — it scaffolds the
-directory with the naming and protocol invariants already correct, and
-ends at the doc updates `test_docs_current.py` checks.
+Use the `new-rule` skill (`.claude/skills/new-rule/`) — it copies
+`rules/_template-<scope>-v1/`, a complete tested rule, with the naming
+and protocol invariants already correct, and ends at the doc updates
+`test_docs_current.py` checks. A rule directory whose name starts with
+`_` is skipped by discovery in every tier, silently — that's what keeps
+the templates out of the catalog.
 
 ## Architecture
 
@@ -102,7 +105,10 @@ ends at the doc updates `test_docs_current.py` checks.
   now, across all three tiers, with the precedence rules above. Imported
   directly by the validator; runner and doc generator reuse
   `validator.rule_catalog` afterward rather than re-discovering — one
-  discovery pass per invocation.
+  discovery pass per invocation. It also owns the manifest schema
+  (`SEVERITY`, `SCOPE`, `MANIFEST_KEYS`): that's the tool's half of the
+  rule contract, not something a file on disk configures — see
+  doc/DESIGN.md, "The rule manifest schema lives in code".
 - `cache.py` — owns *where* rules keep state between runs, and the only
   thing that manages it (`fs-org-cache --list` / `--clear [rule-id]`).
   A rule declares `uses_cache = true` in its manifest; the runner then

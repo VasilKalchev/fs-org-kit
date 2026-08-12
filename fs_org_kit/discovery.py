@@ -10,9 +10,14 @@ right, not three places that can quietly drift out of sync.
 
 Never raises for a single malformed rule - a bad manifest, a missing
 checker script, a name collision, all become DiscoveryIssues in the
-returned list rather than exceptions. The only things that raise are
-problems with the *tool itself* (an unreadable rule.template.toml),
-since discovery genuinely cannot proceed without knowing the schema.
+returned list rather than exceptions.
+
+This module also owns the manifest schema (see MANIFEST_KEYS, SEVERITY,
+SCOPE below): which fields a rule manifest may carry, what they default
+to, and the two vocabularies discovery checks. That's the tool's half of
+the runner<->rule contract, not something a standard configures - a
+`severity` nobody implemented is a value nothing downstream could act
+on. See doc/DESIGN.md, "The rule manifest schema lives in code".
 """
 
 from __future__ import annotations
@@ -83,29 +88,42 @@ class RuleEntry:
 
 RULE_DIR_PATTERN = re.compile(r"^(?P<name>.+)-v(?P<major>\d+)$")
 
+# A leading underscore disables a rule directory in every tier: it is not
+# loaded, not checked, and not reported. That's what makes the bundled
+# `_template-*-v1/` rules copyable starting points rather than rules that
+# run against everyone's filesystem, and it gives a user somewhere to
+# park a half-written rule without deleting it.
+DISABLED_PREFIX = "_"
 
-def _load_rule_schema(rule_template_path: Path) -> tuple[frozenset[str], frozenset[str]]:
-    """Read enums.severity / enums.scope from rule.template.toml, so the
-    set of valid values lives in one place instead of being duplicated
-    here and risking drift if the template ever changes."""
-    try:
-        with rule_template_path.open("rb") as f:
-            data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError) as e:
-        raise RuntimeError(f"cannot read rule schema from {rule_template_path}: {e}") from e
+# Valid `severity` values, and what each one means. Both vocabularies are
+# closed and live here rather than in a file a user could edit: a value
+# the tool doesn't implement is a value nothing can act on.
+SEVERITY = {
+    "none": "deliberately silenced - never reported, regardless of any default",
+    "info": "worth noting, no action expected",
+    "warn": "should be addressed, but nothing is broken yet",
+    "error": "the standard is actively violated and needs correction",
+}
 
-    severity_values = frozenset(data.get("enums", {}).get("severity", {}).keys())
-    scope_values = frozenset(data.get("enums", {}).get("scope", {}).keys())
-    if not severity_values or not scope_values:
-        raise RuntimeError(f"{rule_template_path} is missing enums.severity or enums.scope")
-    return severity_values, scope_values
+SCOPE = {
+    "single": "invoked once per path - takes --path, exactly one location",
+    "cross": "invoked once per cross-path set - takes --paths, 2 or more locations",
+    "both": "attachable either way - the script must accept both flags and validate them itself",
+}
+
+# Every top-level key a manifest may carry. Anything else is a typo doing
+# nothing, so discovery says so instead of ignoring it silently. Defaults
+# are applied where each field is read below; a field absent from this
+# set has no reader and therefore no meaning.
+MANIFEST_KEYS = frozenset({
+    "version", "purpose", "severity", "scope", "protocol_version",
+    "overrides_bundled", "uses_cache", "sandbox", "exclude", "params",
+})
 
 
 def _scan_tier(
     tier_dir: Path,
     tier: Tier,
-    severity_values: frozenset[str],
-    scope_values: frozenset[str],
 ) -> tuple[dict[str, RuleEntry], list[DiscoveryIssue]]:
     """Scan one tier directory for rule subdirectories."""
     entries: dict[str, RuleEntry] = {}
@@ -115,8 +133,8 @@ def _scan_tier(
         return entries, issues  # tier doesn't exist yet - not an error
 
     for child in sorted(tier_dir.iterdir()):
-        if child.name.startswith(".") or child.name == "__pycache__":
-            continue
+        if child.name.startswith((".", DISABLED_PREFIX)):
+            continue  # disabled, or an editor/interpreter artifact (__pycache__)
 
         if not child.is_dir():
             issues.append(DiscoveryIssue(
@@ -154,6 +172,13 @@ def _scan_tier(
             ))
             continue
 
+        for key in sorted(set(manifest) - MANIFEST_KEYS):
+            issues.append(DiscoveryIssue(
+                IssueLevel.WARNING, tier, rule_id,
+                f"unknown manifest field '{key}', ignored - nothing reads it "
+                f"(valid: {', '.join(sorted(MANIFEST_KEYS))})",
+            ))
+
         check_script = child / f"{rule_id}-check.py"
         if not check_script.is_file():
             issues.append(DiscoveryIssue(
@@ -182,18 +207,18 @@ def _scan_tier(
             continue
 
         severity = manifest.get("severity", "info")
-        if severity not in severity_values:
+        if severity not in SEVERITY:
             issues.append(DiscoveryIssue(
                 IssueLevel.ERROR, tier, rule_id,
-                f"severity {severity!r} not one of {sorted(severity_values)}",
+                f"severity {severity!r} not one of {sorted(SEVERITY)}",
             ))
             continue
 
         scope = manifest.get("scope", "single")
-        if scope not in scope_values:
+        if scope not in SCOPE:
             issues.append(DiscoveryIssue(
                 IssueLevel.ERROR, tier, rule_id,
-                f"scope {scope!r} not one of {sorted(scope_values)}",
+                f"scope {scope!r} not one of {sorted(SCOPE)}",
             ))
             continue
 
@@ -250,7 +275,6 @@ def discover_rules(
     standard_dir: Path,
     bundled_rules_dir: Optional[Path] = None,
     include_external: bool = False,
-    rule_template_path: Optional[Path] = None,
 ) -> tuple[dict[str, RuleEntry], list[DiscoveryIssue]]:
     """
     Find every rule across the three trust tiers and merge them into one
@@ -266,7 +290,9 @@ def discover_rules(
                         Commands").
     include_external   rules.external/ is not even scanned unless this is
                         True - existing on disk must not mean running.
-    rule_template_path Defaults to the repo's own rule.template.toml.
+
+    A rule directory whose name starts with "_" is skipped in every tier,
+    silently - that's how the bundled templates stay out of the catalog.
 
     Precedence:
       - own overrides bundled ONLY if the own rule's manifest sets
@@ -277,28 +303,21 @@ def discover_rules(
         regardless of any overrides_bundled it claims (that claim is
         itself flagged and ignored).
     """
-    repo_root = Path(__file__).resolve().parent.parent
     if bundled_rules_dir is None:
-        bundled_rules_dir = repo_root / "rules"
-    if rule_template_path is None:
-        rule_template_path = repo_root / "rule.template.toml"
-
-    severity_values, scope_values = _load_rule_schema(rule_template_path)
+        bundled_rules_dir = Path(__file__).resolve().parent.parent / "rules"
 
     all_issues: list[DiscoveryIssue] = []
 
-    bundled_entries, bundled_issues = _scan_tier(
-        bundled_rules_dir, Tier.BUNDLED, severity_values, scope_values)
+    bundled_entries, bundled_issues = _scan_tier(bundled_rules_dir, Tier.BUNDLED)
     all_issues.extend(bundled_issues)
 
-    own_entries, own_issues = _scan_tier(
-        standard_dir / "rules.own", Tier.OWN, severity_values, scope_values)
+    own_entries, own_issues = _scan_tier(standard_dir / "rules.own", Tier.OWN)
     all_issues.extend(own_issues)
 
     external_entries: dict[str, RuleEntry] = {}
     if include_external:
         external_entries, external_issues = _scan_tier(
-            standard_dir / "rules.external", Tier.EXTERNAL, severity_values, scope_values)
+            standard_dir / "rules.external", Tier.EXTERNAL)
         all_issues.extend(external_issues)
 
     catalog: dict[str, RuleEntry] = dict(bundled_entries)

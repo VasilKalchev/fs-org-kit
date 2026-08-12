@@ -11,6 +11,34 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `rule.template.toml` is gone; templates are real rules under `rules/_*`
+
+That file was a template and a live configuration file at once:
+discovery read `enums.severity` and `enums.scope` out of it at every
+invocation, so editing it changed what every rule's manifest meant, while
+its `[attributes]`/`[attributes.defaults]` tables declared a field set
+and a set of defaults that nothing read at all.
+
+- The manifest schema moved into `fs_org_kit/discovery.py` - `SEVERITY`,
+  `SCOPE`, and `MANIFEST_KEYS`, the latter now **enforced**: an unknown
+  manifest field is a warning instead of a silently ignored typo.
+  `discover_rules()` lost its `rule_template_path` parameter.
+- Three template rules replace the file: `rules/_template-single-v1/`,
+  `_template-cross-v1/`, `_template-both-v1/` - each a complete manifest,
+  checker, fixer and test file, one per scope, all passing this repo's
+  suite.
+- **Discovery skips any rule directory whose name starts with `_`**, in
+  every tier, silently and without parsing it. That's what disables the
+  templates, and it also gives a user somewhere to park a half-written
+  rule.
+- `.claude/skills/new-rule/scaffold_rule.py` now copies a template and
+  renames it rather than generating a second skeleton of its own; its
+  `--severity`, `--params` and `--cache` flags are gone (one-line edits
+  in the manifest the copy leaves behind).
+
+Nothing in a standard changes. A rule manifest only changes if it
+carried a field the tool never read, which now says so.
+
 ### An entry declares its own fields - schema 2.0
 
 `purpose` and `allow_missing` used to sit side by side in a flat entry

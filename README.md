@@ -43,11 +43,13 @@ shared, and versioned independently of any one person's standard.
 fs-org-kit/                        (this repo - the tool, not your data)
   pyproject.toml                   # package declaration
   fs-org-std.template.toml         # grammar for a populated fs-org-std.toml
-  rule.template.toml               # grammar for a single rule's manifest
   rules/                           # bundled, project-maintained rules
     file-extensions-v1/
       file-extensions-v1.toml
       file-extensions-v1-check.py
+    _template-single-v1/           # copyable starting points, one per
+    _template-cross-v1/            # scope; the "_" keeps them out of
+    _template-both-v1/             # the catalog
   fs_org_kit/                      # the Python package
     __init__.py
     cache.py                       # where rules keep state between runs

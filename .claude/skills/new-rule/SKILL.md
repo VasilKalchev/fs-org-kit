@@ -17,22 +17,26 @@ are easy to get wrong.
 | **params** | Every value the script reads. Anything that can't have a sensible default must be **left out** of `params.defaults`, which is what forces every attachment site to supply it. |
 | **fixer?** | Only if automating the fix is genuinely safe. Check-only is a permanent, normal design, not a stub. If which item to change is a policy call, either skip the fixer or delegate to a user-supplied `fixer_script` the way `basename-sync-v1` does. |
 
-## 2. Scaffold
+## 2. Copy a template
 
 ```bash
 python .claude/skills/new-rule/scaffold_rule.py <name>-v1 \
     --purpose "One sentence, shown in generated docs." \
-    --scope single --severity warn \
-    --params first,second [--fixer] [--cache] [--dir rules]
+    --scope single [--fixer] [--dir rules]
 ```
 
-Writes the manifest, a runnable checker, and a test file, all named after
-the directory. Generated rules discover cleanly and pass their tests
+Copies `rules/_template-<scope>-v1/` — a complete, tested rule — renaming
+every file after the new directory and dropping the `_` that kept it out
+of the catalog. The result discovers cleanly and passes its tests
 immediately, so anything that breaks afterwards is your change.
+
+Severity, params, `uses_cache` and `[sandbox]` are one-line edits in the
+manifest the copy leaves you with; its comments say what each one does.
+Fixer dropped unless `--fixer` — check-only is a normal, permanent design.
 
 ## 3. Implement the checker
 
-The scaffold already has the protocol right. What matters as you fill it in:
+The template already has the protocol right. What matters as you fill it in:
 
 - **One JSON line on stdout, nothing else.** `{"status": "ok"}` or
   `{"status": "violation", "message": "..."}`. A stray `print` corrupts
@@ -60,9 +64,9 @@ A fixer is **self-contained** — it detects *and* resolves in one pass. The
 runner calls `-fix.py` directly, never check-then-fix. Its four statuses
 are `ok` / `violation` (found, couldn't act) / `fixed` / `unfixable`.
 
-With `--cache`: the runner passes `--cache-dir`. Never resolve a location
-yourself, work correctly when the flag is absent (standalone runs, an
-unusable location) by not caching, and keep everything in there
+With `uses_cache = true`: the runner passes `--cache-dir`. Never resolve a
+location yourself, work correctly when the flag is absent (standalone
+runs, an unusable location) by not caching, and keep everything in there
 regenerable.
 
 ## 4. Tests

@@ -1,0 +1,46 @@
+# _template-both-v1 - a complete, runnable dual-scope rule to copy.
+#
+# scope = "both" means the rule is attachable either way, so its scripts
+# must accept --path AND --paths and reject the ambiguous calls
+# themselves - the runner won't do it for them. Reach for it only when
+# the check genuinely reads the same against one location and against a
+# set; otherwise copy _template-single-v1 or _template-cross-v1, which
+# have one calling convention each and less to get wrong.
+#
+# Copy the directory, rename it and every file inside it to
+# <name>-v<major>, and drop the leading "_" (discovery skips an
+# underscore-prefixed directory in every tier).
+#
+# Full field reference: doc/RULES.md, "The manifest".
+
+version = "1.0"           # "<major>.<minor>"; major MUST match the -v<major> suffix
+purpose = "Template: one sentence saying what this rule checks, one path or several."
+severity = "warn"         # none | info | warn | error
+scope = "both"            # attachable per path or per cross set; the script validates which it got
+protocol_version = "1.0"  # the runner<->script wire format, shared by every rule
+
+# exclude = ["*.tmp"]     # globs this rule never applies to; omitting it
+                          # means "no exclusions", which a default would erase
+
+# uses_cache = true       # to be handed --cache-dir, a directory the core
+                          # owns and can list/clear. Never resolve a location
+                          # yourself, and still work when the flag is absent.
+
+# overrides_bundled = true  # only meaningful in rules.own/, to deliberately
+                            # replace a same-named bundled rule
+
+# [sandbox]               # every invocation is sandboxed: no network, no
+# subprocess = true       # subprocesses, no native calls, and no writes
+                          # outside the cache (a fixer also gets root and its
+                          # own targets). Grant only what you need, from
+                          # network | subprocess | native | unrestricted_writes,
+                          # and say WHY here - a reviewer reads this table
+                          # before trusting the rule.
+
+[params]
+names = ["recursive"]
+
+[params.defaults]
+recursive = true
+# A param with no sensible default belongs OUT of this table: that
+# absence is what forces every attachment site to supply it.

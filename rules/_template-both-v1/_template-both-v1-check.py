@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+_template-both-v1 - checker template, scope = "both".
+
+Runs as a plain subprocess, never imported. Prints exactly one JSON line
+on stdout - a stray print corrupts the verdict. Exit 0 means "I ran, the
+verdict is on stdout"; nonzero means this script is broken (bad params, a
+path that isn't there, an ambiguous call), with the reason on stderr.
+Finding a violation is never nonzero.
+
+The extra obligation of scope = "both" is the argument validation below:
+neither the runner nor argparse can tell whether --path or --paths was
+the intended shape, so the script rejects both-at-once, neither-at-all,
+and a --paths set of one.
+
+Protocol reference: doc/RULES.md, "The checker script".
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="dual-scope rule template")
+    parser.add_argument("--path")
+    parser.add_argument("--paths", action="append", default=[])
+    parser.add_argument("--params", required=True)
+    parser.add_argument("--fix", action="store_true")
+    args = parser.parse_args()
+
+    if args.fix:
+        # The runner never does this - it invokes -fix.py directly when one
+        # exists. Rejecting it anyway turns a runner bug into a loud failure
+        # instead of a silently wrong result.
+        print("error: _template-both-v1: --fix belongs to _template-both-v1-fix.py",
+              file=sys.stderr)
+        return 1
+
+    try:
+        params = json.loads(args.params)
+    except json.JSONDecodeError as e:
+        print(f"error: --params is not valid JSON: {e}", file=sys.stderr)
+        return 1
+
+    if args.path and args.paths:
+        print("error: pass --path or --paths, not both", file=sys.stderr)
+        return 1
+    if not args.path and not args.paths:
+        print("error: one of --path or --paths is required", file=sys.stderr)
+        return 1
+    if args.paths and len(args.paths) < 2:
+        print("error: --paths requires 2 or more locations", file=sys.stderr)
+        return 1
+
+    roots = [Path(args.path)] if args.path else [Path(p) for p in args.paths]
+    for root in roots:
+        if not root.is_dir():
+            print(f"error: not a directory: {root}", file=sys.stderr)
+            return 1
+
+    recursive = params.get("recursive", True)
+
+    violations: list[str] = []
+    for root in roots:
+        entries = root.rglob("*") if recursive else root.iterdir()
+        # --- the actual check goes here ------------------------------
+        # Read only. A checker is given no writable location beyond its
+        # cache and the system temp directory, so a stray write fails the
+        # invocation rather than quietly happening.
+        _ = list(entries)
+
+    # --- anything comparing the roots against each other goes here ----
+    # It only runs with 2+ roots, so guard it on len(roots) > 1 rather
+    # than assuming the cross shape.
+
+    if violations:
+        print(json.dumps({
+            "status": "violation",
+            "message": f"{len(violations)} problem(s): " + ", ".join(sorted(violations)[:5]),
+        }))
+    else:
+        print(json.dumps({"status": "ok"}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

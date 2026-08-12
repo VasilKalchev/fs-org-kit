@@ -1181,8 +1181,8 @@ recursive = true
 # Closed value sets, one per field that has one, named for the KIND of
 # field rather than the namespace - paths and reserved folders share them.
 
-# A rule's own `severity` and `scope` enums are NOT here - they moved
-# into rule.template.toml, next to the manifests they validate.
+# A rule's own `severity` and `scope` enums are NOT here - they are
+# the tool's own, and live in fs_org_kit/discovery.py.
 
 [enums.group.lifecycle]
 transient = "meant to be emptied constantly, nothing lingers"
