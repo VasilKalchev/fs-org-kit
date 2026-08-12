@@ -88,7 +88,7 @@ except ModuleNotFoundError:  # Python < 3.11
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
 from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, parse_field_spec
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, own_fields, resolve_entries
-from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
+from fs_org_kit.param_refs import expand_params
 from fs_org_kit.path_keys import comparison_key
 from fs_org_kit.path_patterns import is_pattern, patterns_may_overlap
 
@@ -96,6 +96,15 @@ from fs_org_kit.path_patterns import is_pattern, patterns_may_overlap
 # deliberately whenever a breaking (major-version) grammar change is made
 # to fs-org-std.template.toml, alongside updating the checks themselves
 SUPPORTED_SCHEMA_MAJOR = 2
+
+# Keys under [paths] / [folders.reserved] that are schema-level config
+# rather than an entry, so iterating either namespace's entries skips
+# them. This is knowledge about the grammar, and lives with the module
+# that checks the grammar - a param `{ref}` pointing at one of these
+# tables hands the rule the whole thing, meta keys included, and the
+# rule decides what it wants (see fs_org_kit.param_refs).
+META_KEYS_UNDER_PATHS = {"attributes", "rules", "cross"}
+META_KEYS_UNDER_RESERVED = {"prefix"}
 
 
 # ---------------------------------------------------------------------
@@ -254,7 +263,15 @@ WARNING_CODES = {
     "rule-discovery-warning":      ("validation", "non-fatal issue found during rule discovery (collision, suspicious flag)"),
     "inherit-issue":               ("validation", "non-fatal issue resolving `inherit` (dead exclude_rules entry, etc.)"),
     "alphabetical-order":          ("lint",       "table entries aren't declared in alphabetical order"),
+    "unknown-tag-field":           ("validation", "a tag namespace declares a key nothing reads"),
+    "empty-tag-vocabulary":        ("validation", "a tag namespace declares no values"),
 }
+
+# What a [tags."<namespace>"] table may carry. `values` is the vocabulary
+# itself; the rest describes it. Closed, and checked - a key nothing
+# reads is a typo doing nothing, the same stance discovery takes on a
+# rule manifest's fields.
+TAG_NAMESPACE_KEYS = {"values", "multi", "description"}
 
 
 # Which fields an entry may carry, which of them are required, and which
@@ -323,6 +340,7 @@ class Validator:
         self._load_inheritance()
         self._check_paths()
         self._check_folders()
+        self._check_tags()
         self._check_abbreviations()
         return self.issues
 
@@ -728,6 +746,68 @@ class Validator:
         abbreviations = self.data.get("abbreviations", {})
         if isinstance(abbreviations, dict):
             self._check_alphabetical_order(list(abbreviations.keys()), "abbreviations")
+
+    # -- tags ----------------------------------------------------------------
+
+    def _check_tags(self) -> None:
+        """[tags."<ns>"] declares a vocabulary that things on disk carry -
+        never a value, which is why nothing here looks at the filesystem.
+        Checked about as lightly as [enums]: that a namespace has the
+        shape a rule receiving it can rely on, and no more.
+
+        [tags] is optional - a standard that tags nothing simply omits it.
+        """
+        tags = self.data.get("tags")
+        if tags is None:
+            return
+        if not isinstance(tags, dict):
+            self.error("tags", "expected a table of tag namespaces")
+            return
+
+        self._check_alphabetical_order(list(tags.keys()), "tags")
+
+        for namespace, declaration in tags.items():
+            loc = f"tags.{namespace}"
+
+            if isinstance(declaration, str):
+                self.error(
+                    loc,
+                    "expected a table - a bare string here is the pre-2.1 flat glossary form; "
+                    f'declare the vocabulary under [tags.{namespace}.values] instead',
+                )
+                continue
+            if not isinstance(declaration, dict):
+                self.error(loc, "expected a table")
+                continue
+
+            for key in sorted(set(declaration) - TAG_NAMESPACE_KEYS):
+                self.warning(
+                    f"{loc}.{key}",
+                    f"nothing reads `{key}` (valid: {', '.join(sorted(TAG_NAMESPACE_KEYS))})",
+                    "unknown-tag-field",
+                )
+
+            if "multi" in declaration and not isinstance(declaration["multi"], bool):
+                self.error(f"{loc}.multi", "must be true or false")
+            if "description" in declaration and not isinstance(declaration["description"], str):
+                self.error(f"{loc}.description", "must be a string")
+
+            values = declaration.get("values")
+            if values is None or (isinstance(values, dict) and not values):
+                self.warning(
+                    f"{loc}.values",
+                    "declares no values - a rule pointed at this namespace has nothing to check against",
+                    "empty-tag-vocabulary",
+                )
+                continue
+            if not isinstance(values, dict):
+                self.error(f"{loc}.values", "expected a table of value = \"meaning\"")
+                continue
+
+            for value, meaning in values.items():
+                if not isinstance(meaning, str):
+                    self.error(f"{loc}.values.{value}", "must be a string describing what the value means")
+            self._check_alphabetical_order(list(values.keys()), f"{loc}.values")
 
     # -- inherit table shape ------------------------------------------------
 

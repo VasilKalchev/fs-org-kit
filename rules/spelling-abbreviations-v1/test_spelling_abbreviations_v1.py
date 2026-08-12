@@ -149,6 +149,19 @@ class TestAbbreviationsAndIgnore:
         (tmp_path / "cfg").mkdir()
         assert status(run_check({"abbreviations": [], "ignore": ["cfg"]}, tmp_path)) == "ok"
 
+    def test_abbreviations_may_arrive_as_the_whole_table(self, tmp_path):
+        """`abbreviations` is normally a `{ref = "abbreviations"}`, which
+        substitutes that table verbatim. The shorthand is in its keys;
+        the meanings beside them are documentation and ignored here."""
+        (tmp_path / "cfg").mkdir()
+        assert status(run_check({"abbreviations": {"cfg": "Configuration"}}, tmp_path)) == "ok"
+
+    def test_a_meaning_is_not_itself_an_accepted_word(self, tmp_path):
+        """Only the keys sanction a word - a folder named after one of
+        the meanings gets no free pass from appearing in the table."""
+        (tmp_path / "reprot").mkdir()
+        assert status(run_check({"abbreviations": {"cfg": "reprot"}}, tmp_path)) == "violation"
+
     def test_a_missing_abbreviations_param_checks_everything(self, tmp_path):
         """`abbreviations` has no manifest default on purpose; an absent
         one means "no shorthand is sanctioned", not "skip the check"."""

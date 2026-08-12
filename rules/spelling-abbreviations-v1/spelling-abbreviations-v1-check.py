@@ -48,6 +48,10 @@ def main() -> int:
         print(f"error: --params is not valid JSON: {e}", file=sys.stderr)
         return 1
 
+    # Either a literal list of abbreviations, or the standard's whole
+    # [abbreviations] table handed over by a {ref = "..."} - iterating
+    # the table yields its keys, which is what this needs; the meanings
+    # beside them are documentation and ignored here.
     abbreviations = {a.lower() for a in params.get("abbreviations", [])}
     ignore = {w.lower() for w in params.get("ignore", [])}
     languages = params.get("languages", ["en"])

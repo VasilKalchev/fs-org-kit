@@ -171,6 +171,76 @@ origin = ["self"]
         assert "## Tags" not in out  # empty [tags] table
 
 
+class TestTagsSection:
+    """Tag namespaces render like the enums they resemble. What they
+    never render is a value something on disk currently carries - the
+    standard doesn't know one."""
+
+    def _std(self, tmp_path, tags_toml: str):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        std.write_text(std.read_text() + tags_toml)
+        return std
+
+    def _render(self, tmp_path, capsys, tags_toml: str) -> str:
+        main([str(self._std(tmp_path, tags_toml))])
+        return capsys.readouterr().out
+
+    def test_a_namespace_renders_its_values(self, tmp_path, capsys):
+        out = self._render(tmp_path, capsys, '''
+[tags.state]
+description = "Where a unit of work stands."
+multi = false
+
+[tags.state.values]
+abandoned = "stopped deliberately"
+complete = "finished"
+''')
+        assert "## Tags" in out
+        assert "**`tags.state`:**" in out
+        assert "Where a unit of work stands." in out
+        assert "| `abandoned` | stopped deliberately |" in out
+        assert "| `complete` | finished |" in out
+
+    def test_cardinality_is_stated(self, tmp_path, capsys):
+        single = self._render(tmp_path, capsys, '''
+[tags.state]
+multi = false
+[tags.state.values]
+complete = "finished"
+''')
+        assert "Exactly one value applies at a time." in single
+
+    def test_multi_valued_namespace_says_so(self, tmp_path, capsys):
+        multi = self._render(tmp_path, capsys, '''
+[tags.topic]
+multi = true
+[tags.topic.values]
+python = "about Python"
+''')
+        assert "Multiple values may apply at once." in multi
+
+    def test_several_namespaces_each_get_a_table(self, tmp_path, capsys):
+        out = self._render(tmp_path, capsys, '''
+[tags.priority.values]
+high = "now"
+
+[tags.state.values]
+complete = "finished"
+''')
+        assert "**`tags.priority`:**" in out
+        assert "**`tags.state`:**" in out
+
+    def test_empty_tags_table_emits_no_section(self, tmp_path, capsys):
+        assert "## Tags" not in self._render(tmp_path, capsys, "")
+
+
 class TestDiagrams:
 
     def _std_with_paths(self, tmp_path):

@@ -42,7 +42,16 @@ def main() -> int:
         print("error: prefix must be a non-empty string", file=sys.stderr)
         return 1
 
-    cataloged = set(params.get("cataloged", []))
+    # `cataloged` is either a literal list of names, or the standard's
+    # whole [folders.reserved] table handed over by a {ref = "..."}. In
+    # the table case an entry is always a sub-table and the schema-level
+    # keys beside them (`prefix`) are not, so keeping the table-valued
+    # keys drops those without this script knowing their names.
+    cataloged = params.get("cataloged", [])
+    if isinstance(cataloged, dict):
+        cataloged = [name for name, entry in cataloged.items() if isinstance(entry, dict)]
+    cataloged = set(cataloged)
+
     recursive = params.get("recursive", True)
     exclude_globs = params.get("exclude", [])
     if not isinstance(exclude_globs, list):

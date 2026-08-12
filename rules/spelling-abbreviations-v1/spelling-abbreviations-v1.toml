@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks that words in file/folder names are either spelled correctly or are known abbreviations - catches typos and undocumented shorthand before they spread across a tree."
 severity = "warn"
 scope = "single"
@@ -28,8 +28,9 @@ exclude = []
 # be supplied at the attachment site rather than read from
 # [abbreviations] automatically. Point it at [abbreviations] itself
 # with a {ref = "..."} value (see fs_org_kit.param_refs) instead of
-# retyping the list by hand - the runner/validator expand it to
-# [abbreviations]'s keys before this script ever sees it:
+# retyping the list by hand - a ref substitutes that table verbatim,
+# and this script reads the abbreviations off its keys (the meanings
+# beside them are ignored):
 #
 #   [folders.rules.spelling-abbreviations-v1.params]
 #   abbreviations = { ref = "abbreviations" }

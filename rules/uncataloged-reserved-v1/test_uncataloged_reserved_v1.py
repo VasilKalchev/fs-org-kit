@@ -81,6 +81,39 @@ class TestCatalogMatching:
         assert status(run_check({"cataloged": ["_archive"]}, tmp_path)) == "violation"
 
 
+class TestCatalogAsATable:
+    """`cataloged` is normally a `{ref = "folders.reserved"}`, which
+    substitutes that whole table verbatim - entries and the schema-level
+    keys sitting beside them. Taking the names out of it is this
+    script's job, not the runner's."""
+
+    RESERVED = {
+        "prefix": "_",
+        "_archive": {"purpose": "p", "group": {"lifecycle": "archival"}},
+        "_inbox": {"purpose": "p"},
+    }
+
+    def test_a_table_is_accepted_and_its_entry_names_used(self, tmp_path):
+        (tmp_path / "_archive").mkdir()
+        (tmp_path / "_inbox").mkdir()
+        assert status(run_check({"cataloged": self.RESERVED}, tmp_path)) == "ok"
+
+    def test_a_folder_missing_from_the_table_is_still_a_violation(self, tmp_path):
+        (tmp_path / "_scratch").mkdir()
+        assert status(run_check({"cataloged": self.RESERVED}, tmp_path)) == "violation"
+
+    def test_a_meta_key_beside_the_entries_is_not_a_cataloged_name(self, tmp_path):
+        """A folder literally named `prefix` must not be excused by
+        [folders.reserved]'s `prefix` key - an entry is a sub-table, that
+        isn't."""
+        (tmp_path / "_prefix").mkdir()
+        assert status(run_check({"cataloged": {"prefix": "_"}}, tmp_path)) == "violation"
+
+    def test_an_empty_table_catalogs_nothing(self, tmp_path):
+        (tmp_path / "_stray").mkdir()
+        assert status(run_check({"cataloged": {}}, tmp_path)) == "violation"
+
+
 class TestPrefix:
 
     def test_default_prefix_is_underscore(self, tmp_path):

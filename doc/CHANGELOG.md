@@ -11,6 +11,65 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### A param `{ref}` now substitutes the whole value — **behavior change**
+
+**If you wrote a rule that takes a `{ref = "..."}` pointing at a table,
+it now receives that table instead of a list of its keys.** Previously
+the core projected a table down to its keys and stripped out keys it
+knew were schema-level config (`[folders.reserved]`'s `prefix`). That
+was the core interpreting a param value on a rule's behalf, and it
+carried knowledge about tables it doesn't own. Both are gone:
+`param_refs` substitutes whatever is at the path, verbatim - table,
+list, string, number or boolean - and its only remaining failure is a
+path that doesn't resolve.
+
+Standards need no edits: the syntax is unchanged, and the two bundled
+rules that consumed the projection were updated in lockstep. Both still
+accept a literal list, so a hand-narrowed list keeps working.
+
+- `spelling-abbreviations-v1` 1.1 - reads the abbreviations off the
+  table's keys and ignores the meanings beside them.
+- `uncataloged-reserved-v1` 1.1 - takes the table-valued keys as entry
+  names, which skips `prefix` without knowing that name.
+- `META_KEYS_UNDER_PATHS` / `_RESERVED` moved from `param_refs` to
+  `validator`, its only remaining consumer; `META_KEYS_UNDER_FOLDERS`
+  was dead and is deleted.
+
+### `[tags]` declares vocabularies for metadata carried on disk
+
+Schema 2.1. The table was previously a flat `tag = "meaning"` glossary
+that nothing but the doc generator read. It now holds one table per
+namespace:
+
+```toml
+[tags.state]
+description = "Where a unit of work stands once it leaves the active tree."
+multi = false
+
+[tags.state.values]
+abandoned = "stopped deliberately, will not resume"
+complete  = "finished, nothing further planned"
+```
+
+A namespace reaches a checking rule as **one param**, via
+`{ref = "tags.state"}` - there is no tag-attachment syntax, and which
+rule applies where stays visible as an ordinary rule attachment. How a
+tag is stored (xattr, sidecar, name suffix) and how `state` and
+`complete` are spelled together are that rule's business.
+
+The standard declares which vocabulary exists and never which value
+something currently has - a tag value lives on disk, which is what keeps
+the standard a specification rather than a record of filesystem state.
+
+The validator checks a namespace's shape (`values` a table of
+string → string, `multi` a boolean, unknown keys warned, alphabetical
+order linted) and reports the old flat form by name. The doc generator
+renders one table per namespace instead of one flat list.
+
+`examples/parext` declares `[tags.state]` with the four states
+`prj/_arch/` already described in prose; no bundled rule consumes it
+yet.
+
 ### `rule.template.toml` is gone; templates are real rules under `rules/_*`
 
 That file was a template and a live configuration file at once:

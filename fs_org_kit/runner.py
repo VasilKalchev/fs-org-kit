@@ -36,10 +36,11 @@ What gets resolved into invocations:
       coexist on one folder.
 
 A param value may be {ref = "dotted.path"} instead of a literal - see
-fs_org_kit.param_refs - expanded to the table/list found at that path
-elsewhere in the standard. Applied uniformly to every invocation
-regardless of which rule or param it's on; the runner has no per-rule
-knowledge of what any param means.
+fs_org_kit.param_refs - substituted with whatever is at that path
+elsewhere in the standard, verbatim. Applied uniformly to every
+invocation regardless of which rule or param it's on; the runner has no
+per-rule knowledge of what any param means, and reshapes nothing on the
+way through.
 
 A [paths."..."] key may be a glob pattern instead of a literal path -
 see fs_org_kit.path_patterns - expanded here against the real

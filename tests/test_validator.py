@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from fs_org_kit.param_refs import expand_params
 from fs_org_kit.validator import Validator, _index_source
 
 
@@ -872,6 +873,147 @@ cataloged = { ref = "folders.reserved" }
         issues, _ = validate(standard_toml, tmp_path)
         errors = [i for i in issues if i.level == "error" and "missing required param" in i.message]
         assert errors == []
+
+
+class TestValidatorTags:
+    """[tags."<ns>"] declares a vocabulary that things on disk carry.
+    Checked for shape only - a rule receiving a namespace needs to know
+    what it's getting, and nothing more is the validator's business."""
+
+    def _std(self, tags_toml: str, tmp_path: Path):
+        standard_toml = BOILERPLATE_HEAD + '''
+[paths.attributes]
+names = []
+
+[paths.attributes.group]
+names = []
+
+[enums]
+
+[folders.attributes]
+names = []
+[folders.reserved]
+[abbreviations]
+''' + tags_toml
+        return validate(standard_toml, tmp_path)
+
+    def test_a_well_formed_namespace_is_clean(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state]
+description = "Where a unit of work stands."
+multi = false
+
+[tags.state.values]
+abandoned = "stopped deliberately"
+complete = "finished"
+''', tmp_path)
+        assert [i for i in issues if i.location.startswith("tags")] == []
+
+    def test_tags_is_optional(self, tmp_path):
+        """A standard that tags nothing omits the table entirely."""
+        issues, _ = self._std("", tmp_path)
+        assert [i for i in issues if i.location.startswith("tags")] == []
+
+    def test_an_empty_tags_table_is_clean(self, tmp_path):
+        issues, _ = self._std("[tags]\n", tmp_path)
+        assert [i for i in issues if i.location.startswith("tags")] == []
+
+    def test_the_pre_2_1_flat_form_is_an_error(self, tmp_path):
+        """`state = "meaning"` was the whole grammar before namespaces -
+        worth naming explicitly rather than reporting as a type error."""
+        issues, _ = self._std('[tags]\nstate = "some meaning"\n', tmp_path)
+        errors = [i for i in issues if i.level == "error"]
+        assert [i.location for i in errors] == ["tags.state"]
+
+    def test_an_unknown_namespace_key_warns(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state]
+mechanism = "xattr"
+
+[tags.state.values]
+complete = "finished"
+''', tmp_path)
+        warnings = [i for i in issues if i.code == "unknown-tag-field"]
+        assert [i.location for i in warnings] == ["tags.state.mechanism"]
+
+    def test_a_namespace_with_no_values_warns(self, tmp_path):
+        issues, _ = self._std('[tags.state]\nmulti = false\n', tmp_path)
+        warnings = [i for i in issues if i.code == "empty-tag-vocabulary"]
+        assert [i.location for i in warnings] == ["tags.state.values"]
+
+    def test_a_non_boolean_multi_is_an_error(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state]
+multi = "no"
+
+[tags.state.values]
+complete = "finished"
+''', tmp_path)
+        errors = [i for i in issues if i.level == "error"]
+        assert [i.location for i in errors] == ["tags.state.multi"]
+
+    def test_a_non_string_value_meaning_is_an_error(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state.values]
+complete = 3
+''', tmp_path)
+        errors = [i for i in issues if i.level == "error"]
+        assert [i.location for i in errors] == ["tags.state.values.complete"]
+
+    def test_namespaces_out_of_alphabetical_order_lint(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state.values]
+complete = "finished"
+
+[tags.priority.values]
+high = "now"
+''', tmp_path)
+        warnings = [i for i in issues if i.code == "alphabetical-order"]
+        assert [i.location for i in warnings] == ["tags"]
+
+    def test_values_out_of_alphabetical_order_lint(self, tmp_path):
+        issues, _ = self._std('''
+[tags.state.values]
+complete = "finished"
+abandoned = "stopped deliberately"
+''', tmp_path)
+        warnings = [i for i in issues if i.code == "alphabetical-order"]
+        assert [i.location for i in warnings] == ["tags.state.values"]
+
+    def test_a_namespace_reaches_a_rule_whole(self, tmp_path):
+        """The point of the section: one ref, no retyping, and the
+        vocabulary arrives with its cardinality and its meanings."""
+        standard_toml = BOILERPLATE_HEAD + '''
+[paths.attributes]
+names = []
+
+[paths."notes/"]
+purpose = "Notes"
+
+[paths."notes/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[[paths."notes/".rules.file-extensions-v1]]
+reason = "stand-in for a tag-checking rule"
+
+[paths."notes/".rules.file-extensions-v1.params]
+allowed = { ref = "tags.state" }
+
+[tags.state]
+multi = false
+
+[tags.state.values]
+complete = "finished"
+''' + BOILERPLATE_TAIL.replace("[tags]\n", "")
+        issues, validator = validate(standard_toml, tmp_path)
+        assert [i for i in issues if i.level == "error"] == []
+
+        expanded, errors = expand_params(
+            {"allowed": {"ref": "tags.state"}}, validator.data
+        )
+        assert errors == []
+        assert expanded["allowed"] == {"multi": False, "values": {"complete": "finished"}}
 
 
 class TestValidatorDiscoveryOptions:
