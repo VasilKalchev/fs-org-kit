@@ -13,12 +13,13 @@ An entry has three parts (see fs_org_kit.fields) and each inherits from
 its own source, named for the part it fills:
 
     [paths."archive/project-x/".inherit]
-    doc = "active/project-x/"      # the entry's own documentation fields;
-                                   # this entry's own still override
-    group = "active/project-x/"    # same, per field
-    rules = "active/project-x/"    # inherited attachments MERGE with this
-                                   # entry's own - use exclude_rules to
-                                   # drop specific inherited ones
+    attributes = "active/project-x/"   # the entry's own fields; this
+                                       # entry's own still override
+    group = "active/project-x/"        # same, per field
+    rules = "active/project-x/"        # inherited attachments MERGE with
+                                       # this entry's own - use
+                                       # exclude_rules to drop specific
+                                       # inherited ones
     exclude_rules = ["rule-a-v2"]
 
 Resolution order per field, most to least specific:
@@ -44,10 +45,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fs_org_kit.fields import DOC, GROUP, RULES, STRUCTURAL_KEYS
+from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS
 
 # `inherit` keys naming a source entry, and the part each one fills
-SOURCE_KEYS = (DOC, GROUP, RULES)
+SOURCE_KEYS = (ATTRIBUTES, GROUP, RULES)
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ class RuleAttachment:
 @dataclass(frozen=True)
 class ResolvedEntry:
     key: str
-    doc: dict[str, Any]
+    attributes: dict[str, Any]
     group: dict[str, Any]
     rules: dict[str, list[RuleAttachment]]
     raw: dict[str, Any]
@@ -95,10 +96,10 @@ def _get_inherit_table(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def own_fields(entry: dict[str, Any], kind: str) -> dict[str, Any]:
-    """The fields an entry declares itself for one part. Documentation
-    fields are written directly on the entry, so they're everything that
-    isn't one of its structural keys; `group` is its own table."""
-    if kind == DOC:
+    """The fields an entry declares itself for one part. Attributes are
+    written directly on the entry, so they're everything that isn't one
+    of its structural keys; `group` is its own table."""
+    if kind == ATTRIBUTES:
         return {k: v for k, v in entry.items() if k not in STRUCTURAL_KEYS}
     table = entry.get(kind)
     return table if isinstance(table, dict) else {}
@@ -224,7 +225,7 @@ def resolve_entries(
         if isinstance(entry, dict)
     }
 
-    memos: dict[str, dict[str, dict[str, Any]]] = {DOC: {}, GROUP: {}}
+    memos: dict[str, dict[str, dict[str, Any]]] = {ATTRIBUTES: {}, GROUP: {}}
     rules_memo: dict[str, dict[str, list[RuleAttachment]]] = {}
     resolved: dict[str, ResolvedEntry] = {}
 
@@ -236,7 +237,7 @@ def resolve_entries(
             return dict(own_fields(safe_entries[key], kind))
 
     for key in safe_entries:
-        doc = resolve_part(key, DOC)
+        attributes = resolve_part(key, ATTRIBUTES)
         group = resolve_part(key, GROUP)
 
         try:
@@ -249,7 +250,7 @@ def resolve_entries(
                     instances = [instances]
                 rules[rule_id] = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
 
-        resolved[key] = ResolvedEntry(key=key, doc=doc, group=group, rules=rules, raw=raw_entries[key])
+        resolved[key] = ResolvedEntry(key=key, attributes=attributes, group=group, rules=rules, raw=raw_entries[key])
 
     # exclude_rules entries that don't correspond to anything actually
     # inherited are very likely a typo or a stale exclusion - worth a

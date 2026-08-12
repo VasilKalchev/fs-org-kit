@@ -44,7 +44,7 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import RuleEntry
-from fs_org_kit.fields import DOC, GROUP, FieldSpec
+from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec
 from fs_org_kit.inherit import ResolvedEntry, RuleAttachment, own_fields
 from fs_org_kit.validator import Validator, _index_source
 
@@ -335,14 +335,14 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, raw: dict[st
     rows: list[tuple[str, str]] = []
     bullet_lists: list[tuple[str, list[str], str]] = []
 
-    for name in spec.doc_names:
-        value = resolved.doc.get(name)
+    for name in spec.attribute_names:
+        value = resolved.attributes.get(name)
         if isinstance(value, str) and value:
-            rows.append((_field_label(name), value + marker(DOC, name)))
+            rows.append((_field_label(name), value + marker(ATTRIBUTES, name)))
             continue
         values = _string_values(value)
         if values:
-            bullet_lists.append((_field_label(name), values, marker(DOC, name)))
+            bullet_lists.append((_field_label(name), values, marker(ATTRIBUTES, name)))
 
     for name in spec.group_names:
         values = _string_values(resolved.group.get(name))
@@ -536,7 +536,7 @@ def render_enums(b: DocBuilder, data: dict[str, Any]) -> None:
         return
 
     vocabularies: list[tuple[str, str, dict[str, Any]]] = []
-    for kind in (GROUP, DOC):
+    for kind in (GROUP, ATTRIBUTES):
         kind_enums = enums.get(kind, {})
         if not isinstance(kind_enums, dict):
             continue

@@ -468,7 +468,7 @@ origin = ["self"]
 lifecycle = "archival"
 
 [paths."archive/x/".inherit]
-doc = "active/x/"
+attributes = "active/x/"
 group = "active/x/"
 ''')
         main([str(std), "--sections", "paths"])

@@ -130,7 +130,7 @@ ends at the doc updates `test_docs_current.py` checks.
   against accidents, **not** a security boundary; don't describe it as
   one. `--no-sandbox` disables it.
 - `fields.py` — what a namespace declares its entries may carry:
-  documentation fields (written on the entry itself) and grouping
+  attributes (written on the entry itself) and grouping
   fields (in its `group` table), declared under
   `<ns>.attributes`. **No field name is hardcoded anywhere in the
   package** — a standard names its own fields, and app behavior must
@@ -139,7 +139,7 @@ ends at the doc updates `test_docs_current.py` checks.
 - `inherit.py` — resolves `[paths."...".inherit]` (per-part
   inheritance for the PARA-style "state via folder location" pattern)
   once, before validation. One `inherit` key per part of an entry
-  (`doc` / `group` / `rules`, plus `exclude_rules`), each free to name a
+  (`attributes` / `group` / `rules`, plus `exclude_rules`), each free to name a
   different source. `resolve_entries()` produces a flattened
   `ResolvedEntry` per catalog key (`.doc` / `.group` / `.rules`) so
   nothing downstream needs its own inheritance-walking logic.

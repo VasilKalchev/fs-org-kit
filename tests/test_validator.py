@@ -293,7 +293,7 @@ lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."clients/acme/".inherit]
-doc = "clients/*/"
+attributes = "clients/*/"
 group = "clients/*/"
 ''' + BOILERPLATE_TAIL
 
@@ -351,7 +351,7 @@ lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."clients/a*/".inherit]
-doc = "clients/*/"
+attributes = "clients/*/"
 group = "clients/*/"
 ''' + BOILERPLATE_TAIL
 
@@ -407,14 +407,14 @@ lifecycle = "archival"
 
 
 [paths."archive/x/".inherit]
-doc = "active/x/"
+attributes = "active/x/"
 group = "active/x/"
 ''' + BOILERPLATE_TAIL
 
         issues, validator = validate(standard_toml, tmp_path)
         errors = [i for i in issues if i.level == "error"]
         assert errors == [], errors
-        assert validator.resolved_paths["archive/x/"].doc["purpose"] == "Active"
+        assert validator.resolved_paths["archive/x/"].attributes["purpose"] == "Active"
 
     def test_undefined_inherit_reference_is_error(self, tmp_path):
         standard_toml = BOILERPLATE_HEAD + '''
@@ -427,7 +427,7 @@ lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."x/".inherit]
-doc = "nonexistent/"
+attributes = "nonexistent/"
 group = "nonexistent/"
 ''' + BOILERPLATE_TAIL
 
@@ -442,11 +442,11 @@ names = ["purpose"]
 required = ["purpose"]
 
 [paths."a/".inherit]
-doc = "b/"
+attributes = "b/"
 group = "b/"
 
 [paths."b/".inherit]
-doc = "a/"
+attributes = "a/"
 group = "a/"
 ''' + BOILERPLATE_TAIL
 
@@ -508,7 +508,7 @@ lifecycle = "ongoing"
 origin = ["self"]
 
 [paths."pure/".inherit]
-doc = "source/"
+attributes = "source/"
 group = "source/"
 ''' + BOILERPLATE_TAIL
 

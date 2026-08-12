@@ -135,11 +135,11 @@ Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
 | `folders` | rules/definitions that apply *without* being tied to one cataloged path - blanket rules over every folder under root, and reserved folder-**name** patterns (e.g. `_archive`) independent of location |
 | `tags` | metadata tagging paths/folders for organization and cross-cutting concerns |
 | `abbreviations` | local shorthand definitions used throughout the standard |
-| `enums` | one closed value set per field that has one, as `enums.group.<field>` (or `enums.doc.<field>`), shared by both namespaces |
+| `enums` | one closed value set per field that has one, as `enums.group.<field>` (or `enums.attributes.<field>`), shared by both namespaces |
 
 ### A path entry
 
-An entry is its documentation fields, plus two tables:
+An entry is its attributes, plus two tables:
 
 ```toml
 [paths."area/inv/"]                  # prose, for the generated docs

@@ -86,7 +86,7 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
-from fs_org_kit.fields import DOC, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, parse_field_spec
+from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, parse_field_spec
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, own_fields, resolve_entries
 from fs_org_kit.param_refs import META_KEYS_UNDER_PATHS, META_KEYS_UNDER_RESERVED, expand_params
 from fs_org_kit.path_keys import comparison_key
@@ -553,8 +553,9 @@ class Validator:
         one's attributes/rules should win is genuinely ambiguous.
 
         A pattern overlapping a LITERAL is also an error, UNLESS that
-        literal entry explicitly declares inherit.doc, inherit.group or
-        inherit.rules pointing at that exact pattern key - the
+        literal entry explicitly declares inherit.attributes,
+        inherit.group or inherit.rules pointing at that exact pattern
+        key - the
         deliberate, documented way to override one instance of a
         pattern's shared attributes/rules for a specific real folder
         (see doc/DESIGN.md). This mirrors overrides_bundled elsewhere
@@ -579,7 +580,8 @@ class Validator:
                 f'paths."{a}"',
                 f'may match the same folder(s) as paths."{b}" - overlapping catalog entries would leave it '
                 f"ambiguous which entry's fields/rules actually apply (a literal entry can override one "
-                f"instance of a pattern via inherit.doc/inherit.group/inherit.rules - see doc/DESIGN.md)",
+                f"instance of a pattern via inherit.attributes/inherit.group/inherit.rules - "
+                f"see doc/DESIGN.md)",
             )
 
     @staticmethod
@@ -591,7 +593,7 @@ class Validator:
         inherit = entry.get("inherit") if isinstance(entry, dict) else None
         if not isinstance(inherit, dict):
             return False
-        return any(inherit.get(source) == pattern for source in (DOC, GROUP, RULES))
+        return any(inherit.get(source) == pattern for source in (ATTRIBUTES, GROUP, RULES))
 
     # -- alphabetical order (lint) ------------------------------------------
 
@@ -652,7 +654,7 @@ class Validator:
             # other content is `inherit` is different - a purely-inherited
             # entry is legitimate, its own fields all come from its source.
             resolved = self.resolved_paths.get(key)
-            declared = bool(own_fields(entry, DOC)) or bool(own_fields(entry, GROUP))
+            declared = bool(own_fields(entry, ATTRIBUTES)) or bool(own_fields(entry, GROUP))
             has_inherit = isinstance(entry.get("inherit"), dict) and bool(entry.get("inherit"))
             if not declared and not has_inherit:
                 self.error(
@@ -740,7 +742,7 @@ class Validator:
         inherit = entry.get("inherit")
         if inherit is None or not isinstance(inherit, dict):
             return
-        known_keys = {DOC, GROUP, RULES, "exclude_rules"}
+        known_keys = {ATTRIBUTES, GROUP, RULES, "exclude_rules"}
         for key in inherit:
             if key not in known_keys:
                 self.warning(
@@ -820,11 +822,11 @@ class Validator:
         applied); the raw entry is only consulted for what was written
         where."""
         resolved_by_kind = {
-            DOC: resolved.doc if resolved else {},
+            ATTRIBUTES: resolved.attributes if resolved else {},
             GROUP: resolved.group if resolved else {},
         }
 
-        for kind in (DOC, GROUP):
+        for kind in (ATTRIBUTES, GROUP):
             declared = set(spec.names(kind))
             if spec.is_declared():
                 for field_name in own_fields(raw_entry, kind):
@@ -842,8 +844,8 @@ class Validator:
                         self._field_loc(loc, kind, field_name),
                         "required field is empty or missing, even after inheritance",
                     )
-                if kind == DOC:
-                    self._check_documentation_field(values.get(field_name), field_name, loc, spec)
+                if kind == ATTRIBUTES:
+                    self._check_attribute_field(values.get(field_name), field_name, loc, spec)
                 else:
                     self._check_grouping_field(values.get(field_name), field_name, loc, spec)
 
@@ -851,16 +853,16 @@ class Validator:
     def _field_loc(loc: str, kind: str, field_name: str) -> str:
         """Documentation fields sit directly on the entry; grouping fields
         sit in its `group` table - the reported location follows."""
-        return f"{loc}.{field_name}" if kind == DOC else f"{loc}.{kind}.{field_name}"
+        return f"{loc}.{field_name}" if kind == ATTRIBUTES else f"{loc}.{kind}.{field_name}"
 
-    def _check_documentation_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
+    def _check_attribute_field(self, value: Any, field_name: str, loc: str, spec: FieldSpec) -> None:
         """A documentation field is free-form prose - nothing reads its
         value, so the only structural claim worth making is that it's
         renderable: a string, or a list of strings. A standard may still
-        close its value set by declaring one under `enums.doc.<field>`."""
+        close its value set by declaring one under `enums.attributes.<field>`."""
         if value is None:
             return  # requiredness is checked separately, from the declaration
-        field_loc = self._field_loc(loc, DOC, field_name)
+        field_loc = self._field_loc(loc, ATTRIBUTES, field_name)
 
         if isinstance(value, str):
             values = [value]
@@ -872,10 +874,10 @@ class Validator:
             self.error(field_loc, "must be a string or a list of strings")
             return
 
-        allowed = spec.doc_values.get(field_name)
+        allowed = spec.attribute_values.get(field_name)
         if not allowed:
             return
-        enum_loc = spec.enum_location(DOC, field_name)
+        enum_loc = spec.enum_location(ATTRIBUTES, field_name)
         for item in values:
             if item and item not in allowed:
                 self.error(field_loc, f"'{item}' is not a value in {enum_loc}")

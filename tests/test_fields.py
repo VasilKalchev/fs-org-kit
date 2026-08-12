@@ -12,7 +12,7 @@ import tomllib
 
 import pytest
 
-from fs_org_kit.fields import DOC, GROUP, FieldSpec, parse_field_spec
+from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec, parse_field_spec
 
 
 def spec_for(toml_text: str, namespace: str = "paths"):
@@ -47,18 +47,18 @@ class TestParsing:
     def test_the_two_kinds_are_kept_apart(self):
         spec, issues = spec_for(DECLARED)
         assert issues == []
-        assert spec.doc_names == ("purpose", "notes", "use_for")
+        assert spec.attribute_names == ("purpose", "notes", "use_for")
         assert spec.group_names == ("lifecycle", "origin")
 
     def test_declared_order_is_preserved(self):
         """The doc generator renders in this order, so it's the author's
         order, not alphabetical and not TOML-table-hash order."""
         spec, _ = spec_for('[paths.attributes]\nnames = ["zulu", "alpha", "mike"]\n')
-        assert spec.doc_names == ("zulu", "alpha", "mike")
+        assert spec.attribute_names == ("zulu", "alpha", "mike")
 
     def test_required_is_read_per_table(self):
         spec, _ = spec_for(DECLARED)
-        assert spec.required(DOC) == frozenset({"purpose"})
+        assert spec.required(ATTRIBUTES) == frozenset({"purpose"})
         assert spec.required(GROUP) == frozenset({"lifecycle"})
 
     def test_multi_is_read_from_the_declaration(self):
@@ -70,7 +70,7 @@ class TestParsing:
         spec, issues = spec_for("[paths]\n")
         assert issues == []
         assert not spec.is_declared()
-        assert spec.doc_names == () and spec.group_names == ()
+        assert spec.attribute_names == () and spec.group_names == ()
 
 
 class TestVocabularies:
@@ -100,19 +100,19 @@ archival = "x"
         assert paths_issues == [] and folders_issues == []
         assert paths_spec.group_values["lifecycle"] == folders_spec.group_values["lifecycle"]
 
-    def test_a_documentation_vocabulary_is_optional(self):
+    def test_an_attribute_vocabulary_is_optional(self):
         """Prose by default; a standard may still close one field's value
         set without making it a grouping field."""
         spec, issues = spec_for('''
 [paths.attributes]
 names = ["purpose", "review_cycle"]
 
-[enums.doc.review_cycle]
+[enums.attributes.review_cycle]
 annual = "x"
 quarterly = "x"
 ''')
         assert issues == []
-        assert spec.doc_values == {"review_cycle": frozenset({"annual", "quarterly"})}
+        assert spec.attribute_values == {"review_cycle": frozenset({"annual", "quarterly"})}
 
     def test_a_grouping_field_with_no_vocabulary_warns_but_still_groups(self):
         spec, issues = spec_for('[paths.attributes.group]\nnames = ["lifecycle"]\n')
@@ -131,7 +131,7 @@ names = ["purpose", "notes"]
 names = ["purpose"]
 ''', namespace="folders")
         assert issues == []
-        assert spec.doc_names == ("purpose",)
+        assert spec.attribute_names == ("purpose",)
 
 
 class TestDeclarationErrors:
@@ -147,7 +147,7 @@ names = ["purpose"]
 required = ["notes"]
 ''')
         assert "paths.attributes.required" in locations(issues)
-        assert spec.required(DOC) == frozenset()
+        assert spec.required(ATTRIBUTES) == frozenset()
 
     def test_multi_must_name_a_declared_grouping_field(self):
         _, issues = spec_for('''
@@ -188,7 +188,7 @@ class TestSpecHelpers:
         """The validator holds one of these before it has parsed anything."""
         spec = FieldSpec("paths")
         assert not spec.is_declared()
-        assert spec.names(DOC) == () and spec.names(GROUP) == ()
+        assert spec.names(ATTRIBUTES) == () and spec.names(GROUP) == ()
 
 
 if __name__ == "__main__":

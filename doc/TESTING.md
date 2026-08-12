@@ -93,7 +93,7 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 ### Inherit tests (16 tests, `tests/test_inherit.py`)
 
 - **Basic inheritance**: full inherit with per-field override, each part inheriting only from its own source, an explicit `false` correctly overriding an inherited `true` (the trickiest edge case - booleans have no "empty" state)
-- **Rule inheritance**: `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `doc` and `rules` inheriting from different sources
+- **Rule inheritance**: `exclude_rules` drops specific inherited rule ids while keeping the rest; the same rule id inherited and separately declared both apply (stack, never silently override); `attributes` and `rules` inheriting from different sources
 - **Errors and cycles**: undefined references from each of the three keys, 2- and 3-level cycles, a cycle in one part not stopping the others, a broken reference on one entry not blocking resolution of every other entry, `exclude_rules` without `inherit.rules` set, `exclude_rules` referencing something that was never actually inherited
 
 ### Field declaration tests (17 tests, `tests/test_fields.py`)
@@ -101,7 +101,7 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 `parse_field_spec` reads what one namespace declares its entries may carry; checking values against that is the validator's job, tested below.
 
 - **Parsing**: the two kinds of field stay apart, declared order is preserved (the doc generator renders in it), `required` and `multi` are read per kind, and a namespace that declares nothing is still usable
-- **Vocabularies**: a grouping field reads `enums.group.<field>`, both namespaces read the same table for the same field name, a documentation field's vocabulary is optional (`enums.doc.<field>`), and a grouping field with none warns but still groups
+- **Vocabularies**: a grouping field reads `enums.group.<field>`, both namespaces read the same table for the same field name, an attribute's vocabulary is optional (`enums.attributes.<field>`), and a grouping field with none warns but still groups
 - **Namespaces are independent**: `folders` reads its own field lists
 - **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a field named after one of an entry's structural keys (`group`/`rules`/`inherit`); one name declared as both kinds; a name listed twice
 
@@ -109,9 +109,9 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
-- **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.doc`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
+- **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.attributes`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
 - **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment
-- **Entry fields**: a documentation field may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
+- **Entry fields**: an attribute may be a string or a list of strings and nothing else; a required field left empty is an error; an undeclared field is flagged; a grouping value outside its vocabulary, a single-valued grouping field given a list, and a multi-valued one given a scalar are each an error; a grouping field with no vocabulary warns once and accepts anything
 - **folders**: the namespace declares its own fields (a name declared for `paths` is still unknown here) and groups against the shared `enums.group.*` vocabulary; reserved entries under a namespace that declares nothing at all are flagged, since their fields would be both unchecked and unrendered
 - **Param refs**: a `{ref = "..."}` value to `folders.reserved` or `abbreviations` resolves with no errors, a broken ref is an error naming the bad path, a ref satisfies a required-param-with-no-default check the same as a literal would
 - **Discovery options**: `include_external` threaded through to the rule catalog used for validation

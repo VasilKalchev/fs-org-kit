@@ -67,7 +67,7 @@ class TestResolveActiveTargets:
         (tmp_path / "clients" / "globex").mkdir(parents=True)
         raw = {
             "clients/*/": {"purpose": "P"},
-            "clients/acme/": {"purpose": "Acme", "inherit": {"doc": "clients/*/"}},
+            "clients/acme/": {"purpose": "Acme", "inherit": {"attributes": "clients/*/"}},
         }
         resolved, _ = resolve_entries(raw, "paths")
         active = _resolve_active_targets(resolved, tmp_path)
@@ -83,7 +83,7 @@ class TestResolveActiveTargets:
         (tmp_path / "clients" / "acme").mkdir(parents=True)
         raw = {
             "clients/*/": {"purpose": "P"},
-            "clients/acme/": {"purpose": "Acme", "inherit": {"doc": "clients/*/"}},
+            "clients/acme/": {"purpose": "Acme", "inherit": {"attributes": "clients/*/"}},
         }
         resolved, _ = resolve_entries(raw, "paths")
         active = _resolve_active_targets(resolved, tmp_path)
@@ -606,7 +606,7 @@ allowed = ["jpg"]
 lifecycle = "archival"
 
 [paths."archive/proj/".inherit]
-doc = "active/proj/"
+attributes = "active/proj/"
 group = "active/proj/"
 rules = "active/proj/"
 ''')

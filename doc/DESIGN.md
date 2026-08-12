@@ -153,9 +153,9 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 The validator reads its field lists and defaults from the file being checked:
 
-- `<ns>.attributes.names` / `.required` declare the free-form documentation fields an entry may carry, and which of them may not be left empty
+- `<ns>.attributes.names` / `.required` declare the free-form attributes an entry may carry, and which of them may not be left empty
 - `<ns>.attributes.group.names` / `.multi` / `.required` declare the enum-backed grouping fields
-- `enums.group.<field>` (and optionally `enums.doc.<field>`) defines the valid values for one field
+- `enums.group.<field>` (and optionally `enums.attributes.<field>`) defines the valid values for one field
 
 This means the validator doesn't need code edits when the schema evolves - it adapts automatically.
 
@@ -348,7 +348,7 @@ Two catalog keys that could both match the same real folder is a structural prob
 
 The check is deliberately conservative (segment-by-segment comparison; `[abc]` vs `[xyz]` at the same position are treated as "may overlap" even though they could never actually share a character; `**`'s variable-length matching is approximated via each side's fixed prefix before its first `**`, not proven exactly). A false positive here costs a human a rename; a false negative would be a silently-broken standard where two entries fight over the same real folder and nothing ever says so.
 
-Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.doc`, `inherit.group` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared fields/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
+Two overlapping *patterns* are always an error - there's no inherent precedence between two wildcards. A pattern overlapping a *literal* is also an error, **unless** that literal explicitly declares `inherit.attributes`, `inherit.group` or `inherit.rules` pointing at that exact pattern key - the deliberate, on-the-record way to override one instance of a pattern's shared fields/rules for one specific real folder. This mirrors `overrides_bundled` elsewhere in this project: a collision is rejected by default, and only an explicit reference opts out of that, rather than silent precedence rules a reader would have to infer.
 
 When the runner actually expands a pattern against real disk, any real match that's *also* its own explicit literal catalog entry is excluded from that pattern's own expansion - since the validator already guarantees any such overlap was sanctioned, the literal entry's own resolved attributes/rules (already including whatever it inherited from the pattern) are authoritative for that one folder, not a second, separate invocation via the pattern. A pattern whose real matches are *all* claimed this way still isn't "missing" - the folders exist, they're just individually cataloged elsewhere.
 

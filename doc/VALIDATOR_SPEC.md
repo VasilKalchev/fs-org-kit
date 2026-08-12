@@ -75,7 +75,7 @@ doc/DESIGN.md.
   name in `attributes.group.multi` / `.required` must appear in
   `attributes.group.names`
 - the same name can't be both a documentation and a grouping field
-- a documentation field can't be named after one of an entry's
+- an attribute can't be named after one of an entry's
   structural keys (`group`, `rules`, `inherit`)
 - a grouping field with no `enums.group.<field>` table is a warning: it
   still groups, but its values go unchecked
@@ -83,14 +83,14 @@ doc/DESIGN.md.
 ### Path and folder entries
 
 - a `[paths."..."]` or `[folders.reserved."..."]` entry carries its
-  documentation fields directly, and its `group`, `rules` and `inherit`
+  attributes directly, and its `group`, `rules` and `inherit`
   keys must each be a table
 - a field on an entry, or in its `group` table, that its namespace never
   declared is flagged
 - every field in `attributes.required` / `attributes.group.required`
   must be non-empty, even after inheritance
-- a documentation field must be a string or a list of strings, and its
-  values must come from `enums.doc.<field>` if that table exists
+- an attribute must be a string or a list of strings, and its
+  values must come from `enums.attributes.<field>` if that table exists
 - a grouping field's value must be one of `enums.group.<field>`, or a
   list of them when the field is declared in `attributes.group.multi`
   (a list where one value is expected, or a bare value where a list is,
@@ -103,15 +103,15 @@ doc/DESIGN.md.
 ### `inherit`
 
 - `inherit`, when present, must be a table, with one key per part of
-  the entry it fills (`doc` / `group` / `rules`), plus `exclude_rules`
-- `inherit.doc` / `inherit.group` / `inherit.rules`, when set, must
+  the entry it fills (`attributes` / `group` / `rules`), plus `exclude_rules`
+- `inherit.attributes` / `inherit.group` / `inherit.rules`, when set, must
   reference a key that actually exists in the same namespace (a path can only
   inherit from a path, a reserved folder entry only from another
   reserved folder entry)
 - an inheritance chain (`C` inherits `B` inherits `A`) must not cycle
 - `inherit.exclude_rules` requires `inherit.rules` to be set - there's
   nothing to exclude from otherwise
-- a key inside `inherit` other than `doc` / `group` / `rules` /
+- a key inside `inherit` other than `attributes` / `group` / `rules` /
   `exclude_rules` is flagged
 
 ### Rule discovery integrity
@@ -137,7 +137,7 @@ doc/DESIGN.md.
   this is a format nitpick, not a validate-level failure
 - reserved folder names should start with the standard's reserved
   prefix (`_` by default - see `[folders.reserved]`'s `prefix` field)
-- a list-valued documentation field shouldn't contain leftover empty
+- a list-valued attribute shouldn't contain leftover empty
   placeholder entries (`""`) - the list itself is structurally fine,
   this just means some entries were never filled in
 - there should be at least one cataloged path (an empty `[paths]` with

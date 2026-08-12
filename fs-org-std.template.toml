@@ -33,7 +33,7 @@
 #               edit to the old one.
 #   enums     - closed value sets, one per field that has one, grouped by
 #               the KIND of field they belong to (enums.group.<field>,
-#               enums.doc.<field>) and shared by both namespaces.
+#               enums.attributes.<field>) and shared by both namespaces.
 #               (enums.severity and enums.scope, for rules specifically,
 #               now live in rule.template.toml alongside what they
 #               validate.)
@@ -42,7 +42,7 @@
 # documentation fields, plus two sub-tables - and each namespace
 # declares, once, what may go in the first two:
 #
-#   <entry>.<field>  documentation, written directly on the entry.
+#   <entry>.<field>  an ATTRIBUTE, written directly on the entry.
 #                    Free-form: a string, or a list of strings. Nothing
 #                    reads the values; the doc generator renders whatever
 #                    is there. Declared in <ns>.attributes.names, with
@@ -82,17 +82,17 @@
 # [folders.reserved."..."] entry) - lets one entry reuse another's
 # fields instead of redeclaring them. One key per part of the entry:
 #   [paths."archive/project-x/".inherit]
-#   doc = "active/project-x/"          # the documentation fields; this
-#                                       # entry's own still override
-#   group = "active/project-x/"        # same, per field
-#   rules = "active/project-x/"        # inherited rules MERGE with this
-#                                       # entry's own attachments (both
-#                                       # apply) - use exclude_rules to
-#                                       # drop specific inherited ones
-#   exclude_rules = ["rule-a-v2"]      # rule ids to drop from what
-#                                       # `rules` would otherwise bring in
+#   attributes = "active/project-x/"  # the entry's own fields; this
+#                                      # entry's own still override
+#   group = "active/project-x/"       # same, per field
+#   rules = "active/project-x/"       # inherited rules MERGE with this
+#                                      # entry's own attachments (both
+#                                      # apply) - use exclude_rules to
+#                                      # drop specific inherited ones
+#   exclude_rules = ["rule-a-v2"]     # rule ids to drop from what
+#                                      # `rules` would otherwise bring in
 # The three may point at different source entries, or be omitted
-# independently (e.g. inherit `doc` only, declare all rules
+# independently (e.g. inherit `attributes` only, declare all rules
 # fresh). Chains are allowed (C inherits from B inherits from A);
 # cycles are a validation error. `exclude_rules` without `rules` set is
 # a validation error - there's nothing to exclude from. To CHANGE an
@@ -125,7 +125,7 @@
 #   [paths."clients/acme/"]
 #   purpose = "Acme specifically"
 #   [paths."clients/acme/".inherit]
-#   doc = "clients/*/"
+#   attributes = "clients/*/"
 #   group = "clients/*/"
 #   rules = "clients/*/"
 # Without that inherit link, `clients/acme/` colliding with
@@ -196,12 +196,12 @@ external = "sourced from outside this system - downloaded, received, or otherwis
 generated = "produced automatically by a tool, script, or model - not hand-authored, not fetched externally"
 
 # -------------------------------------------------------------------
-# Enums > Doc
+# Enums > Attributes
 # -------------------------------------------------------------------
-# Optional, and normally absent: a documentation field is prose. Declare
-# a table here only for one whose values really are a closed set - it's
-# then checked the same way a grouping field is, without becoming one.
-#   [enums.doc.review_cycle]
+# Optional, and normally absent: an attribute is prose. Declare a table
+# here only for one whose values really are a closed set - it's then
+# checked the same way a grouping field is, without becoming one.
+#   [enums.attributes.review_cycle]
 #   annual = "..."
 #   quarterly = "..."
 
@@ -411,7 +411,7 @@ origin = []
 lifecycle = "archival"          # overrides path/a/'s inherited lifecycle
 
 [paths."path/a/archived/".inherit]
-doc = "path/a/"                  # purpose, notes, use_for, etc. - full
+attributes = "path/a/"           # purpose, notes, use_for, etc. - full
                                  # inherit, this entry's own explicit
                                  # fields above still win
 group = "path/a/"                # same, for the grouping fields - so only

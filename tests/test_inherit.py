@@ -1,8 +1,8 @@
 """
 tests/test_inherit.py - unit tests for fs_org_kit.inherit
 
-An entry is its documentation fields plus a `group` and a `rules` table,
-and each part inherits from its own source, so these drive
+An entry is its attributes plus a `group` and a `rules` table, and each
+part inherits from its own source, so these drive
 `resolve_entries` with entries in exactly the shape the parsed TOML
 produces.
 
@@ -26,7 +26,7 @@ class TestBasicInheritance:
             },
             "archive/project-x/": {
                 "inherit": {
-                    "doc": "active/project-x/",
+                    "attributes": "active/project-x/",
                     "group": "active/project-x/",
                     "rules": "active/project-x/",
                 },
@@ -37,25 +37,25 @@ class TestBasicInheritance:
         assert issues == []
 
         child = resolved["archive/project-x/"]
-        assert child.doc["purpose"] == "Project X, active"     # inherited
+        assert child.attributes["purpose"] == "Project X, active"     # inherited
         assert child.group["lifecycle"] == "archival"          # overridden
         assert child.group["origin"] == ["self"]               # inherited
         assert "staleness-v1" in child.rules
         assert child.rules["staleness-v1"][0].origin_key == "active/project-x/"
 
     def test_each_part_inherits_only_from_its_own_source(self):
-        """`doc` and `group` are separate keys, so inheriting one brings
-        nothing of the other."""
+        """`attributes` and `group` are separate keys, so inheriting one
+        brings nothing of the other."""
         raw = {
             "source/": {
                 "purpose": "P",
                 "group": {"lifecycle": "ongoing"},
             },
-            "child/": {"inherit": {"doc": "source/"}},
+            "child/": {"inherit": {"attributes": "source/"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         assert issues == []
-        assert resolved["child/"].doc["purpose"] == "P"
+        assert resolved["child/"].attributes["purpose"] == "P"
         assert resolved["child/"].group == {}
 
     def test_explicit_false_overrides_inherited_true(self):
@@ -72,11 +72,11 @@ class TestBasicInheritance:
     def test_purely_inherited_entry_has_no_own_fields(self):
         raw = {
             "source/": {"purpose": "The real one", "group": {"lifecycle": "ongoing"}},
-            "pure/": {"inherit": {"doc": "source/"}},
+            "pure/": {"inherit": {"attributes": "source/"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         assert issues == []
-        assert resolved["pure/"].doc["purpose"] == "The real one"
+        assert resolved["pure/"].attributes["purpose"] == "The real one"
 
 
 class TestRuleInheritance:
@@ -114,20 +114,20 @@ class TestRuleInheritance:
 
     def test_fields_and_rules_can_inherit_from_different_sources(self):
         raw = {
-            "doc-source/": {"purpose": "P"},
+            "attrs-source/": {"purpose": "P"},
             "rules-source/": {"purpose": "Q", "rules": {"rule-x-v1": [{"reason": "x"}]}},
-            "child/": {"inherit": {"doc": "doc-source/", "rules": "rules-source/"}},
+            "child/": {"inherit": {"attributes": "attrs-source/", "rules": "rules-source/"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         assert issues == []
-        assert resolved["child/"].doc["purpose"] == "P"
+        assert resolved["child/"].attributes["purpose"] == "P"
         assert "rule-x-v1" in resolved["child/"].rules
 
 
 class TestErrorsAndCycles:
 
-    def test_undefined_doc_reference(self):
-        raw = {"a/": {"inherit": {"doc": "nonexistent/"}}}
+    def test_undefined_attributes_reference(self):
+        raw = {"a/": {"inherit": {"attributes": "nonexistent/"}}}
         resolved, issues = resolve_entries(raw, "paths")
         assert len(issues) == 1
         assert issues[0].level == "error"
@@ -145,8 +145,8 @@ class TestErrorsAndCycles:
 
     def test_two_level_cycle_detected(self):
         raw = {
-            "a/": {"inherit": {"doc": "b/"}},
-            "b/": {"inherit": {"doc": "a/"}},
+            "a/": {"inherit": {"attributes": "b/"}},
+            "b/": {"inherit": {"attributes": "a/"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         cycle_issues = [i for i in issues if "cycle" in i.message]
@@ -154,9 +154,9 @@ class TestErrorsAndCycles:
 
     def test_three_level_cycle_detected(self):
         raw = {
-            "a/": {"inherit": {"doc": "b/"}},
-            "b/": {"inherit": {"doc": "c/"}},
-            "c/": {"inherit": {"doc": "a/"}},
+            "a/": {"inherit": {"attributes": "b/"}},
+            "b/": {"inherit": {"attributes": "c/"}},
+            "c/": {"inherit": {"attributes": "a/"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         cycle_issues = [i for i in issues if "cycle" in i.message]
@@ -169,18 +169,18 @@ class TestErrorsAndCycles:
         }
         resolved, issues = resolve_entries(raw, "paths")
         assert any("cycle" in i.message for i in issues)
-        assert resolved["a/"].doc["purpose"] == "A"
+        assert resolved["a/"].attributes["purpose"] == "A"
 
     def test_broken_reference_isolated_to_one_entry(self):
         """A bad inherit reference on one entry must not prevent every
         other entry from resolving normally."""
         raw = {
-            "broken/": {"group": {"lifecycle": "ongoing"}, "inherit": {"doc": "nonexistent/"}},
+            "broken/": {"group": {"lifecycle": "ongoing"}, "inherit": {"attributes": "nonexistent/"}},
             "fine/": {"purpose": "Fine", "group": {"lifecycle": "ongoing"}},
         }
         resolved, issues = resolve_entries(raw, "paths")
         assert "fine/" in resolved
-        assert resolved["fine/"].doc["purpose"] == "Fine"
+        assert resolved["fine/"].attributes["purpose"] == "Fine"
         assert any(i.key == "broken/" for i in issues)
 
     def test_exclude_rules_without_inherit_rules_is_error(self):

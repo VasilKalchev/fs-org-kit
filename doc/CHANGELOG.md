@@ -20,7 +20,7 @@ thing. Only one of them was: the tool acted on `allow_missing` and
 that `purpose`, `lifecycle` and `origin` were *also* hardcoded by name in
 the validator, so a standard couldn't actually name its own fields.
 
-An entry is now its documentation fields plus two tables, and each
+An entry is now its attributes plus two tables, and each
 namespace declares what may go in the first two:
 
 ```toml
@@ -50,14 +50,14 @@ Mermaid diagram of the `lifecycle` vocabulary is gone - it recognized a
 user-chosen name and its four expected values, which is exactly the
 coupling this removes. `group`, `rules` and `inherit` are the only names
 an entry can't use for a field of its own. `inherit` names one source
-per part (`doc` / `group` / `rules`, plus `exclude_rules`).
+per part (`attributes` / `group` / `rules`, plus `exclude_rules`).
 
 Vocabularies moved from `enums.paths.<field>` to `enums.<kind>.<field>`
 and are shared by both namespaces: one `[enums.group.lifecycle]` serves
 paths and reserved folders alike, since a value set describes the field
-rather than who carries it. `[enums.doc.<field>]` is optional and
-normally absent - a documentation field is prose unless a standard
-chooses to close its value set.
+rather than who carries it. `[enums.attributes.<field>]` is optional and
+normally absent - an attribute is prose unless a standard chooses to
+close its value set.
 
 ### `allow_missing` and `outside_root` are gone
 

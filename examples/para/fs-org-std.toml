@@ -71,7 +71,7 @@ origin = ["self"]
 lifecycle = "archival"                 # the one thing that differs
 
 [paths."archive/*/".inherit]
-doc = "projects/*/"                    # purpose, use_for, not_for...
+attributes = "projects/*/"                    # purpose, use_for, not_for...
 group = "projects/*/"                  # ...origin, with lifecycle above winning
 rules = "projects/*/"                  # ...and the README requirement
 
