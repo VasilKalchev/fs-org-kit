@@ -147,6 +147,40 @@ def _index_source(text: str) -> tuple[dict[str, list[int]], dict[str, int]]:
     return header_occurrences, key_lines
 
 
+class StandardLoadError(Exception):
+    """A standard file couldn't be read or parsed - the message is ready
+    to print to stderr as-is; the caller exits 2."""
+
+
+def load_standard(path: Path) -> tuple[str, dict[str, Any]]:
+    """Read and parse the standard at `path`. Shared by validator.py's,
+    runner.py's, and doc.py's `main()`, which otherwise each open, decode,
+    and error-report the same file the same way."""
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise StandardLoadError(f"{path} not found")
+
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise StandardLoadError(f"{path} is not valid TOML: {e}")
+
+    return raw_text, data
+
+
+def build_validator(
+    path: Path, raw_text: str, data: dict[str, Any], *, include_external: bool, bundled_rules_dir: Path | None
+) -> "Validator":
+    header_occurrences, key_lines = _index_source(raw_text)
+    standard_dir = path.resolve().parent
+    return Validator(
+        data, standard_dir, header_occurrences, key_lines,
+        include_external=include_external, bundled_rules_dir=bundled_rules_dir,
+    )
+
+
 def _split_location(location: str) -> list[str]:
     """Split a dotted location string on top-level dots, respecting
     double-quoted path segments (which may themselves contain no dots
@@ -520,34 +554,44 @@ class Validator:
                 inst_loc = f"{loc}[{i}]"
                 if component_category:
                     self._register(component_category, f"{rule_name}[{i}]", inst_loc)
-                if not isinstance(inst, dict):
-                    self.error(inst_loc, "expected a table")
-                    continue
+                self._check_instance(inst, inst_loc, rule_name, param_names, required_params)
 
-                if not inst.get("reason"):
-                    self.error(f"{inst_loc}.reason", "missing a non-empty `reason` (required at every attachment site)")
+    def _check_instance(
+        self, inst: Any, inst_loc: str, rule_id: str, param_names: set[str], required_params: set[str]
+    ) -> None:
+        """The per-attachment body shared by `_check_rule_instances` (raw
+        TOML) and `_check_resolved_rule_instances` (post-inheritance) -
+        both need `reason`/`params` checked identically, so a divergence
+        between the two callers would only be in how they get here, not
+        in what "valid" means once they do."""
+        if not isinstance(inst, dict):
+            self.error(inst_loc, "expected a table")
+            return
 
-                inst_params = inst.get("params", {})
-                if not isinstance(inst_params, dict):
-                    self.error(f"{inst_loc}.params", "expected a table")
-                    continue
+        if not inst.get("reason"):
+            self.error(f"{inst_loc}.reason", "missing a non-empty `reason` (required at every attachment site)")
 
-                for pname in inst_params:
-                    if pname not in param_names:
-                        self.warning(
-                            f"{inst_loc}.params.{pname}",
-                            f"`{pname}` is not declared in `{rule_name}`'s manifest params.names",
-                            "unknown-param",
-                        )
+        inst_params = inst.get("params", {})
+        if not isinstance(inst_params, dict):
+            self.error(f"{inst_loc}.params", "expected a table")
+            return
 
-                missing = required_params - set(inst_params)
-                if missing:
-                    self.error(
-                        f"{inst_loc}.params",
-                        f"missing required param(s) with no default in `{rule_name}` manifest: {sorted(missing)}",
-                    )
+        for pname in inst_params:
+            if pname not in param_names:
+                self.warning(
+                    f"{inst_loc}.params.{pname}",
+                    f"`{pname}` is not declared in `{rule_id}`'s manifest params.names",
+                    "unknown-param",
+                )
 
-                self._check_param_refs(inst_params, f"{inst_loc}.params")
+        missing = required_params - set(inst_params)
+        if missing:
+            self.error(
+                f"{inst_loc}.params",
+                f"missing required param(s) with no default in `{rule_id}` manifest: {sorted(missing)}",
+            )
+
+        self._check_param_refs(inst_params, f"{inst_loc}.params")
 
     # -- paths ------------------------------------------------------------
 
@@ -854,32 +898,7 @@ class Validator:
             for i, attachment in enumerate(attachments):
                 origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
                 inst_loc = f"{loc}[{i}]{origin_note}"
-
-                inst = attachment.instance
-                if not inst.get("reason"):
-                    self.error(f"{inst_loc}.reason", "missing a non-empty `reason` (required at every attachment site)")
-
-                inst_params = inst.get("params", {})
-                if not isinstance(inst_params, dict):
-                    self.error(f"{inst_loc}.params", "expected a table")
-                    continue
-
-                for pname in inst_params:
-                    if pname not in param_names:
-                        self.warning(
-                            f"{inst_loc}.params.{pname}",
-                            f"`{pname}` is not declared in `{rule_id}`'s manifest params.names",
-                            "unknown-param",
-                        )
-
-                missing = required_params - set(inst_params)
-                if missing:
-                    self.error(
-                        f"{inst_loc}.params",
-                        f"missing required param(s) with no default in `{rule_id}` manifest: {sorted(missing)}",
-                    )
-
-                self._check_param_refs(inst_params, f"{inst_loc}.params")
+                self._check_instance(attachment.instance, inst_loc, rule_id, param_names, required_params)
 
     def _check_param_refs(self, inst_params: dict[str, Any], loc: str) -> None:
         """A param value may be {ref = "dotted.path"} instead of a
@@ -1125,23 +1144,13 @@ def main(argv: list[str] | None = None) -> int:
     ignore_codes = _parse_comma_list(args.ignore_warning) or set()
 
     try:
-        raw_text = args.path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        print(f"error: {args.path} not found", file=sys.stderr)
+        raw_text, data = load_standard(args.path)
+    except StandardLoadError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
 
-    try:
-        with args.path.open("rb") as f:
-            data = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        print(f"error: {args.path} is not valid TOML: {e}", file=sys.stderr)
-        return 2
-
-    header_occurrences, key_lines = _index_source(raw_text)
-    standard_dir = args.path.resolve().parent
-    validator = Validator(
-        data, standard_dir, header_occurrences, key_lines,
-        include_external=args.include_external, bundled_rules_dir=args.rules_dir,
+    validator = build_validator(
+        args.path, raw_text, data, include_external=args.include_external, bundled_rules_dir=args.rules_dir,
     )
     issues = validator.run()
 

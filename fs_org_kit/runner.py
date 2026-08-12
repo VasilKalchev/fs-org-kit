@@ -107,14 +107,10 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib  # type: ignore[no-redef]
 
 from fs_org_kit.cache import ensure_rule_cache_dir
 from fs_org_kit.discovery import RuleEntry
@@ -123,7 +119,7 @@ from fs_org_kit.param_refs import expand_params
 from fs_org_kit.path_keys import resolve_key
 from fs_org_kit.path_patterns import expand_pattern, is_pattern
 from fs_org_kit.sandbox import Policy, child_env
-from fs_org_kit.validator import Validator, _index_source
+from fs_org_kit.validator import StandardLoadError, build_validator, load_standard
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -194,13 +190,16 @@ def _resolve_params(entry: RuleEntry, inst: dict[str, Any]) -> dict[str, Any]:
     return {**entry.params_defaults, **inst_params}
 
 
-def _add_invocations(
-    invocations: list[Invocation],
-    rules_table: Any,
-    targets: list[tuple[str, Path]],   # (dotted-key, resolved absolute path)
-    loc_prefix: str,
-    catalog: dict[str, RuleEntry],
-) -> None:
+# One (rule_id, entry, index, instance dict, origin_note) tuple per
+# attachment, from either shape a rules table comes in - a raw TOML dict
+# (instance(s) still plain dicts) or an already-inheritance-resolved one
+# (RuleAttachment objects). Every call site that builds Invocations reads
+# instances this way first, so "what counts as one attachment" can't
+# drift between them.
+
+def _iter_raw_instances(
+    rules_table: Any, catalog: dict[str, RuleEntry]
+) -> Iterator[tuple[str, RuleEntry, int, dict[str, Any], str | None]]:
     if not isinstance(rules_table, dict):
         return
     for rule_id, instances in rules_table.items():
@@ -210,13 +209,50 @@ def _add_invocations(
         if not isinstance(instances, list):
             instances = [instances]
         for i, inst in enumerate(instances):
-            if not isinstance(inst, dict):
-                continue
-            reason = inst.get("reason", "")
-            params = _resolve_params(entry, inst)
-            loc = f"{loc_prefix}.rules.{rule_id}[{i}]"
-            for _key, abs_path in targets:
-                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=abs_path))
+            if isinstance(inst, dict):
+                yield rule_id, entry, i, inst, None
+
+
+def _iter_resolved_instances(
+    resolved_rules: dict[str, list[RuleAttachment]], catalog: dict[str, RuleEntry]
+) -> Iterator[tuple[str, RuleEntry, int, dict[str, Any], str | None]]:
+    for rule_id, attachments in resolved_rules.items():
+        entry = catalog.get(rule_id)
+        if entry is None:
+            continue  # already reported by the validation pass, skip silently here
+        for i, attachment in enumerate(attachments):
+            origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
+            yield rule_id, entry, i, attachment.instance, origin_note
+
+
+def _emit(
+    invocations: list[Invocation],
+    rule_id: str,
+    entry: RuleEntry,
+    index: int,
+    inst: dict[str, Any],
+    origin_note: str | None,
+    loc_prefix: str,
+    *,
+    target_path: Path | None = None,
+    target_paths: list[Path] | None = None,
+) -> None:
+    reason = inst.get("reason", "")
+    params = _resolve_params(entry, inst)
+    loc = f"{loc_prefix}.rules.{rule_id}[{index}]{origin_note or ''}"
+    invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=target_path, target_paths=target_paths))
+
+
+def _add_invocations(
+    invocations: list[Invocation],
+    rules_table: Any,
+    targets: list[tuple[str, Path]],   # (dotted-key, resolved absolute path)
+    loc_prefix: str,
+    catalog: dict[str, RuleEntry],
+) -> None:
+    for rule_id, entry, i, inst, origin_note in _iter_raw_instances(rules_table, catalog):
+        for _key, abs_path in targets:
+            _emit(invocations, rule_id, entry, i, inst, origin_note, loc_prefix, target_path=abs_path)
 
 
 def _add_invocations_from_resolved(
@@ -229,17 +265,9 @@ def _add_invocations_from_resolved(
     """Same as _add_invocations, but consumes an already-inheritance-resolved
     rules table (RuleAttachment objects) instead of a raw TOML dict - used
     for individual [paths."..."] entries, where `inherit` may apply."""
-    for rule_id, attachments in resolved_rules.items():
-        entry = catalog.get(rule_id)
-        if entry is None:
-            continue  # already reported by the validation pass, skip silently here
-        for i, attachment in enumerate(attachments):
-            reason = attachment.instance.get("reason", "")
-            params = _resolve_params(entry, attachment.instance)
-            origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
-            loc = f"{loc_prefix}.rules.{rule_id}[{i}]{origin_note}"
-            for _key, abs_path in targets:
-                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=abs_path))
+    for rule_id, entry, i, inst, origin_note in _iter_resolved_instances(resolved_rules, catalog):
+        for _key, abs_path in targets:
+            _emit(invocations, rule_id, entry, i, inst, origin_note, loc_prefix, target_path=abs_path)
 
 
 def _resolve_active_targets(
@@ -333,37 +361,14 @@ def collect_invocations(
         if not isinstance(rules_table, dict) or not referenced:
             continue
         abs_paths = [resolve_key(root_dir, p) for p in referenced if isinstance(p, str)]
-        for rule_id, instances in rules_table.items():
-            entry = catalog.get(rule_id)
-            if entry is None:
-                continue
-            if not isinstance(instances, list):
-                instances = [instances]
-            for j, inst in enumerate(instances):
-                if not isinstance(inst, dict):
-                    continue
-                reason = inst.get("reason", "")
-                params = _resolve_params(entry, inst)
-                loc = f"paths.cross[{i}].rules.{rule_id}[{j}]"
-                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_paths=abs_paths))
+        for rule_id, entry, j, inst, origin_note in _iter_raw_instances(rules_table, catalog):
+            _emit(invocations, rule_id, entry, j, inst, origin_note, f"paths.cross[{i}]", target_paths=abs_paths)
 
     # folders.rules blanket - apply to root itself
     # the rule's own params control recursion, exclusion, etc.
     folders_rules = data.get("folders", {}).get("rules")
-    if isinstance(folders_rules, dict):
-        for rule_id, instances in folders_rules.items():
-            entry = catalog.get(rule_id)
-            if entry is None:
-                continue
-            if not isinstance(instances, list):
-                instances = [instances]
-            for j, inst in enumerate(instances):
-                if not isinstance(inst, dict):
-                    continue
-                reason = inst.get("reason", "")
-                params = _resolve_params(entry, inst)
-                loc = f"folders.rules.{rule_id}[{j}]"
-                invocations.append(Invocation(rule_id, entry, loc, reason, params, target_path=root_dir))
+    for rule_id, entry, j, inst, origin_note in _iter_raw_instances(folders_rules, catalog):
+        _emit(invocations, rule_id, entry, j, inst, origin_note, "folders", target_path=root_dir)
 
     # folders.reserved."_x".rules - once per folder named _x on disk. The
     # entries are already inheritance-resolved (a reserved entry can
@@ -576,23 +581,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        raw_text = args.path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        print(f"error: {args.path} not found", file=sys.stderr)
-        return 2
-
-    try:
-        with args.path.open("rb") as f:
-            data = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        print(f"error: {args.path} is not valid TOML: {e}", file=sys.stderr)
+        raw_text, data = load_standard(args.path)
+    except StandardLoadError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
 
     standard_dir = args.path.resolve().parent
-    header_occurrences, key_lines = _index_source(raw_text)
-    validator = Validator(
-        data, standard_dir, header_occurrences, key_lines,
-        include_external=args.include_external, bundled_rules_dir=args.rules_dir,
+    validator = build_validator(
+        args.path, raw_text, data, include_external=args.include_external, bundled_rules_dir=args.rules_dir,
     )
     issues = validator.run()
     errors = [i for i in issues if i.level == "error"]

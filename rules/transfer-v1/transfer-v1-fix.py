@@ -24,14 +24,17 @@ import json
 import shutil
 import sys
 
-from _shared import BadParams, already_at_target, destination_for, fail, pending, read_settings
-
-MAX_REPORTED = 8
-
-
-def summarize(items: list, limit: int = MAX_REPORTED) -> str:
-    shown = ", ".join(items[:limit])
-    return shown + (f", ... ({len(items) - limit} more)" if len(items) > limit else "")
+from _shared import (
+    VERB_PAST,
+    BadParams,
+    already_at_target,
+    destination_for,
+    fail,
+    pending,
+    read_settings,
+    summarize,
+    unfixable,
+)
 
 
 def copy_entry(entry, destination) -> None:
@@ -66,31 +69,21 @@ def main() -> int:
 
     if not settings.target.exists():
         if not settings.create_target:
-            print(json.dumps({
-                "status": "unfixable",
-                "message": f"{len(entries)} item(s) pending, but {settings.target} "
-                           f"doesn't exist and create_target is false",
-            }))
-            return 0
+            return unfixable(
+                f"{len(entries)} item(s) pending, but {settings.target} "
+                f"doesn't exist and create_target is false"
+            )
         try:
             settings.target.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            print(json.dumps({
-                "status": "unfixable",
-                "message": f"{len(entries)} item(s) pending, but {settings.target} couldn't be created: {e}",
-            }))
-            return 0
+            return unfixable(f"{len(entries)} item(s) pending, but {settings.target} couldn't be created: {e}")
     elif not settings.target.is_dir():
-        print(json.dumps({
-            "status": "unfixable",
-            "message": f"target {settings.target} exists and is not a directory",
-        }))
-        return 0
+        return unfixable(f"target {settings.target} exists and is not a directory")
 
     moved: list[str] = []
     skipped: list[str] = []
     failed: list[str] = []
-    verb_past = {"move": "moved", "copy": "copied", "sync": "synced"}[settings.operation]
+    verb_past = VERB_PAST[settings.operation]
 
     for entry in entries:
         label = entry.relative_to(settings.source).as_posix()
@@ -109,12 +102,10 @@ def main() -> int:
                 # on_conflict = "fail": stop immediately rather than leave
                 # a half-done transfer in a state the report doesn't
                 # describe.
-                print(json.dumps({
-                    "status": "unfixable",
-                    "message": f"{label} already exists at the target ({e}) and on_conflict is 'fail'"
-                               + (f"; {len(moved)} item(s) had already been {verb_past}" if moved else ""),
-                }))
-                return 0
+                return unfixable(
+                    f"{label} already exists at the target ({e}) and on_conflict is 'fail'"
+                    + (f"; {len(moved)} item(s) had already been {verb_past}" if moved else "")
+                )
             if destination is None:
                 skipped.append(label)
                 continue

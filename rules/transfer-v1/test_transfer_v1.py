@@ -21,22 +21,21 @@ CHECK_SCRIPT = RULE_DIR / "transfer-v1-check.py"
 FIX_SCRIPT = RULE_DIR / "transfer-v1-fix.py"
 
 
-def run_check(params: dict, paths: list, fix: bool = False) -> subprocess.CompletedProcess:
-    argv = [sys.executable, str(CHECK_SCRIPT), "--params", json.dumps(params)]
+def _run(script: Path, params: dict, paths: list, fix: bool) -> subprocess.CompletedProcess:
+    argv = [sys.executable, str(script), "--params", json.dumps(params)]
     for p in paths:
         argv += ["--paths", str(p)]
     if fix:
         argv.append("--fix")
     return subprocess.run(argv, capture_output=True, text=True)
+
+
+def run_check(params: dict, paths: list, fix: bool = False) -> subprocess.CompletedProcess:
+    return _run(CHECK_SCRIPT, params, paths, fix)
 
 
 def run_fix(params: dict, paths: list, fix: bool = True) -> subprocess.CompletedProcess:
-    argv = [sys.executable, str(FIX_SCRIPT), "--params", json.dumps(params)]
-    for p in paths:
-        argv += ["--paths", str(p)]
-    if fix:
-        argv.append("--fix")
-    return subprocess.run(argv, capture_output=True, text=True)
+    return _run(FIX_SCRIPT, params, paths, fix)
 
 
 def verdict(result: subprocess.CompletedProcess) -> dict:

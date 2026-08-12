@@ -17,9 +17,7 @@ import argparse
 import json
 import sys
 
-from _shared import BadParams, fail, pending, read_settings
-
-MAX_REPORTED = 8
+from _shared import MAX_REPORTED, VERB_PAST, BadParams, fail, pending, read_settings, summarize
 
 
 def main() -> int:
@@ -46,14 +44,12 @@ def main() -> int:
         print(json.dumps({"status": "ok"}))
         return 0
 
-    names = [e.relative_to(settings.source).as_posix() for e in entries]
-    shown = ", ".join(names[:MAX_REPORTED])
-    if len(names) > MAX_REPORTED:
-        shown += f", ... ({len(names) - MAX_REPORTED} more)"
-    verb = {"move": "moved", "copy": "copied", "sync": "synced"}[settings.operation]
+    names = [e.relative_to(settings.source).as_posix() for e in entries[:MAX_REPORTED]]
+    verb = VERB_PAST[settings.operation]
     print(json.dumps({
         "status": "violation",
-        "message": f"{len(names)} item(s) not yet {verb} to {settings.target}: {shown}",
+        "message": f"{len(entries)} item(s) not yet {verb} to {settings.target}: "
+                   f"{summarize(names, total=len(entries))}",
     }))
     return 0
 

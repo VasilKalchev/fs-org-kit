@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sys
 import time
@@ -27,6 +28,9 @@ DURATION_SECONDS = {"d": 86400, "w": 604800, "m": 2592000}
 OPERATIONS = ("move", "copy", "sync")
 DIRECTIONS = ("forward", "reverse")
 CONFLICT_MODES = ("rename", "skip", "fail")
+VERB_PAST = {"move": "moved", "copy": "copied", "sync": "synced"}
+
+MAX_REPORTED = 8
 
 
 def parse_duration(value: str) -> int:
@@ -143,7 +147,12 @@ def select_entries(
     resolved_target = target.resolve() if target.exists() else target
     selected: list[Path] = []
 
-    def is_target(candidate: Path) -> bool:
+    def is_target(candidate: Path, candidate_is_dir: bool) -> bool:
+        # Only a directory can contain the target, so only a directory
+        # needs the resolve() call that answers that - a plain path
+        # comparison is enough to rule out a file.
+        if not candidate_is_dir:
+            return candidate == resolved_target
         probe = candidate.resolve() if candidate.exists() else candidate
         return probe == resolved_target or resolved_target.is_relative_to(probe)
 
@@ -164,9 +173,10 @@ def select_entries(
         except OSError:
             return
         for child in children:
-            if is_target(child):
+            child_is_dir = child.is_dir()
+            if is_target(child, child_is_dir):
                 continue
-            if recursive and child.is_dir() and not child.is_symlink():
+            if recursive and child_is_dir and not child.is_symlink():
                 walk(child)
             else:
                 consider(child)
@@ -180,8 +190,7 @@ def already_at_target(entry: Path, target: Path) -> bool:
     only question "copy" and "sync" ask before deciding an entry is
     still outstanding. Matched by name only, same as basename-sync-v1;
     this rule doesn't diff content."""
-    candidate = target / entry.name
-    return candidate.exists() or candidate.is_symlink()
+    return os.path.lexists(target / entry.name)
 
 
 def pending(settings: Settings) -> list[Path]:
@@ -208,6 +217,23 @@ def fail(message: str) -> int:
     return 1
 
 
+def summarize(items: list, limit: int = MAX_REPORTED, total: int | None = None) -> str:
+    """A comma-joined preview of a name list, truncated with a "+N more"
+    tail - used in both the checker's and fixer's status messages.
+
+    `total` overrides the "more" count for a caller that only built
+    `items` up to `limit` in the first place (the checker doesn't stringify
+    every pending entry just to report the first few)."""
+    total = len(items) if total is None else total
+    shown = ", ".join(items[:limit])
+    return shown + (f", ... ({total - limit} more)" if total > limit else "")
+
+
+def unfixable(message: str) -> int:
+    print(json.dumps({"status": "unfixable", "message": message}))
+    return 0
+
+
 def destination_for(entry: Path, target: Path, on_conflict: str) -> Path | None:
     """Where one entry lands under "move" or "copy", or None when it
     should be skipped.
@@ -218,7 +244,7 @@ def destination_for(entry: Path, target: Path, on_conflict: str) -> Path | None:
     unnoticed.
     """
     candidate = target / entry.name
-    if not candidate.exists() and not candidate.is_symlink():
+    if not os.path.lexists(candidate):
         return candidate
     if on_conflict == "skip":
         return None
@@ -227,6 +253,6 @@ def destination_for(entry: Path, target: Path, on_conflict: str) -> Path | None:
     stem, suffix = entry.stem, entry.suffix
     for n in range(2, 1000):
         candidate = target / f"{stem}-{n}{suffix}"
-        if not candidate.exists() and not candidate.is_symlink():
+        if not os.path.lexists(candidate):
             return candidate
     raise FileExistsError(f"{target / entry.name} (and 998 numbered alternatives)")

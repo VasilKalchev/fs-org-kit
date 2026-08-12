@@ -38,15 +38,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib  # type: ignore[no-redef]
-
 from fs_org_kit.discovery import RuleEntry
 from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec
 from fs_org_kit.inherit import ResolvedEntry, RuleAttachment, own_fields
-from fs_org_kit.validator import Validator, _index_source
+from fs_org_kit.validator import StandardLoadError, Validator, build_validator, load_standard
 
 ALL_SECTIONS = ("overview", "paths", "cross", "folders", "rules", "enums", "abbreviations", "tags")
 ALL_DIAGRAMS = ("tree", "rules", "cross")
@@ -384,22 +379,32 @@ def render_grouping_index(b: DocBuilder, entries: dict[str, ResolvedEntry], spec
         b.line()
 
 
-def _render_rule_attachments(b: DocBuilder, resolved: ResolvedEntry) -> None:
-    if not resolved.rules:
+def _render_rule_table(b: DocBuilder, rows: list[tuple[str, str, dict[str, Any], str]]) -> None:
+    """The `| Rule | Reason | Params |` table shared by a resolved
+    (path/folder) entry's attachments and a `paths.cross` set's - each
+    just gets there from a different rules-table shape, normalized to
+    (rule_id, reason, params, origin_note) rows before it does."""
+    if not rows:
         return
     b.line("**Attached rules:**")
     b.line()
     b.line("| Rule | Reason | Params |")
     b.line("|---|---|---|")
-    for rule_id, attachments in sorted(resolved.rules.items()):
+    for rule_id, reason, params, origin_note in rows:
         rule_slug = slug_for("rule", rule_id)
-        for a in attachments:
-            reason = a.instance.get("reason", "")
-            params = a.instance.get("params", {})
-            params_str = ", ".join(f"`{k}={_format_value(v)}`" for k, v in params.items()) if params else ""
-            origin_note = f" *(inherited from `{a.origin_key}`)*" if a.origin_key else ""
-            b.line(f"| {link(f'`{rule_id}`', rule_slug)}{origin_note} | {reason} | {params_str} |")
+        params_str = ", ".join(f"`{k}={_format_value(v)}`" for k, v in params.items()) if params else ""
+        b.line(f"| {link(f'`{rule_id}`', rule_slug)}{origin_note} | {reason} | {params_str} |")
     b.line()
+
+
+def _render_rule_attachments(b: DocBuilder, resolved: ResolvedEntry) -> None:
+    rows = [
+        (rule_id, a.instance.get("reason", ""), a.instance.get("params", {}),
+         f" *(inherited from `{a.origin_key}`)*" if a.origin_key else "")
+        for rule_id, attachments in sorted(resolved.rules.items())
+        for a in attachments
+    ]
+    _render_rule_table(b, rows)
 
 
 def render_paths(b: DocBuilder, resolved_paths: dict[str, ResolvedEntry], spec: FieldSpec) -> None:
@@ -438,22 +443,14 @@ def render_cross(b: DocBuilder, data: dict[str, Any], diagrams: set[str]) -> Non
 
         rules_table = cross.get("rules", {})
         if isinstance(rules_table, dict) and rules_table:
-            b.line("**Attached rules:**")
-            b.line()
-            b.line("| Rule | Reason | Params |")
-            b.line("|---|---|---|")
+            rows = []
             for rule_id, instances in sorted(rules_table.items()):
                 if not isinstance(instances, list):
                     instances = [instances]
-                rule_slug = slug_for("rule", rule_id)
                 for inst in instances:
-                    if not isinstance(inst, dict):
-                        continue
-                    reason = inst.get("reason", "")
-                    params = inst.get("params", {})
-                    params_str = ", ".join(f"`{k}={_format_value(v)}`" for k, v in params.items()) if params else ""
-                    b.line(f"| {link(f'`{rule_id}`', rule_slug)} | {reason} | {params_str} |")
-            b.line()
+                    if isinstance(inst, dict):
+                        rows.append((rule_id, inst.get("reason", ""), inst.get("params", {}), ""))
+            _render_rule_table(b, rows)
 
 
 def render_folders(
@@ -716,23 +713,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        raw_text = args.path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        print(f"error: {args.path} not found", file=sys.stderr)
+        raw_text, data = load_standard(args.path)
+    except StandardLoadError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
 
-    try:
-        with args.path.open("rb") as f:
-            data = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        print(f"error: {args.path} is not valid TOML: {e}", file=sys.stderr)
-        return 2
-
-    standard_dir = args.path.resolve().parent
-    header_occurrences, key_lines = _index_source(raw_text)
-    validator = Validator(
-        data, standard_dir, header_occurrences, key_lines,
-        include_external=args.include_external, bundled_rules_dir=args.rules_dir,
+    validator = build_validator(
+        args.path, raw_text, data, include_external=args.include_external, bundled_rules_dir=args.rules_dir,
     )
     issues = validator.run()
     errors = [i for i in issues if i.level == "error"]
