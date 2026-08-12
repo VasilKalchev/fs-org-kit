@@ -21,7 +21,7 @@ standard_version = "1.0"
 standard_date = "2026-01-01"
 
 [paths.attributes]
-names = ["purpose", "notes", "lifecycle", "origin", "allow_missing"]
+names = ["purpose", "notes", "lifecycle", "origin", "see_also", "allow_missing"]
 [paths.attributes.defaults]
 allow_missing = false
 
@@ -284,6 +284,49 @@ allowed = ["jpg"]
         links = set(re.findall(r"\]\(#([^)]+)\)", out))
         assert links, "expected at least one link to actually test something"
         assert links <= anchors
+
+
+class TestAttributeTable:
+
+    def test_see_also_list_is_joined_not_repr(self, tmp_path, capsys):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+lifecycle = "ongoing"
+origin = ["self"]
+see_also = ["b/", "c/"]
+
+[paths."b/"]
+purpose = "B"
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        main([str(std), "--sections", "paths"])
+        out = capsys.readouterr().out
+        assert "| See also | `b/`, `c/` |" in out
+        assert "['b/'" not in out
+
+    def test_see_also_string_passes_through(self, tmp_path, capsys):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+lifecycle = "ongoing"
+origin = ["self"]
+see_also = "b/"
+''')
+        main([str(std), "--sections", "paths"])
+        assert "| See also | b/ |" in capsys.readouterr().out
+
+    def test_see_also_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = "A"
+lifecycle = "ongoing"
+origin = ["self"]
+see_also = [""]
+''')
+        main([str(std), "--sections", "paths"])
+        assert "See also" not in capsys.readouterr().out
 
 
 class TestInheritanceRendering:

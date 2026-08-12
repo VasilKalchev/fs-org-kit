@@ -291,6 +291,16 @@ class TestFixer:
         assert not (tmp_path / "nowhere").exists()
         assert (active / "forgotten.txt").is_file()
 
+    def test_create_destination_builds_the_missing_folder(self, tmp_path):
+        active, _ = self._setup(tmp_path)
+        old_file(active, "forgotten.txt", 300)
+        params = {
+            "mode": "stale", "threshold": "90d",
+            "destination": "nowhere/deeper", "create_destination": True,
+        }
+        assert status(run(FIX_SCRIPT, params, active, fix=True)) == "fixed"
+        assert (tmp_path / "nowhere" / "deeper" / "forgotten.txt").is_file()
+
     def test_a_missing_destination_with_nothing_to_move_is_still_ok(self, tmp_path):
         """The destination only has to exist when there's actually
         something to put in it."""
@@ -298,6 +308,34 @@ class TestFixer:
         old_file(active, "fresh.txt", 1)
         params = {"mode": "stale", "threshold": "90d", "destination": "nowhere"}
         assert status(run(FIX_SCRIPT, params, active, fix=True)) == "ok"
+
+    def test_a_dated_destination_files_under_the_current_year(self, tmp_path):
+        """"_arch/%Y" is what keeps an archive "separated by year" from
+        being undermined by its own fixer."""
+        active, archive = self._setup(tmp_path)
+        old_file(active, "forgotten.txt", 300)
+        params = {
+            "mode": "stale", "threshold": "90d",
+            "destination": "_arch/%Y", "create_destination": True,
+        }
+        assert status(run(FIX_SCRIPT, params, active, fix=True)) == "fixed"
+        assert (archive / time.strftime("%Y") / "forgotten.txt").is_file()
+
+    def test_a_destination_without_placeholders_is_unchanged(self, tmp_path):
+        """Every attachment written before dated destinations existed has
+        to keep resolving to exactly the same folder."""
+        active, archive = self._setup(tmp_path)
+        old_file(active, "forgotten.txt", 300)
+        run(FIX_SCRIPT, {"mode": "stale", "threshold": "90d", "destination": "_arch"}, active, fix=True)
+        assert (archive / "forgotten.txt").is_file()
+
+    def test_a_dated_destination_that_exists_needs_no_opt_in(self, tmp_path):
+        active, archive = self._setup(tmp_path)
+        (archive / time.strftime("%Y")).mkdir()
+        old_file(active, "forgotten.txt", 300)
+        params = {"mode": "stale", "threshold": "90d", "destination": "_arch/%Y"}
+        assert status(run(FIX_SCRIPT, params, active, fix=True)) == "fixed"
+        assert (archive / time.strftime("%Y") / "forgotten.txt").is_file()
 
     def test_a_name_collision_is_never_overwritten(self, tmp_path):
         active, archive = self._setup(tmp_path)

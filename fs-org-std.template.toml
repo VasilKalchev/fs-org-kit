@@ -16,7 +16,9 @@
 #               one cataloged path: [[folders.rules]] apply to EVERY
 #               folder under root (cataloged or not); [folders.reserved]
 #               defines reserved folder-NAME patterns, independent of
-#               location.
+#               location. Rules attached to a reserved entry run once
+#               per folder actually carrying that name, anywhere under
+#               root - see that section below.
 #   rules     - REFERENCES to rule types, attached ("instantiated")
 #               under a path, folder, or cross-path set via
 #               [[<...>.rules.<name>]], where a fresh `reason` (and any
@@ -352,6 +354,25 @@ not_for = [
 ]
 lifecycle = ""
 origin = []
+
+# Rules attach here exactly as they do on a path, but the target set is
+# a NAME match: the runner invokes this once per folder actually called
+# `_folder-name`, anywhere under root, none of which need to be
+# cataloged as paths. That's the difference from [[folders.rules]]
+# (every folder, once, from root) and from [paths."..."] (one location,
+# or one glob's worth of them).
+# A folder that is both a reserved name and its own [paths."..."] entry
+# gets BOTH sets of rules - they answer different questions ("what
+# _folder-name means anywhere" vs "what this one location is"), the same
+# way a per-path attachment and [[folders.rules]] already coexist.
+# A reserved name matching no folder on disk is not "missing" - nothing
+# says it has to occur - which is why folders.attributes.names has no
+# allow_missing to set.
+[[folders.reserved."_folder-name".rules.rule-a-v1]]
+reason = "Why is this rule applied wherever this name appears?"
+
+[folders.reserved."_folder-name".rules.rule-a-v1.params]
+key-a-1 = "custom value"
 
 
 

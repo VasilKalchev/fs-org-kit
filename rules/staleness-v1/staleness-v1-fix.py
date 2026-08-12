@@ -22,7 +22,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from _shared import find_violations, format_age, parse_duration
+from _shared import find_violations, format_age, parse_duration, resolve_destination
 
 
 def main() -> int:
@@ -68,6 +68,11 @@ def main() -> int:
         print("error: destination is required", file=sys.stderr)
         return 1
 
+    create_destination = params.get("create_destination", False)
+    if not isinstance(create_destination, bool):
+        print("error: create_destination must be a boolean", file=sys.stderr)
+        return 1
+
     root = Path(args.path)
     if not root.is_dir():
         print(f"error: --path is not a directory: {root}", file=sys.stderr)
@@ -79,15 +84,25 @@ def main() -> int:
         print(json.dumps({"status": "ok"}))
         return 0
 
-    destination_path = Path(destination_param)
-    destination = destination_path if destination_path.is_absolute() else root.parent / destination_path
+    destination = resolve_destination(destination_param, root)
 
     if not destination.is_dir():
-        print(json.dumps({
-            "status": "unfixable",
-            "message": f"{len(violations)} item(s) violate the standard, but the destination {destination} doesn't exist - the fixer never creates it",
-        }))
-        return 0
+        if not create_destination:
+            print(json.dumps({
+                "status": "unfixable",
+                "message": f"{len(violations)} item(s) violate the standard, but the destination {destination} "
+                           f"doesn't exist and create_destination is false",
+            }))
+            return 0
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            print(json.dumps({
+                "status": "unfixable",
+                "message": f"{len(violations)} item(s) violate the standard, but the destination {destination} "
+                           f"couldn't be created: {e}",
+            }))
+            return 0
 
     resolved, failed = [], []
     for item, age in violations:

@@ -24,6 +24,25 @@ def parse_duration(value: str) -> int:
     return int(number) * DURATION_SECONDS[unit]
 
 
+def resolve_destination(destination: str, root: Path, now: float | None = None) -> Path:
+    """Where the fixer moves a violating item.
+
+    strftime placeholders are expanded against the current time, so a
+    dated destination names a different folder as time passes -
+    "_arch/%Y" files each archived item under the year it was archived,
+    which is what an archive "separated by year" actually needs. A value
+    with no placeholder renders to itself, which is every attachment
+    written before this was added.
+
+    A relative value resolves against root's PARENT - root is the
+    scanned folder, so a sibling archive is the common case. An absolute
+    or `~`-relative value is used as-is, which is how you point the
+    fixer at the OS trash folder instead of an archive."""
+    stamp = time.localtime(now if now is not None else time.time())
+    path = Path(time.strftime(destination, stamp)).expanduser()
+    return path if path.is_absolute() else root.parent / path
+
+
 def effective_timestamp(item: Path, basis: str) -> float:
     """The timestamp used to judge one direct child's staleness. A file
     uses its own timestamp. A folder uses the MOST RECENT timestamp

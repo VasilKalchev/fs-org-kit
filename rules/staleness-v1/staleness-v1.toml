@@ -1,15 +1,16 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks each direct child of a path against an age threshold - either flagging things that have gone stale (mode=\"stale\", for active folders that should stay current) or things that are unexpectedly active (mode=\"active\", for archive folders that shouldn't be seeing new activity)."
 severity = "warn"
 scope = "single"
 protocol_version = "1.0"
 
 [params]
-names = ["mode", "threshold", "basis", "destination", "exclude"]
+names = ["mode", "threshold", "basis", "destination", "create_destination", "exclude"]
 
 [params.defaults]
 basis = "mtime"
 exclude = []
+create_destination = false
 # mode, threshold, and destination have NO default - both modes are
 # equally likely use cases (see basename-sync-v1's mode param for the
 # same reasoning), no single threshold makes sense across every use
@@ -45,13 +46,25 @@ exclude = []
 #
 # destination - what the FIXER uses (see staleness-v1-fix.py): every
 #           violating item is moved to this folder, whatever mode is.
-#           That folder must already exist - the fixer never creates
-#           it. A relative value is resolved against --path's parent
-#           (e.g. "_arch" for a sibling archive folder, matching the
-#           old built-in behavior); an absolute value is used as-is,
-#           which is how you point the fixer at your OS's actual
-#           recycle bin/trash folder instead of an archive - there's no
-#           separate "recycle bin" option, `destination` covers both by
-#           just being a path. A name collision at the destination is
-#           never overwritten - that item is reported as unresolved,
-#           not silently clobbered.
+#           A relative value is resolved against --path's parent (e.g.
+#           "_arch" for a sibling archive folder); an absolute or
+#           `~`-relative value is used as-is, which is how you point the
+#           fixer at your OS's actual recycle bin/trash folder instead
+#           of an archive - there's no separate "recycle bin" option,
+#           `destination` covers both by just being a path. A name
+#           collision at the destination is never overwritten - that
+#           item is reported as unresolved, not silently clobbered.
+#
+#           strftime placeholders are expanded against the time of the
+#           run, so the destination can be dated: "_arch/%Y" files each
+#           archived item under the year it was archived, which is what
+#           an archive "separated by year" needs if the fixer is to
+#           maintain it rather than undermine it. A destination
+#           containing a literal `%` has to escape it as `%%`.
+#
+# create_destination - false (default) means the destination must
+#           already exist and the fixer never creates it: a typo'd
+#           destination reports "unfixable" instead of silently building
+#           a tree beside the real one. A dated destination has to opt
+#           in, since the folder for a given year won't exist the first
+#           time that year is archived into.

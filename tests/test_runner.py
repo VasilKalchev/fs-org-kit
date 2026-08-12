@@ -247,6 +247,81 @@ class TestCollectInvocations:
         assert missing == ["gone/"]
 
 
+class TestReservedFolderInvocations:
+    """[folders.reserved."_x".rules] targets every folder NAMED _x on
+    disk - a reserved entry is a name, not a location."""
+
+    RESERVED = {
+        "prefix": "_",
+        "_arch": {
+            "purpose": "P", "lifecycle": "archival", "origin": ["self"],
+            "rules": {"file-extensions-v1": [{"reason": "r", "params": {"allowed": ["jpg"]}}]},
+        },
+    }
+
+    def _collect(self, tmp_path, catalog, reserved=None):
+        reserved = self.RESERVED if reserved is None else reserved
+        data = {"paths": {}, "folders": {"reserved": reserved}}
+        entries = {k: v for k, v in reserved.items() if k != "prefix"}
+        resolved_folders, _ = resolve_entries(entries, {}, "folders.reserved")
+        return collect_invocations(data, tmp_path, catalog, {}, resolved_folders)[0]
+
+    def test_one_invocation_per_matching_folder(self, tmp_path, catalog):
+        (tmp_path / "prj" / "_arch").mkdir(parents=True)
+        (tmp_path / "task" / "_arch").mkdir(parents=True)
+        (tmp_path / "prj" / "live").mkdir()
+        invocations = self._collect(tmp_path, catalog)
+        assert len(invocations) == 2
+        assert {inv.target_path.parent.name for inv in invocations} == {"prj", "task"}
+        assert all(inv.location.startswith('folders.reserved."_arch"') for inv in invocations)
+
+    def test_name_matching_nothing_contributes_no_invocations(self, tmp_path, catalog):
+        (tmp_path / "prj").mkdir()
+        assert self._collect(tmp_path, catalog) == []
+
+    def test_nested_match_is_not_pruned(self, tmp_path, catalog):
+        (tmp_path / "_arch" / "_arch").mkdir(parents=True)
+        assert len(self._collect(tmp_path, catalog)) == 2
+
+    def test_entry_without_rules_is_skipped(self, tmp_path, catalog):
+        (tmp_path / "_arch").mkdir()
+        reserved = {"prefix": "_", "_arch": {"purpose": "P", "lifecycle": "archival", "origin": ["self"]}}
+        assert self._collect(tmp_path, catalog, reserved) == []
+
+    def test_coexists_with_a_path_entry_for_the_same_folder(self, tmp_path, catalog):
+        """prj/_arch/ is both a cataloged path and a reserved name; the two
+        answer different questions, so both sets of rules apply."""
+        (tmp_path / "prj" / "_arch").mkdir(parents=True)
+        paths = {
+            "prj/_arch/": {
+                "purpose": "P", "lifecycle": "archival", "origin": ["self"],
+                "rules": {"empty-v1": [{"reason": "r", "params": {}}]},
+            }
+        }
+        data = {"paths": paths, "folders": {"reserved": self.RESERVED}}
+        resolved_paths, _ = resolve_entries(paths, {}, "paths")
+        entries = {k: v for k, v in self.RESERVED.items() if k != "prefix"}
+        resolved_folders, _ = resolve_entries(entries, {}, "folders.reserved")
+        invocations, _ = collect_invocations(data, tmp_path, catalog, resolved_paths, resolved_folders)
+        assert {inv.rule_id for inv in invocations} == {"empty-v1", "file-extensions-v1"}
+        assert {inv.target_path for inv in invocations} == {tmp_path / "prj" / "_arch"}
+
+    def test_inherited_rules_are_carried(self, tmp_path, catalog):
+        (tmp_path / "_old").mkdir()
+        reserved = {
+            "prefix": "_",
+            "_arch": self.RESERVED["_arch"],
+            "_old": {
+                "purpose": "P", "lifecycle": "archival", "origin": ["self"],
+                "inherit": {"rules": "_arch"},
+            },
+        }
+        invocations = self._collect(tmp_path, catalog, reserved)
+        assert len(invocations) == 1
+        assert invocations[0].rule_id == "file-extensions-v1"
+        assert "inherited from" in invocations[0].location
+
+
 class TestInvokeScript:
 
     def test_ok_status(self, tmp_path, catalog):

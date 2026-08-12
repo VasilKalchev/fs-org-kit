@@ -43,6 +43,51 @@ has to be an opaque param. `unrestricted_writes` stays a documented
 capability either way - the destination-from-config shape isn't unique
 to this rule.
 
+### Rules attached to a reserved folder name actually run
+
+`[folders.reserved."_x".rules.<name>]` validated and documented, but
+`runner.py` had no branch for it - `collect_invocations` covered
+per-path, `paths.rules`, `paths.cross`, and `folders.rules`, so those
+attachments silently did nothing. They now target every folder *named*
+`_x` anywhere under root, found in one `os.walk` that doesn't follow
+symlinks and doesn't prune a match nested inside another. This closes
+the gap between the four location vocabularies
+[DESIGN.md](DESIGN.md#path-pattern-keys) already claimed existed and the
+three the runner implemented.
+
+Reserved entries reach the runner through `validator.resolved_folders`,
+the same resolve-once-and-reuse path `resolved_paths` already takes, so
+`inherit` between reserved entries carries their rules with it. A folder
+that is both a reserved name and its own `[paths."..."]` entry gets both
+sets of rules - two questions, two answers, the way a per-path
+attachment and `[[folders.rules]]` already coexist on one folder.
+
+### `staleness-v1` 1.1 - dated destinations
+
+`destination` now expands strftime placeholders against the time of the
+run, so `"_arch/%Y"` files each archived item under the year it was
+archived. Without it, a fixer pointed at an archive that is "separated
+by year" spends every run undermining that arrangement. A destination
+with no placeholder renders to itself, so every existing attachment
+resolves exactly where it did.
+
+New `create_destination` (default `false`) keeps the never-creates
+stance - a typo'd destination still reports `unfixable` rather than
+building a tree beside the real one - while letting a dated destination
+opt in, since the folder for a given year cannot exist before that year
+is first archived into. The default differs from the sweep rule's
+equivalent for that reason: a dated dump folder is that rule's whole
+purpose, whereas an archive is somewhere that should already exist.
+
+`~`-relative destinations are now expanded, which is what the manifest
+already claimed for pointing the fixer at an OS trash folder.
+
+### `see_also` renders as Markdown
+
+A list-valued `see_also` reached the generated attribute table as its
+Python repr (`['prj/', 'task/']`); it's now joined like every other list
+field, with a bare string still passing through.
+
 ### `examples/`
 
 `examples/para/` - a toy PARA tree, a standard governing it, and a
