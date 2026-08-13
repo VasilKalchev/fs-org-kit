@@ -39,6 +39,31 @@ shared, and versioned independently of any one person's standard.
 
 ---
 
+## Installation
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+A virtualenv isn't required, but the runner invokes every rule script
+with the same interpreter it's running under (`sys.executable`), so
+whatever environment you install into is also where a rule's
+dependencies need to be installed - a venv keeps that separate from
+your system Python and other projects'.
+
+`pip install -e ".[dev]"` installs the core package and pytest; that's
+all that's needed to run the bundled rules, which are stdlib-only with
+one exception. A rule that needs a third-party package (like
+`spelling-abbreviations-v1`, which needs `pyspellchecker`) documents
+that requirement in its own manifest - install it the same way, into
+the same environment, only if you attach that rule. See
+[doc/RULES.md](doc/RULES.md)'s "dependency isolation" for why this is
+per-rule rather than something `pip install fs-org-kit` pulls in for
+you (`rules.own/` and `rules.external/` aren't even known at that
+point).
+
 ## Repository layout
 
 ```
@@ -84,7 +109,7 @@ The fastest way in is [`examples/para/`](examples/para/) - a toy PARA
 tree with three deliberate mistakes in it, a standard that catches them,
 and a tutorial that walks from `fs-org-validate` to `--fix`.
 
-Short commands, once installed (`pip install -e .`):
+Short commands, once installed:
 
 ```
 fs-org-validate   your-standard.toml [flags]
