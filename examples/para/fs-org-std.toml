@@ -180,15 +180,100 @@ reason = "reference material is only findable if it is named for what it contain
 [paths."resources/".rules.naming-pattern-v1.params]
 pattern = '^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)?$'   # kebab-case, optional extension
 mode = "allow"
+exclude = ["_*", "*/_*"]    # reserved folders have their own rules, below
+
+
+# -------------------------------------------------------------------
+# Paths > Cross - one rule, several paths at once
+# -------------------------------------------------------------------
+# Everything above asks a question about ONE location. This asks one
+# about the relationship BETWEEN two: filing something means moving it,
+# and a copy left behind in the inbox is the one that gets edited by
+# mistake. Neither path can answer that alone - a duplicate is only
+# visible from both at once.
+[[paths.cross]]
+paths = ["inbox/", "resources/"]
+
+[[paths.cross.rules.duplicate-files-v1]]
+reason = "a file that is in the inbox and already filed is a filing job that stopped halfway"
+
+[paths.cross.rules.duplicate-files-v1.params]
+cache = false   # this rule caches hashes between runs by default; off here
+                # so the example leaves nothing behind outside its own directory
 
 
 # ===================================================================
 # Folders
 # ===================================================================
-# Blanket rules over every folder under root, and reserved folder-NAME
-# patterns (e.g. `_archive`) that mean the same thing wherever they
-# appear. This example needs neither - see fs-org-std.template.toml.
+# Everything that is NOT tied to one cataloged location: blanket rules
+# over every folder under root, and reserved folder-NAME patterns that
+# mean the same thing wherever they turn up.
 [folders]
+
+# A reserved folder entry documents itself the same way a path does,
+# minus `origin` - a name means the same thing wherever it appears, so
+# where its contents came from isn't a property of the name.
+[folders.attributes]
+names = ["purpose", "notes", "use_for", "not_for"]
+required = ["purpose"]
+
+[folders.attributes.group]
+names = ["lifecycle"]
+required = ["lifecycle"]
+
+# -------------------------------------------------------------------
+# Folders > blanket rules
+# -------------------------------------------------------------------
+# Covers every folder under root, cataloged or not - which is the point:
+# the folder you made in a file manager at 11pm and never cataloged is
+# exactly the one that breaks the convention.
+#
+# This is ONE invocation, handed root. How far it reaches is the rule's
+# own business, so `recursive = true` is what makes it reach at all -
+# a blanket attachment isn't a loop the runner performs for you.
+#
+# The leading `_?` admits reserved names like `_attachments` below;
+# without it this convention would forbid the thing the next section
+# defines.
+[[folders.rules.naming-pattern-v1]]
+reason = "a folder is found by its name long before anything looks inside it"
+
+[folders.rules.naming-pattern-v1.params]
+pattern = '^_?[a-z0-9]+(-[a-z0-9]+)*$'
+mode = "allow"
+target = "folders"
+recursive = true
+
+
+# -------------------------------------------------------------------
+# Folders > Reserved
+# -------------------------------------------------------------------
+# `prefix` is the convention every reserved name follows, so a folder
+# that looks reserved but was never documented here can be spotted.
+[folders.reserved]
+prefix = "_"
+
+# Attached rules here match by NAME, not location: the runner invokes
+# them once per folder actually called `_attachments`, anywhere under
+# root. Neither of the two in this tree is cataloged as a path, and
+# neither needs to be.
+[folders.reserved."_attachments"]
+purpose = "Files a document refers to, kept beside it rather than in a shared pile."
+notes = "Deliberately location-independent: a note and the things it points at should move together, whichever of the four categories the note is sitting in this month."
+use_for = ["images, scans and PDFs referenced by a document next to this folder"]
+not_for = ["anything a second document also refers to - that's a resource, not an attachment"]
+
+[folders.reserved."_attachments".group]
+lifecycle = "ongoing"
+
+# Attachments belong to the document beside them. The moment one grows
+# subfolders it has become a project's working directory wearing the
+# wrong name.
+[[folders.reserved."_attachments".rules.link-policy-v1]]
+reason = "an attachments folder that has grown subfolders has stopped being an attachments folder"
+
+[folders.reserved."_attachments".rules.link-policy-v1.params]
+folders = "forbidden"
 
 
 # ===================================================================
