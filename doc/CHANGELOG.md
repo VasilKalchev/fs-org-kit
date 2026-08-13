@@ -11,6 +11,21 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Runner: relative `root` now resolves against the standard's own directory, not cwd
+
+Closes the gap `examples/` (0.3) called out: `root_dir` built itself from
+`Path(root).expanduser().resolve()` directly instead of going through
+`path_keys.resolve_key`, so a relative `root` (`./tree/`) resolved
+against the process's current working directory rather than the
+standard file's own location. Running the identical command from two
+different directories could validate two different trees; running
+`fs-org-run` on a standard from outside its own directory silently
+found nothing to do instead of resolving correctly. `resolve_key`
+already had the right semantics (absolute, `~`-relative, or relative to
+a base directory) - `root` just wasn't going through it, since it's the
+one key that has to be resolved before `root_dir` itself exists to be
+passed in; it's now anchored to the standard's directory instead.
+
 ### `doc/ROADMAP.md` renamed to `doc/BACKLOG.md`, split by time horizon
 
 It held a mix of scoped-and-ready items and no-design-yet ideas under

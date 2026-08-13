@@ -573,6 +573,63 @@ allowed = ["jpg"]
         exit_code = main([str(std_path), "--no-color"])
         assert exit_code == 1
 
+    def test_relative_root_resolves_against_standard_dir_not_cwd(self, tmp_path, monkeypatch):
+        """A relative `root` in the TOML must anchor to the standard
+        file's own directory, not wherever the tool happens to be
+        invoked from - otherwise the same command run from two
+        different directories would validate two different trees."""
+        standard_dir = tmp_path / "myproj"
+        standard_dir.mkdir()
+        (standard_dir / "tree" / "dirty").mkdir(parents=True)
+        (standard_dir / "tree" / "dirty" / "a.pdf").touch()
+
+        std_path = standard_dir / "fs-org-std.toml"
+        std_path.write_text('''root = "./tree/"
+
+[meta]
+schema_version = "2.0"
+standard_version = "2.0"
+schema_date = "2026-01-01"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = ["purpose"]
+required = ["purpose"]
+
+[paths.attributes.group]
+names = ["lifecycle", "origin"]
+multi = ["origin"]
+required = ["lifecycle", "origin"]
+
+[paths."dirty/"]
+purpose = "Dirty"
+
+[paths."dirty/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+
+[[paths."dirty/".rules.file-extensions-v1]]
+reason = "r"
+
+[paths."dirty/".rules.file-extensions-v1.params]
+allowed = ["jpg"]
+
+[enums.group.lifecycle]
+ongoing = "x"
+archival = "x"
+[enums.group.origin]
+self = "x"
+[tags]
+[abbreviations]
+[folders.attributes]
+names = []
+[folders.reserved]
+''')
+
+        monkeypatch.chdir(tmp_path)  # deliberately NOT standard_dir
+        exit_code = main([str(std_path), "--no-color"])
+        assert exit_code == 1  # violation only found if root resolved against standard_dir
+
     def test_a_cataloged_path_absent_from_disk_exits_zero(self, tmp_path):
         """Nothing to run, nothing wrong: whether a location should exist
         is a rule's question, not the runner's."""

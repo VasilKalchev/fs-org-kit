@@ -592,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{_COLOR['dim']}{note}{_COLOR['reset']}\n" if color else f"{note}\n")
 
     root = data.get("root", "")
-    root_dir = Path(root).expanduser().resolve() if root else standard_dir
+    root_dir = resolve_key(standard_dir, root) if root else standard_dir
 
     invocations = collect_invocations(
         data, root_dir, validator.rule_catalog, validator.resolved_paths, validator.resolved_folders
