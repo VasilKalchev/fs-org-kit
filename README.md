@@ -1,6 +1,6 @@
 # fs-org-kit
 
-A personal filesystem organization standard, made machine-enforceable.
+A standard for how your files should be organized, made machine-enforceable.
 
 You write down how your home directory (or any directory tree) *should*
 be organized - as data, in TOML, not as a wiki page you'll stop

@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-fs-org-kit is a tool for making a personal filesystem organization standard
-machine-enforceable. Users write a `fs-org-std.toml` describing how a
+fs-org-kit is a tool that makes a standard for how your files should be
+organized machine-enforceable. Users write a `fs-org-std.toml` describing how a
 directory tree should be organized (paths, their purpose/lifecycle, and
 which rules apply to them); a validator, runner, and doc generator then
 check/fix/document that standard against the real filesystem. Status: 0.1

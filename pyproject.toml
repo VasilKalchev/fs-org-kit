@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fs-org-kit"
 version = "0.4.0"
-description = "A personal filesystem organization standard, made machine-enforceable."
+description = "A standard for how your files should be organized, made machine-enforceable."
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
