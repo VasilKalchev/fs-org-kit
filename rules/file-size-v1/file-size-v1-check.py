@@ -16,6 +16,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 import argparse
 import fnmatch
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -58,25 +59,33 @@ def normalize_extensions(values: list) -> set:
 
 
 def collect_files(root: Path, recursive: bool, exclude_globs: list, extensions: set):
-    """Every file to be checked. Excluding a folder prunes its subtree.
+    """Every file to be checked, as (path, os.DirEntry) pairs - the entry
+    is cached from the same os.scandir() call that classified it, so the
+    caller stats it via that entry instead of a fresh syscall. Excluding
+    a folder prunes its subtree.
 
     Symlinks are skipped before stat: a symlink's own size is the length
     of the path it stores, and following it would measure a file outside
     the tree - see the manifest.
     """
-    for child in sorted(root.iterdir()):
+    try:
+        entries = sorted(os.scandir(root), key=lambda e: e.name)
+    except OSError:
+        entries = []
+    for entry in entries:
+        child = Path(entry.path)
         rel = child.relative_to(root).as_posix()
         if is_excluded(rel, exclude_globs):
             continue
-        if child.is_symlink():
+        if entry.is_symlink():
             continue
-        if child.is_dir():
+        if entry.is_dir():
             if recursive:
                 yield from collect_files(child, recursive, exclude_globs, extensions)
-        elif child.is_file():
+        elif entry.is_file():
             if extensions and child.suffix.lstrip(".").lower() not in extensions:
                 continue
-            yield child
+            yield child, entry
 
 
 def main() -> int:
@@ -139,9 +148,9 @@ def main() -> int:
 
     over: list = []
     under: list = []
-    for f in collect_files(root, recursive, exclude, extensions):
+    for f, entry in collect_files(root, recursive, exclude, extensions):
         try:
-            size = f.stat().st_size
+            size = entry.stat().st_size
         except OSError as e:
             print(f"error: cannot stat {f}: {e}", file=sys.stderr)
             return 1

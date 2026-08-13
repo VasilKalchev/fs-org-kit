@@ -9,6 +9,31 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ---
 
+## 0.5
+
+### Five rules rewritten onto `os.scandir()` to stop re-listing the same directory
+
+A `/simplify` efficiency pass measured each directory getting listed
+several times over per rule invocation: `folder-structure-v1` walked
+the whole tree once for depth/size, then a second time per folder for
+item/file/folder counts; `empty-v1` listed a directory up to ~3.5 times
+on average (once to walk it, again inside `folder_is_empty()`, again
+inside `has_any_file()` for the `no_files` reading); `file-size-v1`
+spent 4 syscalls per file (`is_symlink`/`is_dir`/`is_file`/`stat`, each
+a fresh call under `pathlib`); `duplicate-files-v1`'s `Path.rglob()`
+yields plain `Path`s with no cached type/stat info; and
+`xdg-auto-folder-icon-v1` re-listed a folder once per `match` entry
+that needed one. All five now scan each directory once via
+`os.scandir()`, reusing the returned `DirEntry`'s cached
+type/stat instead of re-deriving it through `pathlib`; `empty-v1` and
+`xdg-auto-folder-icon-v1` cache a directory's listing across the
+several call sites that ask about it. Behavior-preserving throughout,
+including two latent quirks that had to survive the rewrite unchanged
+rather than get "fixed" as a side effect: `file-size-v1`'s `exclude`
+matches relative to the *current* recursion level, not the scanned
+root, and `duplicate-files-v1`'s `exclude` never prunes a directory's
+subtree early, only filters the flat file list by full relative path.
+
 ## 0.4
 
 ### Runner: relative `root` now resolves against the standard's own directory, not cwd

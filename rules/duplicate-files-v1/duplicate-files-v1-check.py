@@ -19,6 +19,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -148,21 +149,40 @@ def normalize_extensions(extensions: list) -> set:
     return {str(e).lower().lstrip(".") for e in extensions}
 
 
-def collect_files(root: Path, recursive: bool, extensions: set, exclude_globs: list, min_size: int):
+def collect_files(root: Path, base: Path, recursive: bool, extensions: set,
+                   exclude_globs: list, min_size: int):
     """Yields (abs_path, stat_result) for every file under `root` that
-    passes the filters. Symlinks are skipped entirely - see the
-    manifest's "What is NOT reported"."""
-    items = root.rglob("*") if recursive else root.glob("*")
-    for item in items:
-        if item.is_symlink() or not item.is_file():
+    passes the filters, via os.scandir() so each entry's type comes from
+    the same directory read that found it - Path.rglob()/glob() yield
+    plain Path objects with no cached type or stat info, so the
+    is_symlink()/is_file()/stat() calls that used to follow each one
+    re-hit the filesystem individually. `base` stays the original root
+    across the recursion, so exclude globs keep matching the full
+    relative path, not just the path within the current folder.
+    Symlinked directories are not descended into, matching Path.rglob()'s
+    current default. Symlinks are skipped entirely - see the manifest's
+    "What is NOT reported"."""
+    try:
+        entries = sorted(os.scandir(root), key=lambda e: e.name)
+    except OSError:
+        entries = []
+    for entry in entries:
+        if entry.is_symlink():
             continue
-        rel = item.relative_to(root).as_posix()
+        item = Path(entry.path)
+        if entry.is_dir():
+            if recursive:
+                yield from collect_files(item, base, recursive, extensions, exclude_globs, min_size)
+            continue
+        if not entry.is_file():
+            continue
+        rel = item.relative_to(base).as_posix()
         if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
             continue
         if extensions and item.suffix.lower().lstrip(".") not in extensions:
             continue
         try:
-            st = item.stat()
+            st = entry.stat()
         except OSError:
             continue  # vanished or unreadable between listing and stat
         if st.st_size < min_size:
@@ -288,7 +308,7 @@ def main() -> int:
     by_size: dict[int, list] = {}
     seen_inodes = set()
     for root in roots:
-        for path, st in collect_files(root, recursive, extensions, exclude_globs, min_size):
+        for path, st in collect_files(root, root, recursive, extensions, exclude_globs, min_size):
             identity = (st.st_dev, st.st_ino)
             if identity in seen_inodes:
                 continue  # another name for bytes we already have

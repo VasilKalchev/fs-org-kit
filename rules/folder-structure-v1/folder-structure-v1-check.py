@@ -16,6 +16,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 import argparse
 import fnmatch
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -28,24 +29,51 @@ def is_excluded(relative_posix: str, exclude_globs: list) -> bool:
     return any(fnmatch.fnmatch(relative_posix, pattern) for pattern in exclude_globs)
 
 
-def walk(folder: Path, root: Path, exclude_globs: list):
-    """Yields every non-excluded descendant of `folder`, recursively -
-    an excluded folder's contents are skipped too, not just the folder
-    itself, so exclusion prunes the whole subtree."""
-    for child in sorted(folder.iterdir()):
-        rel = child.relative_to(root).as_posix()
-        if is_excluded(rel, exclude_globs):
-            continue
-        yield child
-        if child.is_dir():
-            yield from walk(child, root, exclude_globs)
+def scan_tree(root: Path, exclude_globs: list):
+    """Single pass over the tree, one os.scandir() per folder - depth,
+    total size, and each folder's direct item/file/folder counts are all
+    collected while the tree is walked, instead of a second full listing
+    pass over folders already visited.
 
+    Returns (folder_stats, deepest, total_size) where folder_stats is a
+    pre-order list of (folder, item_count, file_count, folder_count) for
+    `root` and every folder beneath it - the same set and order `walk()`
+    used to build `all_folders` in, so `folder_stats[0]` is always root's
+    own entry."""
+    folder_stats = []
+    deepest = 0
+    total_size = 0
 
-def direct_children_of(folder: Path, root: Path, exclude_globs: list) -> list:
-    return [
-        c for c in folder.iterdir()
-        if not is_excluded(c.relative_to(root).as_posix(), exclude_globs)
-    ]
+    def visit(folder: Path, depth: int):
+        nonlocal deepest, total_size
+        deepest = max(deepest, depth)
+        try:
+            entries = sorted(os.scandir(folder), key=lambda e: e.name)
+        except OSError:
+            entries = []
+        items = files = folders = 0
+        subdirs = []
+        for entry in entries:
+            child = Path(entry.path)
+            rel = child.relative_to(root).as_posix()
+            if is_excluded(rel, exclude_globs):
+                continue
+            items += 1
+            if entry.is_dir():
+                folders += 1
+                subdirs.append(child)
+            elif entry.is_file():
+                files += 1
+                try:
+                    total_size += entry.stat().st_size
+                except OSError:
+                    pass
+        folder_stats.append((folder, items, files, folders))
+        for sub in subdirs:
+            visit(sub, depth + 1)
+
+    visit(root, 0)
+    return folder_stats, deepest, total_size
 
 
 def parse_size(value: str) -> int:
@@ -116,19 +144,7 @@ def main() -> int:
         print(f"error: --path is not a directory: {root}", file=sys.stderr)
         return 1
 
-    deepest = 0
-    total_size = 0
-    all_folders = [root]
-    for item in walk(root, root, exclude_globs):
-        if item.is_dir():
-            depth = len(item.relative_to(root).parts)
-            deepest = max(deepest, depth)
-            all_folders.append(item)
-        elif item.is_file():
-            try:
-                total_size += item.stat().st_size
-            except OSError:
-                pass
+    folder_stats, deepest, total_size = scan_tree(root, exclude_globs)
 
     violations = []
 
@@ -138,17 +154,14 @@ def main() -> int:
         if min_v is not None and value < min_v:
             violations.append(f"{label} is {value}, below min {min_v}")
 
-    folders_to_check = all_folders if recursive else [root]
-    for folder in folders_to_check:
-        children = direct_children_of(folder, root, exclude_globs)
-        files = [c for c in children if c.is_file()]
-        folders = [c for c in children if c.is_dir()]
+    stats_to_check = folder_stats if recursive else folder_stats[:1]
+    for folder, items, files, folders in stats_to_check:
         where = "" if folder == root else f" under '{folder.relative_to(root).as_posix()}'"
 
         before = len(violations)
-        check(len(children), max_items, min_items, "item count")
-        check(len(files), max_files, min_files, "file count")
-        check(len(folders), max_folders, min_folders, "folder count")
+        check(items, max_items, min_items, "item count")
+        check(files, max_files, min_files, "file count")
+        check(folders, max_folders, min_folders, "folder count")
         if where:
             for i in range(before, len(violations)):
                 violations[i] += where

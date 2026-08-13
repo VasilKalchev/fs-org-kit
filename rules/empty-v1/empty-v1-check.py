@@ -16,6 +16,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 import argparse
 import fnmatch
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -27,54 +28,62 @@ def is_excluded(rel_path: str, globs: list) -> bool:
     return any(fnmatch.fnmatch(rel_path, g) or fnmatch.fnmatch(Path(rel_path).name, g) for g in globs)
 
 
-def has_any_file(folder: Path) -> bool:
+def scan(folder: Path, cache: dict) -> list:
+    """The raw (unfiltered) entries directly under `folder`, via one
+    os.scandir() call - cached per folder so folder_is_empty(),
+    has_file_below() and walk() can each ask about the same directory
+    without re-listing it. Unfiltered on purpose: `exclude` controls what
+    walk() reports/descends into, not what folder_is_empty() counts as
+    content - a folder holding only an excluded file still has a file
+    in it."""
+    if folder in cache:
+        return cache[folder]
+    try:
+        entries = sorted(os.scandir(folder), key=lambda e: e.name)
+    except OSError:
+        entries = []
+    cache[folder] = entries
+    return entries
+
+
+def has_file_below(folder: Path, cache: dict) -> bool:
     """True if any real file exists anywhere below `folder`. Used for the
     "no_files" reading, where a tree of empty folders is itself empty.
     Symlinks count as content: something deliberately put one there."""
-    try:
-        for child in folder.iterdir():
-            if child.is_symlink() or child.is_file():
-                return True
-            if child.is_dir() and has_any_file(child):
-                return True
-    except OSError:
-        return True  # unreadable - can't claim it's empty
+    for entry in scan(folder, cache):
+        if entry.is_symlink() or entry.is_file():
+            return True
+        if entry.is_dir() and has_file_below(Path(entry.path), cache):
+            return True
     return False
 
 
-def folder_is_empty(folder: Path, meaning: str) -> bool:
-    try:
-        entries = list(folder.iterdir())
-    except OSError:
-        return False
-    if not entries:
+def folder_is_empty(folder: Path, meaning: str, cache: dict) -> bool:
+    if not scan(folder, cache):
         return True
-    return meaning == "no_files" and not has_any_file(folder)
+    return meaning == "no_files" and not has_file_below(folder, cache)
 
 
 def walk(root: Path, base: Path, recursive: bool, exclude: list, meaning: str,
-         check_files: bool, check_folders: bool, found: list) -> None:
+         check_files: bool, check_folders: bool, found: list, cache: dict) -> None:
     """Collect every empty thing under `root`, reporting paths relative to
     `base` so the message reads the same however deep the recursion went."""
-    try:
-        children = sorted(root.iterdir())
-    except OSError:
-        return
-    for child in children:
+    for entry in scan(root, cache):
+        child = Path(entry.path)
         rel = child.relative_to(base).as_posix()
         if is_excluded(rel, exclude):
             continue
-        if child.is_symlink():
+        if entry.is_symlink():
             continue  # see the manifest - a symlink is never "empty"
-        if child.is_dir():
-            if check_folders and folder_is_empty(child, meaning):
+        if entry.is_dir():
+            if check_folders and folder_is_empty(child, meaning, cache):
                 found.append(f"{rel}/")
                 continue  # already reported as a whole; don't also list what's inside
             if recursive:
-                walk(child, base, recursive, exclude, meaning, check_files, check_folders, found)
-        elif child.is_file() and check_files:
+                walk(child, base, recursive, exclude, meaning, check_files, check_folders, found, cache)
+        elif entry.is_file() and check_files:
             try:
-                if child.stat().st_size == 0:
+                if entry.stat().st_size == 0:
                     found.append(rel)
             except OSError:
                 continue
@@ -124,12 +133,14 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    if check_folders and folder_is_empty(root, meaning):
+    cache: dict = {}
+
+    if check_folders and folder_is_empty(root, meaning, cache):
         print(json.dumps({"status": "violation", "message": f"{root} is empty"}))
         return 0
 
     found: list[str] = []
-    walk(root, root, recursive, exclude, meaning, check_files, check_folders, found)
+    walk(root, root, recursive, exclude, meaning, check_files, check_folders, found, cache)
 
     if not found:
         print(json.dumps({"status": "ok"}))

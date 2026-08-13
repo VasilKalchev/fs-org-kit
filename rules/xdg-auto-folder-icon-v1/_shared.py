@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -216,7 +217,22 @@ def read_settings(raw_params: str, path: str) -> Settings:
     )
 
 
-def folder_matches(folder: Path, matcher: Matcher) -> bool:
+def list_children(folder: Path, cache: dict):
+    """One os.scandir() per folder, cached (failures too) - so testing
+    the same folder against every entry in `match` doesn't re-list it
+    once per matcher, and a later walk() recursion into it reuses the
+    same listing instead of scanning it again. None means unreadable."""
+    if folder in cache:
+        return cache[folder]
+    try:
+        entries = list(os.scandir(folder))
+    except OSError:
+        entries = None
+    cache[folder] = entries
+    return entries
+
+
+def folder_matches(folder: Path, matcher: Matcher, cache: dict) -> bool:
     """Every condition in one entry must hold - they're ANDed. Only direct
     children are considered: recursing would let one stray file redefine
     a whole tree's icon, and would turn a cheap listing into a full walk."""
@@ -226,11 +242,10 @@ def folder_matches(folder: Path, matcher: Matcher) -> bool:
     needs_listing = matcher.contains or matcher.contains_any or matcher.empty is not None
     if not needs_listing:
         return True
-    try:
-        children = list(folder.iterdir())
-    except OSError:
+    entries = list_children(folder, cache)
+    if entries is None:
         return False
-    names = [c.name for c in children]
+    names = [e.name for e in entries]
 
     if matcher.empty is not None and matcher.empty != (not names):
         return False
@@ -241,7 +256,7 @@ def folder_matches(folder: Path, matcher: Matcher) -> bool:
         if not hits:
             return False
         if matcher.ratio:
-            files = [c.name for c in children if c.is_file()]
+            files = [e.name for e in entries if e.is_file()]
             if not files or len(hits) / len(files) < matcher.ratio:
                 return False
     return True
@@ -261,20 +276,21 @@ def evaluate(settings: Settings) -> list[tuple[str, str, str]]:
     """(relative path, current icon, desired icon) per folder whose icon
     doesn't already match what its first matching rule asks for."""
     findings = []
+    cache: dict = {}
 
     def walk(folder: Path) -> None:
-        try:
-            children = sorted(folder.iterdir())
-        except OSError:
+        entries = list_children(folder, cache)
+        if entries is None:
             return
-        for child in children:
-            if not child.is_dir() or child.is_symlink():
+        for entry in sorted(entries, key=lambda e: e.name):
+            if entry.is_symlink() or not entry.is_dir():
                 continue
+            child = Path(entry.path)
             rel = child.relative_to(settings.root).as_posix()
             if excluded(rel, settings.exclude):
                 continue
             for matcher in settings.matchers:
-                if not folder_matches(child, matcher):
+                if not folder_matches(child, matcher, cache):
                     continue
                 current = read_icon(child)
                 desired = resolve_icon(matcher.icon, current, settings)
