@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="785" height="480" viewBox="0 0 785 480" role="img" aria-label="fs-org-run terminal output">
+  <title>fs-org-run</title>
+  <rect width="785" height="480" rx="6" fill="#232629" stroke="#3b4247"/>
+  <path d="M0 6a6 6 0 0 1 6-6h773a6 6 0 0 1 6 6v26H0z" fill="#31363b"/>
+  <path d="M0 32h785" stroke="#3b4247"/>
+  <text x="392.5" y="20" fill="#b6bdc4" font-size="11.5" text-anchor="middle" font-family='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace'>fs-org-run</text>
+  <path d="M711 13L715 19L719 13" fill="none" stroke="#bdc3c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M737 19L741 13L745 19" fill="none" stroke="#bdc3c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M763 13L771 19M771 13L763 19" fill="none" stroke="#bdc3c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g font-family='ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace' font-size="12" xml:space="preserve">
+    <text x="18.0" y="58" fill="#7f8c8d" textLength="7.2" lengthAdjust="spacingAndGlyphs">$</text>
+    <text x="32.4" y="58" fill="#3daee9" textLength="72.0" lengthAdjust="spacingAndGlyphs">fs-org-run</text>
+    <text x="111.6" y="58" fill="#eff0f1" textLength="108.0" lengthAdjust="spacingAndGlyphs">fs-org-std.toml</text>
+    <text x="18.0" y="96" fill="#eff0f1" textLength="252.0" lengthAdjust="spacingAndGlyphs">paths."inbox/".rules.empty-v1[0]: [</text>
+    <text x="270.0" y="96" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">VIOLATION</text>
+    <text x="334.8" y="96" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">]</text>
+    <text x="349.2" y="96" fill="#eff0f1" textLength="367.2" lengthAdjust="spacingAndGlyphs">empty-v1 (tree/inbox): 1 empty item(s): untitled.md</text>
+    <text x="18.0" y="115" fill="#eff0f1" textLength="367.2" lengthAdjust="spacingAndGlyphs">paths."projects/*/".rules.required-content-v1[0]: [</text>
+    <text x="385.2" y="115" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">VIOLATION</text>
+    <text x="450.0" y="115" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">]</text>
+    <text x="464.4" y="115" fill="#eff0f1" textLength="302.4" lengthAdjust="spacingAndGlyphs">required-content-v1 (tree/projects/guitar-</text>
+    <text x="18.0" y="134" fill="#eff0f1" textLength="266.4" lengthAdjust="spacingAndGlyphs">lessons): missing required: README.md</text>
+    <text x="18.0" y="153" fill="#eff0f1" textLength="345.6" lengthAdjust="spacingAndGlyphs">paths."resources/".rules.naming-pattern-v1[0]: [</text>
+    <text x="363.6" y="153" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">VIOLATION</text>
+    <text x="428.4" y="153" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">]</text>
+    <text x="442.8" y="153" fill="#eff0f1" textLength="324.0" lengthAdjust="spacingAndGlyphs">naming-pattern-v1 (tree/resources): 1 item(s)</text>
+    <text x="25.2" y="172" fill="#eff0f1" textLength="561.6" lengthAdjust="spacingAndGlyphs">that doesn't match the required pattern: Screenshot 2026-07-14 at 09.41.22.png</text>
+    <text x="18.0" y="191" fill="#eff0f1" textLength="324.0" lengthAdjust="spacingAndGlyphs">paths.cross[0].rules.duplicate-files-v1[0]: [</text>
+    <text x="342.0" y="191" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">VIOLATION</text>
+    <text x="406.8" y="191" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">]</text>
+    <text x="421.2" y="191" fill="#eff0f1" textLength="345.6" lengthAdjust="spacingAndGlyphs">duplicate-files-v1 (tree/inbox, tree/resources):</text>
+    <text x="25.2" y="210" fill="#eff0f1" textLength="741.6" lengthAdjust="spacingAndGlyphs">1 group(s) of identical files spanning 2+ of the given paths: [.../tree/inbox/font-pairing.md, .../tree</text>
+    <text x="18.0" y="229" fill="#eff0f1" textLength="273.6" lengthAdjust="spacingAndGlyphs">/resources/typography/font-pairing.md]</text>
+    <text x="18.0" y="248" fill="#eff0f1" textLength="266.4" lengthAdjust="spacingAndGlyphs">folders.rules.naming-pattern-v1[0]: [</text>
+    <text x="284.4" y="248" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">VIOLATION</text>
+    <text x="349.2" y="248" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">]</text>
+    <text x="363.6" y="248" fill="#eff0f1" textLength="403.2" lengthAdjust="spacingAndGlyphs">naming-pattern-v1 (tree): 1 item(s) that doesn't match t</text>
+    <text x="18.0" y="267" fill="#eff0f1" textLength="302.4" lengthAdjust="spacingAndGlyphs">he required pattern: areas/Car Maintenance</text>
+    <text x="18.0" y="305" fill="#eff0f1" textLength="50.4" lengthAdjust="spacingAndGlyphs">Summary</text>
+    <text x="82.8" y="324" fill="#eff0f1" textLength="36.0" lengthAdjust="spacingAndGlyphs">ok  6</text>
+    <text x="32.4" y="343" fill="#f67400" textLength="64.8" lengthAdjust="spacingAndGlyphs">violation</text>
+    <text x="111.6" y="343" fill="#eff0f1" textLength="7.2" lengthAdjust="spacingAndGlyphs">5</text>
+    <text x="61.2" y="362" fill="#eff0f1" textLength="57.6" lengthAdjust="spacingAndGlyphs">fixed  0</text>
+    <text x="32.4" y="381" fill="#eff0f1" textLength="86.4" lengthAdjust="spacingAndGlyphs">unfixable  0</text>
+    <text x="54.0" y="400" fill="#eff0f1" textLength="64.8" lengthAdjust="spacingAndGlyphs">broken  0</text>
+    <text x="46.8" y="419" fill="#eff0f1" textLength="72.0" lengthAdjust="spacingAndGlyphs">skipped  0</text>
+    <text x="18.0" y="457" fill="#eff0f1" textLength="158.4" lengthAdjust="spacingAndGlyphs">11 invocation(s) total</text>
+  </g>
+</svg>

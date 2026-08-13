@@ -1,36 +1,123 @@
-# fs-org-kit
+# <img src="doc/assets/logo.svg" alt="" height="32"> fs-org-kit
 
-A standard for how your files should be organized, made machine-enforceable.
+![python 3.11+](https://img.shields.io/badge/python-3.11%2B-d9a441?style=flat-square&labelColor=21262d)
+![dependencies none](https://img.shields.io/badge/dependencies-none-3fb950?style=flat-square&labelColor=21262d)
+![license MIT](https://img.shields.io/badge/license-MIT-8b949e?style=flat-square&labelColor=21262d)
 
-You write down how your home directory (or any directory tree) *should*
-be organized - as data, in TOML, not as a wiki page you'll stop
-maintaining - and a set of small scripts check whether it actually is,
-and where possible, fix it.
+**A standard for how your files should be organized, made machine-enforceable.**
 
----
+You write down how a directory tree *should* be organized - as data, in
+one TOML file, not as a wiki page you'll stop maintaining. From that one
+file you get two things: documentation you didn't have to write, and
+checks that actually run.
 
-## The core idea
+![fs-org-run finding five violations in the example tree](doc/assets/run.svg)
 
-The standard and the rules that check it change at different rates:
+<sub>The bundled example - a small PARA tree with five deliberate
+mistakes in it, no two of them found the same way, and the standard that
+catches them all.</sub>
 
-- **The standard** - one TOML file, `fs-org-std.toml`, that *you* fill
-  in. It describes your directories: what each one is for, its
-  lifecycle, where its content came from, and which rules apply to it.
-  This changes constantly, in small ways, as you organize more of your
-  life.
-- **Rules** - small, independently versioned units (a manifest plus one
-  or two scripts) that know how to *check* (and sometimes *fix*) one
-  specific thing - a naming convention, a staleness policy, a size
-  limit. These change rarely once written, and are shared: yours, the
-  project's, or someone else's.
-
-Keeping these separate (they used to be one file - see
-[doc/DESIGN.md](doc/DESIGN.md)) is what lets rules be authored,
-shared, and versioned independently of any one person's standard.
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [How a standard is put together](#how-a-standard-is-put-together)
+- [Rules](#rules)
+- [Commands](#commands)
+- [Documentation](#documentation)
 
 ---
 
-## Installation
+## What it does
+
+### 1. You describe the tree. It writes the documentation.
+
+Every folder you care about gets an entry saying what it's for, what it
+isn't for, and how it behaves over time:
+
+```toml
+[paths."projects/*/"]
+purpose = "One project: its notes, its files, and a README stating what 'done' means."
+use_for = ["working files for this project only"]
+not_for = ["reference material that outlives the project"]
+
+[paths."projects/*/".group]
+lifecycle = "temporary"
+origin = ["self"]
+```
+
+`fs-org-doc` turns the whole file into a Markdown document - a table of
+contents, a section per folder, and a section per rule listing
+everywhere it's attached and why:
+
+> ### `projects/*/`
+>
+> | Field | Value |
+> |---|---|
+> | Purpose | One project: its notes, its files, and a README stating what 'done' means. |
+> | Lifecycle | `temporary` |
+> | Origin | `self` |
+>
+> **Use for:**
+>
+> - working files for this project only
+>
+> **Attached rules:**
+>
+> | Rule | Reason |
+> |---|---|
+> | `required-content-v1` | a project without a written definition of done drifts into being an area |
+
+The document is generated from the *resolved* standard, so a folder that
+inherits its description from another shows the real text rather than a
+blank. Regenerate it whenever the standard changes and it can't go
+stale - which is the whole point, since a hand-written version of this
+is exactly the document everybody stops updating.
+
+`projects/*/` above is a glob: one entry covering every project folder
+you have now and every one you add later.
+
+### 2. You attach rules. It runs them.
+
+A rule is a small script that checks one specific thing - a naming
+convention, a staleness threshold, a size limit. You attach one to a
+path and say why:
+
+```toml
+[[paths."projects/".rules.staleness-v1]]
+reason = "a project nobody has touched in three months is finished or abandoned - either way it belongs in archive/"
+
+[paths."projects/".rules.staleness-v1.params]
+mode = "stale"
+threshold = "90d"
+destination = "archive"
+```
+
+`fs-org-run` resolves every attachment and runs it against the real
+filesystem. Each line of output names the attachment that produced it,
+so you can go straight to the block of TOML responsible.
+
+Some rules can also fix what they find. Here the five mistakes above
+have been dealt with by hand, and one project has since gone quiet -
+`--fix` archives it:
+
+![fs-org-run --fix archiving a stale project](doc/assets/fix.svg)
+
+That `SKIPPED` line follows from a fixer moving a folder mid-run: the
+work is planned up front from the tree as it was, and `projects/*/` had
+already matched a folder that was gone by the time its turn came. A skip
+isn't a failure, and a second run reports the true state.
+
+Plenty of rules deliberately ship *without* a fixer. Whether a badly
+named file should be renamed or refiled, and what a missing README
+should say, are decisions a script has no business making.
+
+Exit status is 0 when clean, 1 on a violation, 2 if the standard itself
+doesn't validate - so this drops into a git hook or CI unchanged.
+
+---
+
+## Quick start
+
+### 1. Install
 
 ```bash
 python -m venv .venv
@@ -39,190 +126,212 @@ pip install -e ".[dev]"
 ```
 
 A virtualenv isn't required, but the runner invokes every rule script
-with the same interpreter it's running under (`sys.executable`), so
-whatever environment you install into is also where a rule's
-dependencies need to be installed - a venv keeps that separate from
-your system Python and other projects'.
+with the interpreter it's running under, so whatever environment you
+install into is also where a rule's dependencies need to live.
 
-`pip install -e ".[dev]"` installs the core package and pytest; that's
-all that's needed to run the bundled rules, which are stdlib-only with
-one exception. A rule that needs a third-party package (like
-`spelling-abbreviations-v1`, which needs `pyspellchecker`) documents
-that requirement in its own manifest - install it the same way, into
-the same environment, only if you attach that rule. See
-[doc/RULES.md](doc/RULES.md)'s "dependency isolation" for why this is
-per-rule rather than something `pip install fs-org-kit` pulls in for
-you (`rules.own/` and `rules.external/` aren't even known at that
-point).
+### 2. Watch it work on the example
 
-## Repository layout
+The example is a toy tree that ships with five mistakes in it, so the
+first run has something to say. Nothing here touches anything outside
+the example directory.
 
-```
-fs-org-kit/                        (this repo - the tool, not your data)
-  pyproject.toml                   # package declaration
-  fs-org-std.template.toml         # grammar for a populated fs-org-std.toml
-  rules/                           # bundled, project-maintained rules
-    file-extensions-v1/
-      file-extensions-v1.toml
-      file-extensions-v1-check.py
-    _template-single-v1/           # copyable starting points, one per
-    _template-cross-v1/            # scope; the "_" keeps them out of
-    _template-both-v1/             # the catalog
-  fs_org_kit/                      # the Python package
-    __init__.py
-    cache.py                       # where rules keep state between runs
-    discovery.py                   # rule discovery - shared by all tools
-    doc.py                         # generates Markdown documentation
-    fields.py                      # what a namespace declares its entries carry
-    inherit.py                     # resolves `inherit` across entries
-    param_refs.py                  # {ref = "dotted.path"} param values
-    path_keys.py                   # what real location a path key names
-    path_patterns.py               # glob keys in [paths."..."]
-    runner.py                      # runs rule checkers against real filesystem
-    sandbox.py                     # audit-hook harness rule scripts run inside
-    validator.py                   # validates a populated standard
-  examples/                        # runnable example standards + toy trees
-    para/
-      fs-org-std.toml
-      README.md                    # tutorial
-      tree/
-  doc/                              # design docs, changelog, rule-authoring guide
-    BACKLOG.md
-    CHANGELOG.md
-    DESIGN.md
-    RULES.md
-    TESTING.md
-    VALIDATOR_SPEC.md
-    VERSIONING.md
-  README.md
-  CLAUDE.md
+```bash
+cd examples/para
+fs-org-validate fs-org-std.toml     # check the standard itself - reads no filesystem
+fs-org-run      fs-org-std.toml     # check the tree against it
+fs-org-doc      fs-org-std.toml     # print the generated documentation
 ```
 
-The fastest way in is [`examples/para/`](examples/para/) - a toy PARA
-tree with three deliberate mistakes in it, a standard that catches them,
-and a tutorial that walks from `fs-org-validate` to `--fix`.
+That's the output in the screenshot above. No two of those five mistakes
+are found the same way - one rule on a path, one on a glob, one blanket
+rule over every folder on disk, and one asking about two paths at once.
+[`examples/para/README.md`](examples/para/README.md) walks the rest of
+the way, fixing them by hand and then letting `--fix` handle one for
+you.
 
-Short commands, once installed:
+### 3. Point it at a directory of your own
 
+Make a directory to hold your standard, and put this in
+`fs-org-std.toml`. It's a complete, valid standard - one folder, one
+rule:
+
+```toml
+root = "~/Documents/"
+
+[meta]
+schema_version = "2.1"
+standard_version = "1.0"
+schema_date = 2026-08-13
+standard_date = 2026-08-13
+
+[paths]
+
+# A standard names its own fields. These are yours; nothing is built in.
+[paths.attributes]
+names = ["purpose", "use_for", "not_for"]
+required = ["purpose"]
+
+[paths."screenshots/"]
+purpose = "Screenshots, renamed to say what they show."
+not_for = ["anything you'd look for by name later"]
+
+[[paths."screenshots/".rules.naming-pattern-v1]]
+reason = "a screenshot named by the OS is unfindable a week later"
+
+[paths."screenshots/".rules.naming-pattern-v1.params]
+pattern = '^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)?$'
+mode = "allow"
+
+[folders]
+
+[enums]
 ```
-fs-org-validate   your-standard.toml [flags]
-fs-org-run        your-standard.toml [flags]
-fs-org-doc        your-standard.toml [flags]
+
+Then:
+
+```bash
+fs-org-validate fs-org-std.toml     # 0 errors before you touch anything
+fs-org-run      fs-org-std.toml     # what's actually wrong under ~/Documents/screenshots
+fs-org-doc      fs-org-std.toml --output standard.md
 ```
 
-Or without installing, run the modules directly:
+Nothing is written to your tree unless you pass `--fix`, and only rules
+that ship a fixer act even then. A cataloged path that isn't on disk is
+skipped silently, so you can describe folders before you create them.
 
-```
-python -m fs_org_kit.validator   your-standard.toml [flags]
-python -m fs_org_kit.runner      your-standard.toml [flags]
-python -m fs_org_kit.doc         your-standard.toml [flags]
-```
+Start with one folder you already care about rather than cataloging
+everything at once, and add entries as the annoyances come up.
 
-## A user's own directory (not part of this repo)
+### 4. Keep your own rules beside it
+
+When a bundled rule doesn't cover something, write one. Rules are
+discovered automatically from two directories sitting next to your
+standard:
 
 ```
 my-standard/
-  fs-org-std.toml        # your populated standard
-  rules.own/              # your own rules
+  fs-org-std.toml        your standard
+  rules.own/             your own rules, merged in automatically
     my-rule-v1/
-      rule.toml
+      my-rule-v1.toml
       my-rule-v1-check.py
-  rules.external/           # third-party, unverified - opt-in only, never merged in by default
-    someone-elses-rule-v1/
-      rule.toml
-      someone-elses-rule-v1-check.py
+  rules.external/        someone else's - opt-in with --include-external, never merged by default
 ```
 
-Two flat, equally-explicit siblings, not one implicit default plus a
-nested special case (see [doc/DESIGN.md](doc/DESIGN.md)).
-
-`rules.own/` is found as the sibling of whichever `fs-org-std.toml` is being
-checked - no configuration needed for the common case. The file itself
-can be named anything; nothing in the tooling assumes the literal name
-`fs-org-std.toml`.
+[`doc/RULES.md`](doc/RULES.md) is the authoring guide, and
+`rules/_template-single-v1/` is a complete working rule to copy.
 
 ---
 
-## The standard: `fs-org-std.toml`
+## How a standard is put together
 
-Grammar lives in `fs-org-std.template.toml`. Top-level concepts:
+The grammar lives in
+[`fs-org-std.template.toml`](fs-org-std.template.toml), which is
+annotated throughout. The top-level tables:
 
 | Table | What it is |
 |---|---|
 | `root` | the directory this standard governs |
-| `meta` | `schema_version` / `standard_version` - see [doc/VERSIONING.md](doc/VERSIONING.md) for how the two relate (or deliberately don't) |
-| `paths` | specific, individually documented locations, keyed by path relative to `root` (e.g. `"area/inv/"`) |
-| `folders` | rules/definitions that apply *without* being tied to one cataloged path - blanket rules over every folder under root, and reserved folder-**name** patterns (e.g. `_archive`) independent of location |
-| `tags` | closed vocabularies for metadata carried by things *on disk* (e.g. an archived project's state) |
-| `abbreviations` | local shorthand definitions used throughout the standard |
+| `meta` | schema and standard versions - see [doc/VERSIONING.md](doc/VERSIONING.md) for how the two relate, and deliberately don't |
+| `paths` | specific, individually documented locations, keyed by path relative to `root` |
+| `folders` | rules that apply without being tied to one cataloged path, and reserved folder *names* (like `_archive`) that mean the same thing wherever they appear |
+| `tags` | closed vocabularies for metadata carried by things on disk |
+| `abbreviations` | shorthand used throughout the standard |
 | `enums` | closed value sets for fields that need one |
-
-### A path entry
-
-An entry is its attributes, plus two tables - free-form documentation
-fields and enum-backed grouping fields, each declared by the namespace
-itself rather than hardcoded (see [doc/DESIGN.md](doc/DESIGN.md)):
-
-```toml
-[paths."area/inv/"]                  # prose, for the generated docs
-purpose = "Inventory tracking"
-use_for = ["owned item records"]
-not_for = ["receipts"]
-
-[paths."area/inv/".group]            # enum-backed, for grouping
-lifecycle = "ongoing"
-origin = ["self"]
-
-[[paths."area/inv/".rules.file-extensions-v1]]
-reason = "keep inventory scans to actual images"
-```
 
 A path key is normally relative to `root`, but doesn't have to be:
 `"/etc/nginx/"`, `"~/.config/"` and `"../sibling/"` each name exactly
-where they say, and rules attached to them run there. A cataloged path
-that isn't on disk right now is simply skipped.
+where they say, and rules attached to them run there.
 
-Attaching a rule always requires a `reason`, supplied fresh at each
-attachment site rather than inherited from the rule itself - see
-[doc/RULES.md](doc/RULES.md) for the full attachment grammar, including
-blanket and cross-path attachments.
+Two things worth knowing early, because they shape everything else:
+
+- **No field name is built in.** `purpose`, `lifecycle`, `origin` are
+  names the example standard chose, declared under `[paths.attributes]`.
+  Yours can be different, and no part of the tool behaves differently
+  because of what a field is called.
+- **`reason` is required at every attachment.** It's never inherited
+  from the rule or defaulted, which forces you to say why *this* rule
+  belongs on *this* path - and leaves you something to read when you
+  come back in a year and wonder.
+
+An entry can also inherit any of its parts from another entry, which is
+how "the same thing, at rest" folders stay in sync - see
+[doc/DESIGN.md](doc/DESIGN.md).
 
 ---
 
 ## Rules
 
-A rule is a directory - a manifest and one or two scripts - that checks
-(and optionally fixes) one specific thing, versioned independently of
-the standard itself. This repo ships twenty bundled rules; rules live
-in one of three trust tiers (bundled / your own / external) and
-communicate with the runner as plain subprocesses over a small
-JSON-based protocol.
+A rule is a directory: a manifest and one or two scripts, versioned
+independently of any standard that uses it. This repo ships
+twenty bundled rules.
 
-Every rule script runs inside a sandbox that blocks network access,
-starting other processes, and writes outside what that invocation is
-entitled to touch - a guard against accidents, not a security boundary.
-A few rules keep a cache between runs; the core owns where that lives,
-not the rule, so it stays inventoried and clearable in one place
-(`fs-org-cache --list` / `--clear [rule-id]`) - which matters since
-`pip uninstall` won't clean it up on its own.
+| | |
+|---|---|
+| **Naming** | `naming-pattern` · `timestamp-format` · `timestamp-consistency` · `spelling-abbreviations` · `basename-sync` |
+| **Content and type** | `file-extensions` · `mime-type` · `required-content` · `link-policy` · `link-integrity` |
+| **Size and shape** | `file-size` · `folder-structure` · `empty` · `duplicate-files` |
+| **Lifecycle** | `staleness` · `transfer` · `changed-since` · `uncataloged-reserved` |
+| **Desktop integration** | `xdg-auto-folder-icon` · `xdg-inherit-folder-icon-color` |
 
-**For the full guide to writing a rule** - the manifest schema, the
-runner↔script protocol, the sandbox, caching, trust tiers, testing your
-rule standalone, and a complete worked example - see
-**[doc/RULES.md](doc/RULES.md)**.
+Names are shown without their version suffix; you attach
+`naming-pattern-v1`, not `naming-pattern`. The suffix is part of a
+rule's identity rather than a revision marker, so a `-v2` that changes
+behaviour lives beside the `-v1` still in use instead of replacing it.
+
+Each lives in [`rules/`](rules/) with its manifest, its scripts, and its
+own tests, so a rule stays self-contained if you copy it into your
+`rules.own/`.
+
+A few things that follow from rules being separate programs rather than
+plugins:
+
+- **They run as plain subprocesses**, never imported. A broken rule
+  can't take the runner down, its dependencies are its own, and you can
+  debug one directly on the command line without a standard, a validator
+  or a runner in the way.
+- **They run inside a sandbox** that blocks network access, starting
+  other processes, and writing anywhere the invocation isn't entitled to
+  touch. A checker can't write at all. This is a guard against
+  accidents, not a security boundary - `--no-sandbox` turns it off.
+- **A rule that caches doesn't choose where.** The core owns that, so
+  everything stays inventoried and clearable in one place
+  (`fs-org-cache --list` / `--clear`), which matters because
+  `pip uninstall` won't clean it up for you.
+
+**[doc/RULES.md](doc/RULES.md)** is the full authoring guide: the
+manifest schema, the runner↔script protocol, the sandbox, caching, trust
+tiers, and a worked example.
 
 ---
 
-## Tooling
+## Commands
 
-Four commands, installed by `pip install -e .` (or run directly via
-`python -m fs_org_kit.<module>`):
+Installed by `pip install -e .`, or run any of them as
+`python -m fs_org_kit.<module>` without installing. Each takes `--help`.
 
-- **`fs-org-validate`** - checks a standard against the schema and its own lint rules.
-- **`fs-org-run`** - resolves every rule attachment and runs it against the real filesystem; `--fix` invokes a rule's fixer where one exists.
-- **`fs-org-doc`** - generates Markdown documentation from the resolved standard.
-- **`fs-org-cache`** - manages the on-disk cache a few rules keep between runs.
+| Command | Does |
+|---|---|
+| `fs-org-validate` | checks a standard against the grammar and its own lint rules. Reads no filesystem |
+| `fs-org-run` | runs every attached rule against the real tree; `--fix` invokes fixers where they exist |
+| `fs-org-doc` | generates Markdown documentation from the standard |
+| `fs-org-cache` | lists and clears the on-disk cache a few rules keep between runs |
 
-Each supports `--help` for its full flag list.
+The file being checked can be named anything - nothing in the tooling
+assumes the literal name `fs-org-std.toml`.
 
 ---
+
+## Documentation
+
+| | |
+|---|---|
+| [doc/RULES.md](doc/RULES.md) | writing a rule, and the runner↔script protocol |
+| [doc/DESIGN.md](doc/DESIGN.md) | why things are built this way, including decisions already reverted once |
+| [doc/VALIDATOR_SPEC.md](doc/VALIDATOR_SPEC.md) | what the validator checks, and the validate/lint split |
+| [doc/VERSIONING.md](doc/VERSIONING.md) | schema version vs. standard version vs. rule version |
+| [doc/TESTING.md](doc/TESTING.md) | test layout and what's covered |
+| [doc/CHANGELOG.md](doc/CHANGELOG.md) | what changed and when |
+| [doc/BACKLOG.md](doc/BACKLOG.md) | what's known to be missing |
+
+Licensed under the [MIT License](LICENSE).

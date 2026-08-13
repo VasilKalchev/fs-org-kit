@@ -125,12 +125,40 @@ This prevents the runner from ever having to deal with impossible attachment com
 
 ### Package structure
 
-The project is a proper Python package (`fs_org_kit/`) with `pyproject.toml`. Modules:
+The project is a proper Python package (`fs_org_kit/`) with `pyproject.toml`. The repository - the tool, never anyone's data:
 
-- `fs_org_kit/discovery.py` - rule discovery across the three tiers
-- `fs_org_kit/validator.py` - validates standards and their rule attachments
-- `fs_org_kit/runner.py` - executes rules against the real filesystem
-- `fs_org_kit/doc.py` - generates Markdown documentation
+```
+fs-org-kit/
+  pyproject.toml                   package declaration
+  fs-org-std.template.toml         grammar for a populated fs-org-std.toml
+  fs_org_kit/                      the Python package
+    cache.py                       where rules keep state between runs
+    discovery.py                   rule discovery across the three tiers
+    doc.py                         generates Markdown documentation
+    fields.py                      what a namespace declares its entries carry
+    inherit.py                     resolves `inherit` across entries
+    param_refs.py                  {ref = "dotted.path"} param values
+    path_keys.py                   what real location a path key names
+    path_patterns.py               glob keys in [paths."..."]
+    runner.py                      executes rules against the real filesystem
+    sandbox.py                     audit-hook harness rule scripts run inside
+    validator.py                   validates a populated standard
+  rules/                           bundled, project-maintained rules
+    file-extensions-v1/
+      file-extensions-v1.toml
+      file-extensions-v1-check.py
+      test_file_extensions_v1.py   a rule's tests travel with it
+    _template-single-v1/           copyable starting points, one per scope;
+    _template-cross-v1/            the "_" keeps them out of the catalog
+    _template-both-v1/
+  tests/                           core package tests, one file per module
+  examples/para/                   a runnable standard over a toy tree
+  doc/                             design docs, changelog, guides
+  README.md
+  CLAUDE.md
+```
+
+Only `README.md` and `CLAUDE.md` sit at the root; everything else that is prose lives under `doc/`.
 
 Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-org-run`, `fs-org-doc`, `fs-org-cache`); each module keeps a `main()` so `python -m fs_org_kit.validator` works identically without installing.
 
