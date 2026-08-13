@@ -1,16 +1,16 @@
-# Roadmap
+# Backlog
 
-Small, concrete to-do list for manifest fields and design intent that
-exist today but aren't acted on yet. Not a wishlist — each item already
-has a stated purpose (see `doc/RULES.md` / `doc/DESIGN.md`); what's
-missing is the code that reads the field.
-
-A separate "Ideas" section below holds things with no committed design
-yet - worth remembering, not worth planning around.
+Things worth doing that aren't done yet - somewhere between an idea and
+a to-do, split by how soon each is actually worth picking up.
 
 ---
 
-## `purpose` → generated docs
+## Next
+
+Ready to implement whenever someone sits down to it: scoped, no open
+design questions, no dependency on anything that hasn't happened yet.
+
+### `purpose` → generated docs
 
 Every bundled rule manifest already carries a one-sentence `purpose`
 (`doc/RULES.md`'s field table: "shown in generated documentation").
@@ -20,7 +20,7 @@ already renders, so a generated doc explains both *why* a rule is
 attached (`reason`, per-attachment) and *what it checks*
 (`purpose`, per-rule).
 
-## `severity`-aware reporting
+### `severity`-aware reporting
 
 `severity` is enum-checked at discovery time but never leaves
 `RuleEntry` — the runner's report tracks only protocol *status*
@@ -34,10 +34,11 @@ never reported, regardless of any default") or just skip coloring.
 
 ---
 
-## Ideas
+## Someday
 
-Not scheduled, no design yet - recorded so they're not re-discovered
-from scratch later.
+No committed design, and not worth one yet - either speculative or
+waiting on something that hasn't happened. Recorded so they're not
+re-discovered from scratch later, not planned around.
 
 ### Migrator scripts for schema major bumps
 
@@ -46,9 +47,10 @@ standard to be manually rewritten before the new tool version will
 touch it. A per-major-bump migrator script (old-grammar TOML in,
 new-grammar TOML out) would turn that into a one-command upgrade
 instead of a manual rewrite against the changelog. Only worth building
-once a real major bump happens and its actual grammar delta is known.
+once a real major bump happens and its actual grammar delta is known -
+waiting on that, not on design work.
 
 ---
 
-Order above is not priority order. Each item is independent and can be
-picked up on its own.
+Within a section, order is not priority order. Each item is
+independent and can be picked up on its own.

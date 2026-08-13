@@ -186,4 +186,4 @@ identity, params, or checking behavior moved.
   protocol, from a rule author's side
 - [doc/VALIDATOR_SPEC.md](VALIDATOR_SPEC.md) - exactly what the validator
   checks about `meta` and rule discovery
-- [doc/ROADMAP.md](ROADMAP.md) - work planned but not yet built
+- [doc/BACKLOG.md](BACKLOG.md) - work planned but not yet built

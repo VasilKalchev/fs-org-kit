@@ -11,6 +11,14 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### `doc/ROADMAP.md` renamed to `doc/BACKLOG.md`, split by time horizon
+
+It held a mix of scoped-and-ready items and no-design-yet ideas under
+one flat list; "roadmap" implied more commitment than either category
+actually has. Now two sections, "Next" (ready to pick up any time) and
+"Someday" (no committed design, possibly waiting on something that
+hasn't happened yet), same items, same content otherwise.
+
 ### Versioning overhaul: standard_version decoupled, protocol_version enforced
 
 `meta.standard_version` no longer has to share a major with
