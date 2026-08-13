@@ -58,11 +58,14 @@ def normalize_extensions(values: list) -> set:
     return {str(v).lstrip(".").lower() for v in values if str(v).strip()}
 
 
-def collect_files(root: Path, recursive: bool, exclude_globs: list, extensions: set):
+def collect_files(root: Path, base: Path, recursive: bool, exclude_globs: list, extensions: set):
     """Every file to be checked, as (path, os.DirEntry) pairs - the entry
     is cached from the same os.scandir() call that classified it, so the
     caller stats it via that entry instead of a fresh syscall. Excluding
-    a folder prunes its subtree.
+    a folder prunes its subtree. `base` stays the original root across
+    the recursion, so exclude globs match the full path relative to
+    --path (per the manifest), not just the path within the current
+    folder.
 
     Symlinks are skipped before stat: a symlink's own size is the length
     of the path it stores, and following it would measure a file outside
@@ -74,14 +77,14 @@ def collect_files(root: Path, recursive: bool, exclude_globs: list, extensions: 
         entries = []
     for entry in entries:
         child = Path(entry.path)
-        rel = child.relative_to(root).as_posix()
+        rel = child.relative_to(base).as_posix()
         if is_excluded(rel, exclude_globs):
             continue
         if entry.is_symlink():
             continue
         if entry.is_dir():
             if recursive:
-                yield from collect_files(child, recursive, exclude_globs, extensions)
+                yield from collect_files(child, base, recursive, exclude_globs, extensions)
         elif entry.is_file():
             if extensions and child.suffix.lstrip(".").lower() not in extensions:
                 continue
@@ -148,7 +151,7 @@ def main() -> int:
 
     over: list = []
     under: list = []
-    for f, entry in collect_files(root, recursive, exclude, extensions):
+    for f, entry in collect_files(root, root, recursive, exclude, extensions):
         try:
             size = entry.stat().st_size
         except OSError as e:

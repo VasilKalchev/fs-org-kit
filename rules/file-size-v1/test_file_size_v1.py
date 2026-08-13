@@ -156,6 +156,16 @@ class TestFilters:
         assert verdict(run_check({"max_size": 100, "exclude": ["cache"]},
                                  tmp_path)) == {"status": "ok"}
 
+    def test_exclude_matches_relative_to_the_scanned_path(self, tmp_path):
+        """A pattern that spells out the full path from --path (as the
+        manifest documents) must match a nested file - and a pattern that
+        only happens to match the *tail* of that path must not."""
+        write(tmp_path / "a" / "b" / "big.bin", 150)
+        assert verdict(run_check({"max_size": 100, "exclude": ["a/b/big.bin"]},
+                                 tmp_path)) == {"status": "ok"}
+        assert verdict(run_check({"max_size": 100, "exclude": ["b/big.bin"]},
+                                 tmp_path))["status"] == "violation"
+
 
 class TestNotReported:
 

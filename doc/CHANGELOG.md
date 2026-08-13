@@ -11,6 +11,25 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## 0.5
 
+### `file-size-v1` and `duplicate-files-v1`: fix two `exclude` bugs surfaced by the scandir rewrite
+
+Writing the rewrite below required tracing exactly what each rule's
+`exclude` matched, which turned up two bugs neither rule's own tests
+covered: `file-size-v1`'s recursive `collect_files()` passed the
+current folder as the base for `relative_to()`, so a pattern matched
+against the path *within* whatever folder recursion had reached, not
+against `--path` as the manifest documents - `exclude = ["a/b/x.bin"]`
+silently matched nothing, while `exclude = ["b/x.bin"]` matched a file
+two levels deeper than it named. `duplicate-files-v1`'s docstring
+claimed "excluding a folder prunes its subtree," but the exclude check
+only ever ran against individual files pulled from an already-fully-expanded
+`Path.rglob()` - a bare folder name (`"cache"`, no `/*`) never matched
+anything below it, so pruning only worked by coincidence when a pattern
+happened to also match every nested file's full path. Both now check
+`exclude` the same way `folder-structure-v1`/`empty-v1` already did:
+against the full path from the scanned root, checked on a directory
+itself before recursing into it.
+
 ### Five rules rewritten onto `os.scandir()` to stop re-listing the same directory
 
 A `/simplify` efficiency pass measured each directory getting listed
@@ -27,12 +46,9 @@ that needed one. All five now scan each directory once via
 `os.scandir()`, reusing the returned `DirEntry`'s cached
 type/stat instead of re-deriving it through `pathlib`; `empty-v1` and
 `xdg-auto-folder-icon-v1` cache a directory's listing across the
-several call sites that ask about it. Behavior-preserving throughout,
-including two latent quirks that had to survive the rewrite unchanged
-rather than get "fixed" as a side effect: `file-size-v1`'s `exclude`
-matches relative to the *current* recursion level, not the scanned
-root, and `duplicate-files-v1`'s `exclude` never prunes a directory's
-subtree early, only filters the flat file list by full relative path.
+several call sites that ask about it. Otherwise behavior-preserving -
+the two `exclude` bugs the rewrite surfaced in `file-size-v1` and
+`duplicate-files-v1` are fixed separately, above.
 
 ## 0.4
 

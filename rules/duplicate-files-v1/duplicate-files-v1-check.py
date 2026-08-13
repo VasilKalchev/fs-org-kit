@@ -170,14 +170,14 @@ def collect_files(root: Path, base: Path, recursive: bool, extensions: set,
         if entry.is_symlink():
             continue
         item = Path(entry.path)
+        rel = item.relative_to(base).as_posix()
+        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
+            continue  # for a folder, this also prunes everything below it
         if entry.is_dir():
             if recursive:
                 yield from collect_files(item, base, recursive, extensions, exclude_globs, min_size)
             continue
         if not entry.is_file():
-            continue
-        rel = item.relative_to(base).as_posix()
-        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
             continue
         if extensions and item.suffix.lower().lstrip(".") not in extensions:
             continue

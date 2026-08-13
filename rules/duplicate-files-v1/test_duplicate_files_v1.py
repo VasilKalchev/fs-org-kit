@@ -138,6 +138,15 @@ class TestFilters:
         result = run_check({"exclude": ["cache/*"]}, path=tmp_path, cache_dir=cache)
         assert json.loads(result.stdout)["status"] == "ok"
 
+    def test_excluding_a_folder_by_name_prunes_its_subtree(self, tmp_path, cache):
+        """A bare folder name, with no wildcard, excludes everything below
+        it too - matching how excluding a file works, not requiring a
+        `cache/*`-style pattern to reach what's inside."""
+        write(tmp_path / "cache" / "x.txt", "dup")
+        write(tmp_path / "cache" / "y.txt", "dup")
+        result = run_check({"exclude": ["cache"]}, path=tmp_path, cache_dir=cache)
+        assert json.loads(result.stdout)["status"] == "ok"
+
     @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
     def test_symlinks_are_not_duplicates(self, tmp_path, cache):
         target = write(tmp_path / "a.txt", "content")
