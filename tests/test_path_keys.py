@@ -11,7 +11,8 @@ from pathlib import Path
 from fs_org_kit.path_keys import comparison_key, is_absolute_key, is_home_relative, resolve_key
 from fs_org_kit.path_patterns import expand_pattern
 from fs_org_kit.runner import collect_invocations
-from fs_org_kit.validator import Validator, _index_source
+
+from conftest import minimal_meta, validate
 
 
 class TestKeyShape:
@@ -73,14 +74,7 @@ class TestComparisonKey:
 # Validator / runner integration
 # ---------------------------------------------------------------------
 
-BOILERPLATE_HEAD = '''root = "~/usr/"
-
-[meta]
-schema_version = "2.0"
-standard_version = "2.0"
-schema_date = "2026-01-01"
-standard_date = "2026-01-01"
-
+BOILERPLATE_HEAD = 'root = "~/usr/"\n\n' + minimal_meta() + '''
 [paths.attributes]
 names = ["purpose"]
 required = ["purpose"]
@@ -98,15 +92,6 @@ ongoing = "x"
 [abbreviations]
 [folders]
 '''
-
-
-def validate(standard_toml: str, tmp_path: Path):
-    std_path = tmp_path / "test.toml"
-    std_path.write_text(standard_toml)
-    data = tomllib.loads(standard_toml)
-    header_occurrences, key_lines = _index_source(standard_toml)
-    validator = Validator(data, tmp_path, header_occurrences, key_lines)
-    return validator.run(), validator
 
 
 def entry(key: str) -> str:

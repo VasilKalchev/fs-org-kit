@@ -11,15 +11,9 @@ import pytest
 
 from fs_org_kit.doc import main, slug_for
 
+from conftest import minimal_meta
 
-BOILERPLATE = '''root = "{root}/"
-
-[meta]
-schema_version = "2.0"
-schema_date = "2026-01-01"
-standard_version = "2.0"
-standard_date = "2026-01-01"
-
+BOILERPLATE = 'root = "{root}/"\n\n' + minimal_meta() + '''
 [paths.attributes]
 names = ["purpose", "notes", "use_for", "see_also"]
 required = ["purpose"]

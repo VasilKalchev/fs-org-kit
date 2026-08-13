@@ -11,6 +11,23 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## 0.5
 
+### `tests/conftest.py`: one shared minimal-standard builder and `validate()`, not five
+
+A second `/simplify` finding, this one from the "Reuse" angle: the
+`[meta]` block needed to make a test standard parse (`schema_version`,
+`standard_version`, both dates) was hand-typed as its own string
+literal eight times across four files - `test_doc.py`, `test_path_keys.py`,
+and `test_runner.py` each once or three times inline, plus
+`test_validator.py`'s own constant and two tests that vary
+`standard_version` on purpose. Separately, `test_validator.py` and
+`test_path_keys.py` each defined an identical `validate()` (write the
+TOML to `tmp_path`, parse it, build a `Validator` via the private
+`fs_org_kit.validator._index_source`, run it) - two independent test
+files depending on the same internal helper's exact signature. Both now
+come from `tests/conftest.py`: `minimal_meta(*, standard_version="2.0")`
+and `validate()`, imported wherever they were previously retyped or
+redefined.
+
 ### `file-size-v1` and `duplicate-files-v1`: fix two `exclude` bugs surfaced by the scandir rewrite
 
 Writing the rewrite below required tracing exactly what each rule's

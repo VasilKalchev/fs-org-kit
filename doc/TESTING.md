@@ -221,6 +221,8 @@ pytest rules/basename-sync-v1/test_basename_sync_v1.py::TestFixer -v
 
 Tests use `pytest`'s built-in `tmp_path` fixture (or `tempfile.TemporaryDirectory()` where a plain `Path` object is more convenient) to create isolated test environments. Each test is self-contained and cleans up after itself.
 
+`tests/conftest.py` holds two helpers shared by several `tests/test_*.py` files: `minimal_meta()` (the smallest valid `[meta]` block, `standard_version` overridable) and `validate()` (write a standard to `tmp_path`, parse it, run the `Validator`, return `(issues, validator)`). Not used by `rules/*/test_*.py`, which invoke rule scripts via subprocess instead.
+
 ## Adding new tests
 
 **For the core package** (`fs_org_kit/`): add to the matching file in `tests/`, or create a new `tests/test_<module>.py` if you're adding a new module.

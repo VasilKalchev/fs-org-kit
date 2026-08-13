@@ -22,6 +22,8 @@ from fs_org_kit.runner import (
     run_invocation,
 )
 
+from conftest import minimal_meta
+
 
 @pytest.fixture
 def catalog():
@@ -380,14 +382,7 @@ class TestStalePlanIsSkipped:
         real.mkdir()
         (real / "a.jpg").touch()
         std_path = tmp_path / "fs-org-std.toml"
-        std_path.write_text(f'''root = "{tmp_path}/"
-
-[meta]
-schema_version = "2.0"
-standard_version = "2.0"
-schema_date = "2026-01-01"
-standard_date = "2026-01-01"
-
+        std_path.write_text(f'root = "{tmp_path}/"\n\n' + minimal_meta() + '''
 [paths.attributes]
 names = ["purpose"]
 required = ["purpose"]
@@ -500,14 +495,7 @@ class TestMainIntegration:
 
     def _write_standard(self, tmp_path: Path, extra_toml: str) -> Path:
         std_path = tmp_path / "fs-org-std.toml"
-        std_path.write_text(f'''root = "{tmp_path}/"
-
-[meta]
-schema_version = "2.0"
-standard_version = "2.0"
-schema_date = "2026-01-01"
-standard_date = "2026-01-01"
-
+        std_path.write_text(f'root = "{tmp_path}/"\n\n' + minimal_meta() + f'''
 [paths.attributes]
 names = ["purpose"]
 required = ["purpose"]
@@ -584,14 +572,7 @@ allowed = ["jpg"]
         (standard_dir / "tree" / "dirty" / "a.pdf").touch()
 
         std_path = standard_dir / "fs-org-std.toml"
-        std_path.write_text('''root = "./tree/"
-
-[meta]
-schema_version = "2.0"
-standard_version = "2.0"
-schema_date = "2026-01-01"
-standard_date = "2026-01-01"
-
+        std_path.write_text('root = "./tree/"\n\n' + minimal_meta() + '''
 [paths.attributes]
 names = ["purpose"]
 required = ["purpose"]
