@@ -24,12 +24,14 @@ TIERS = ("required", "suggested", "forbidden")
 MAX_REPORTED = 8
 
 
-def entries_under(root: Path) -> list[tuple[str, bool]]:
-    """(relative posix path, is_dir) for everything under root. Collected
-    once and reused for every pattern - a standard can attach a dozen
-    globs to one path, and re-walking per glob would read the tree a
-    dozen times."""
-    found: list[tuple[str, bool]] = []
+def entries_under(root: Path) -> list[tuple[str, str, bool]]:
+    """(relative posix path, basename, is_dir) for everything under root.
+    Collected once and reused for every pattern - a standard can attach a
+    dozen globs to one path, and re-walking per glob would read the tree a
+    dozen times. The basename is carried along because the walk already
+    has it; recovering it later would mean a throwaway Path per entry per
+    pattern."""
+    found: list[tuple[str, str, bool]] = []
 
     def walk(folder: Path) -> None:
         try:
@@ -38,7 +40,7 @@ def entries_under(root: Path) -> list[tuple[str, bool]]:
             return
         for child in children:
             is_dir = child.is_dir() and not child.is_symlink()
-            found.append((child.relative_to(root).as_posix(), is_dir))
+            found.append((child.relative_to(root).as_posix(), child.name, is_dir))
             if is_dir:
                 walk(child)
 
@@ -46,20 +48,20 @@ def entries_under(root: Path) -> list[tuple[str, bool]]:
     return found
 
 
-def matches(pattern: str, entries: list[tuple[str, bool]]) -> list[str]:
+def matches(pattern: str, entries: list[tuple[str, str, bool]]) -> list[str]:
     """Every entry satisfying one pattern. A trailing slash restricts the
     match to directories - "build/" and "build" ask different questions,
     and a file where a folder belongs is worth catching."""
     directories_only = pattern.endswith("/")
     bare = pattern.rstrip("/")
     hits = []
-    for rel, is_dir in entries:
+    for rel, name, is_dir in entries:
         if directories_only and not is_dir:
             continue
         # Matched against the relative path, so "src/*.py" works, and
         # against the bare name, so "*.pyc" catches one at any depth
         # without needing a "**/" prefix.
-        if fnmatch.fnmatch(rel, bare) or fnmatch.fnmatch(Path(rel).name, bare):
+        if fnmatch.fnmatch(rel, bare) or fnmatch.fnmatch(name, bare):
             hits.append(rel + ("/" if is_dir else ""))
     return hits
 

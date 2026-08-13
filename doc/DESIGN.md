@@ -21,7 +21,7 @@ This three-tier model is enforced structurally (not as a convention or config op
 
 ### Discovery is centralized, and shared rather than repeated
 
-`fs_org_kit/discovery.py` is the single source of truth for "what rules exist right now." It's imported directly by the validator, to resolve rule references in a standard; the runner and doc generator then reuse `validator.rule_catalog` rather than calling `discover_rules()` again themselves - one discovery pass per invocation, not two or three.
+`fs_org_kit/discovery.py` is the single source of truth for "what rules exist right now." It's imported directly by the validator, to resolve rule references in a standard; the runner then reuses `validator.rule_catalog` rather than calling `discover_rules()` again itself - one discovery pass per invocation, not two.
 
 This is more than an optimization: two passes could disagree - a rule installed or removed between them, or `Validator.__init__`'s `include_external`/`bundled_rules_dir` args passed differently - and the runner would then act on a rule validation never saw, or vice versa. Reusing the same catalog object makes that class of bug structurally impossible rather than something to keep in sync by convention.
 

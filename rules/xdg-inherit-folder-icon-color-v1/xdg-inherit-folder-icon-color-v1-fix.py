@@ -23,23 +23,11 @@ there afterwards.
 """
 
 import argparse
-import fnmatch
 import json
 import sys
-from pathlib import Path
 
-from _shared import BadParams, RECOLOR, SET, UNMANAGED, evaluate, fail, read_settings, write_icon
+from _shared import RECOLOR, SET, UNMANAGED, BadParams, evaluate, fail, read_settings, summarize, write_icon
 
-MAX_REPORTED = 8
-
-
-def excluded(rel_path: str, globs: list) -> bool:
-    return any(fnmatch.fnmatch(rel_path, g) or fnmatch.fnmatch(Path(rel_path).name, g) for g in globs)
-
-
-def summarize(items: list, limit: int = MAX_REPORTED) -> str:
-    shown = ", ".join(items[:limit])
-    return shown + (f", ... ({len(items) - limit} more)" if len(items) > limit else "")
 
 
 def main() -> int:
@@ -68,7 +56,7 @@ def main() -> int:
         }))
         return 0
 
-    findings = evaluate(settings, excluded)
+    findings = evaluate(settings)
     if not findings:
         print(json.dumps({"status": "ok"}))
         return 0

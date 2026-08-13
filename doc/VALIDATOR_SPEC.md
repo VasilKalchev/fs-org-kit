@@ -100,6 +100,29 @@ doc/DESIGN.md.
   error - an orphaned attachment, not an under-filled-out entry
 - `paths.cross[i].paths` must be a non-empty list of strings
 
+### Pattern-key overlap
+
+- two `[paths."..."]` keys that could match the same folder are an
+  error: which entry's fields/rules apply would be ambiguous. Keys are
+  compared in normalized form, so an out-of-root key can't collide with
+  a same-looking key under root
+- a pattern overlapping a *literal* is sanctioned when that literal
+  declares `inherit.attributes` / `inherit.group` / `inherit.rules`
+  naming that exact pattern - the documented way to override one real
+  folder. Two patterns never have a sanctioned override
+
+### Param references
+
+- a param value written `{ref = "dotted.path"}` must resolve to
+  something that exists in the standard; a malformed or dangling
+  reference is an error (see `fs_org_kit.param_refs`)
+
+### `tags`
+
+- each `[tags.<ns>]` must declare a non-empty `values` table of
+  `value = "meaning"` string pairs
+- a key under a tag namespace that nothing reads is flagged
+
 ### `inherit`
 
 - `inherit`, when present, must be a table, with one key per part of
@@ -152,9 +175,11 @@ doc/DESIGN.md.
 ## Implementation notes
 
 - Every issue carries a `kind` (`"validation"` or `"lint"`) alongside
-  its `level` (`"error"` or `"warning"`). In the current implementation
-  every validate-level issue is also `level="error"` and every
-  lint-level issue is `level="warning"` - the two axes happen to align
-  today, but they're tracked separately (`Issue.kind` vs `Issue.level`)
-  because that alignment isn't a hard rule the code enforces, just how
-  every check has been written so far.
+  its `level` (`"error"` or `"warning"`). The two axes are independent:
+  an error is always validation-kind, but a *warning* may be either, and
+  several validation-kind warnings exist (`unknown-param`,
+  `unknown-path-field`, `rule-discovery-warning`, ...). `--validate-only`
+  and `--lint-only` filter on `kind`, so those warnings survive
+  `--validate-only` while `path-trailing-slash` and friends don't.
+  `kind` is derived from the code via `WARNING_CODES`, not stored
+  per-issue - the table is the one place a check's kind is recorded.

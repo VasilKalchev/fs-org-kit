@@ -22,7 +22,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from _shared import find_violations, format_age, parse_duration, resolve_destination
+from _shared import find_violations, parse_duration, resolve_destination
 
 
 def main() -> int:

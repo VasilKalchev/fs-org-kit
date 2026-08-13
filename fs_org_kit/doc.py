@@ -35,9 +35,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec
+from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec, iter_rule_instances
 from fs_org_kit.inherit import ResolvedEntry
-from fs_org_kit.validator import StandardLoadError, Validator, build_validator, load_standard
+from fs_org_kit.validator import (
+    DEFAULT_RESERVED_PREFIX, StandardLoadError, Validator, add_discovery_args, load_and_validate,
+)
 
 
 # ---------------------------------------------------------------------
@@ -84,7 +86,6 @@ def link(text: str, slug: str | None) -> str:
 
 @dataclass
 class RuleAttachmentSite:
-    rule_id: str
     location_label: str
     location_slug: str | None
     reason: str
@@ -99,15 +100,11 @@ def collect_rule_sites(
 
     def add(rule_id: str, label: str, slug: str | None, inst: dict[str, Any]) -> None:
         sites.setdefault(rule_id, []).append(
-            RuleAttachmentSite(rule_id, label, slug, inst.get("reason", ""))
+            RuleAttachmentSite(label, slug, inst.get("reason", ""))
         )
 
     def add_raw_table(table: Any, label: str, slug: str | None) -> None:
-        if not isinstance(table, dict):
-            return
-        for rule_id, instances in table.items():
-            if not isinstance(instances, list):
-                instances = [instances]
+        for rule_id, instances in iter_rule_instances(table):
             for inst in instances:
                 if isinstance(inst, dict):
                     add(rule_id, label, slug, inst)
@@ -174,7 +171,9 @@ class DocBuilder:
 # Section renderers
 # ---------------------------------------------------------------------
 
-def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict) -> None:
+def render_overview(
+    b: DocBuilder, data: dict[str, Any], resolved_paths: dict, resolved_folders: dict
+) -> None:
     b.heading(2, "Overview", slug_for("Overview"))
     meta = data.get("meta", {})
     root = data.get("root", "")
@@ -187,9 +186,7 @@ def render_overview(b: DocBuilder, data: dict[str, Any], resolved_paths: dict) -
     b.line(f"- **Cataloged paths**: {len(resolved_paths)}")
     paths_cross = data.get("paths", {}).get("cross", [])
     b.line(f"- **Cross-path sets**: {len(paths_cross) if isinstance(paths_cross, list) else 0}")
-    reserved = data.get("folders", {}).get("reserved", {})
-    reserved_count = len([k for k in reserved if k != "prefix"]) if isinstance(reserved, dict) else 0
-    b.line(f"- **Reserved folders**: {reserved_count}")
+    b.line(f"- **Reserved folders**: {len(resolved_folders)}")
     b.line()
 
 
@@ -315,15 +312,13 @@ def render_cross(b: DocBuilder, data: dict[str, Any]) -> None:
             b.line(f"**Members**: {member_links}")
             b.line()
 
-        rules_table = cross.get("rules", {})
-        if isinstance(rules_table, dict) and rules_table:
-            rows = []
-            for rule_id, instances in sorted(rules_table.items()):
-                if not isinstance(instances, list):
-                    instances = [instances]
-                for inst in instances:
-                    if isinstance(inst, dict):
-                        rows.append((rule_id, inst.get("reason", "")))
+        rows = [
+            (rule_id, inst.get("reason", ""))
+            for rule_id, instances in sorted(iter_rule_instances(cross.get("rules")))
+            for inst in instances
+            if isinstance(inst, dict)
+        ]
+        if rows:
             _render_rule_table(b, rows)
 
 
@@ -332,7 +327,7 @@ def render_folders(b: DocBuilder, data: dict[str, Any], resolved_folders: dict[s
         return
     b.heading(2, "Reserved Folders", slug_for("Reserved Folders"))
     reserved = data.get("folders", {}).get("reserved", {})
-    prefix = reserved.get("prefix", "_") if isinstance(reserved, dict) else "_"
+    prefix = reserved.get("prefix", DEFAULT_RESERVED_PREFIX) if isinstance(reserved, dict) else DEFAULT_RESERVED_PREFIX
     b.line(f"Reserved-name prefix: `{prefix}`")
     b.line()
     for name in sorted(resolved_folders.keys()):
@@ -463,7 +458,7 @@ def generate(data: dict[str, Any], validator: Validator, title: str | None) -> s
 
     # rendered in this fixed order so cross-references are always to a
     # section that's either already rendered above, or will exist below
-    render_overview(b, data, validator.resolved_paths)
+    render_overview(b, data, validator.resolved_paths, validator.resolved_folders)
     render_paths(b, validator.resolved_paths, validator.path_fields)
     render_cross(b, data)
     render_folders(b, data, validator.resolved_folders, validator.folder_fields)
@@ -498,30 +493,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("path", type=Path, help="path to a populated fs-org-std.toml")
     parser.add_argument("--output", type=Path, default=None, help="write to a file instead of stdout")
-    parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
-    parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
+    add_discovery_args(parser)
     parser.add_argument("--title", default=None, help="override the document title")
     args = parser.parse_args(argv)
 
     try:
-        raw_text, data = load_standard(args.path)
+        data, validator, warnings = load_and_validate(
+            args.path, include_external=args.include_external,
+            bundled_rules_dir=args.rules_dir, before="generating docs",
+        )
     except StandardLoadError as e:
         print(f"error: {e}", file=sys.stderr)
-        return 2
-
-    validator = build_validator(
-        args.path, raw_text, data, include_external=args.include_external, bundled_rules_dir=args.rules_dir,
-    )
-    issues = validator.run()
-    errors = [i for i in issues if i.level == "error"]
-    warnings = [i for i in issues if i.level == "warning"]
-
-    if errors:
-        print(
-            f"error: {args.path} has {len(errors)} validation error(s) - fix these before generating docs "
-            f"(run `python -m fs_org_kit.validator {args.path}` for details)",
-            file=sys.stderr,
-        )
         return 2
 
     if warnings:

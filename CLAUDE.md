@@ -147,7 +147,7 @@ the templates out of the catalog.
   once, before validation. One `inherit` key per part of an entry
   (`attributes` / `group` / `rules`, plus `exclude_rules`), each free to name a
   different source. `resolve_entries()` produces a flattened
-  `ResolvedEntry` per catalog key (`.doc` / `.group` / `.rules`) so
+  `ResolvedEntry` per catalog key (`.attributes` / `.group` / `.rules`) so
   nothing downstream needs its own inheritance-walking logic.
 - `validator.py` — read-only. Validates TOML structure, resolved rule
   attachments/scope compatibility, resolved inheritance, and lint checks.
@@ -164,9 +164,9 @@ the templates out of the catalog.
   violation/unfixable/broken, 2 invalid standard.
 - `doc.py` — validates first (same abort-on-error stance), then generates
   Markdown from the *resolved* standard (inherited fields show their
-  actual value, not blank) — ToC, per-section Markdown, optional Mermaid
-  diagrams (tree/lifecycle/rules/cross, each individually toggleable and
-  skipped above a 40-node threshold rather than rendering unreadably).
+  actual value, not blank) — ToC plus a section per namespace. It reads
+  the validator's resolved view only, never re-deriving grammar of its
+  own.
 
 ### The rule protocol (runner ↔ script)
 
@@ -199,9 +199,9 @@ doc/RULES.md for the full authoring guide; the essentials:
 ### Design principles worth knowing before changing shared code
 
 - **Resolve once, flatten, reuse** — this pattern recurs for rule
-  discovery (validator discovers, runner/doc reuse `rule_catalog`) and
-  for inheritance (`resolve_entries()` runs once; validator and runner
-  both just read `resolved.doc`/`.group`/`.rules`). Don't
+  discovery (validator discovers, the runner reuses `rule_catalog`) and
+  for inheritance (`resolve_entries()` runs once; validator, runner and
+  doc all just read `resolved.attributes`/`.group`/`.rules`). Don't
   reintroduce a second discovery/resolution pass when adding a new
   consumer — thread the existing resolved data through instead.
 - **Fixability is structural** — a rule is fixable iff its `-fix.py`

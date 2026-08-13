@@ -108,7 +108,6 @@ recursive = true
 | `overrides_bundled` | no (defaults `false`) | Only meaningful for a rule in `rules.own/`. See [Overriding a bundled rule](#overriding-a-bundled-rule). |
 | `uses_cache` | no (defaults `false`) | `true` if your rule keeps state between runs. The runner then passes `--cache-dir <path>`. See [Rules that cache](#rules-that-cache). |
 | `sandbox` | no, no default | Table granting capabilities the harness otherwise blocks. See [The sandbox](#the-sandbox). |
-| `exclude` | no, no default | List of glob strings this rule never applies to. Omitting it means "no exclusions" - a default value here would erase that distinction, so there isn't one. |
 | `params.names` | yes | Every parameter your checker/fixer accepts. |
 | `params.defaults` | no | Defaults for some or all of those params. Any param **not** listed here has no default and **must** be supplied at every attachment site in the standard, or validation fails. |
 

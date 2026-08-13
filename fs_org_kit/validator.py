@@ -38,7 +38,7 @@ Flags:
     --only CATEGORY[,...]   only check/report these categories (repeatable,
                              or comma-separated). Categories: paths,
                              paths.rules, paths.cross, folders,
-                             folders.rules, meta.
+                             folders.rules, rules, meta.
     --ignore-warning CODE[,...]
                              fully ignore warnings with this code (repeatable,
                              or comma-separated) - not printed, not counted,
@@ -75,8 +75,8 @@ import argparse
 import os
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -85,8 +85,10 @@ try:
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from fs_org_kit.discovery import DiscoveryIssue, IssueLevel, RuleEntry, Tier, discover_rules
-from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, parse_field_spec
+from fs_org_kit.discovery import IssueLevel, RuleEntry, discover_rules
+from fs_org_kit.fields import (
+    ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, FieldSpec, iter_rule_instances, parse_field_spec,
+)
 from fs_org_kit.inherit import InheritIssue, ResolvedEntry, RuleAttachment, own_fields, resolve_entries
 from fs_org_kit.param_refs import expand_params
 from fs_org_kit.path_keys import comparison_key
@@ -181,6 +183,48 @@ def build_validator(
     )
 
 
+def load_and_validate(
+    path: Path, *, include_external: bool, bundled_rules_dir: Path | None, before: str
+) -> tuple[dict[str, Any], "Validator", list["Issue"]]:
+    """Load a standard and validate it, for the two tools that refuse to
+    act on one that doesn't validate. Raises StandardLoadError - message
+    ready for stderr, caller exits 2 - if it can't be read, can't be
+    parsed, or has any validation error; otherwise returns
+    `(data, validator, warnings)`. `before` names what won't happen,
+    e.g. "running rules"."""
+    raw_text, data = load_standard(path)
+    validator = build_validator(
+        path, raw_text, data, include_external=include_external, bundled_rules_dir=bundled_rules_dir,
+    )
+    issues = validator.run()
+    errors = [i for i in issues if i.level == "error"]
+    if errors:
+        raise StandardLoadError(
+            f"{path} has {len(errors)} validation error(s) - fix these before {before} "
+            f"(run `python -m fs_org_kit.validator {path}` for details)"
+        )
+    return data, validator, [i for i in issues if i.level == "warning"]
+
+
+def add_discovery_args(parser: argparse.ArgumentParser) -> None:
+    """The rule-discovery flags every one of the three CLIs takes, so
+    they can't drift apart in name, type or help text."""
+    parser.add_argument(
+        "--include-external", action="store_true",
+        help="also discover rules.external/ (never included by default)",
+    )
+    parser.add_argument(
+        "--rules-dir", type=Path, default=None,
+        help="override where bundled rules are discovered from",
+    )
+
+
+def should_color(no_color_flag: bool) -> bool:
+    """Colorize only when asked for, writing to a terminal, and NO_COLOR
+    isn't set - the same answer for every CLI in the package."""
+    return not no_color_flag and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
 def _split_location(location: str) -> list[str]:
     """Split a dotted location string on top-level dots, respecting
     double-quoted path segments (which may themselves contain no dots
@@ -260,7 +304,17 @@ class Issue:
     message: str
     line: int | None = None
     code: str = ""  # stable slug for warnings, usable with --ignore-warning
-    kind: str = "validation"  # "validation" (schema/structural correctness) | "lint" (style/convention)
+
+    @property
+    def kind(self) -> str:
+        """"validation" (schema/structural correctness) or "lint"
+        (style/convention). Derived rather than stored: an error is always
+        a validation failure, and a warning's kind is a property of its
+        code, recorded once in WARNING_CODES. Storing it separately let
+        the two disagree."""
+        if self.level == "error":
+            return "validation"
+        return WARNING_CODES.get(self.code, ("validation", ""))[0]
 
 
 _COLOR = {"error": "\033[31m", "warning": "\033[33m", "reset": "\033[0m", "dim": "\033[2m"}
@@ -340,23 +394,22 @@ class Validator:
         self.folder_fields = FieldSpec("folders")  # populated by _load_field_specs
         self.known_path_keys: set[str] = set()
         self.schema_major: int | None = None
-        # category -> [(component_id, location_prefix), ...], used to build
-        # the ok/warnings/broken summary by component type
-        self.components: dict[str, list[tuple[str, str]]] = {}
+        # category -> [location_prefix, ...], used to build the
+        # ok/warnings/broken summary by component type
+        self.components: dict[str, list[str]] = {}
 
-    def _register(self, category: str, component_id: str, location_prefix: str) -> None:
-        self.components.setdefault(category, []).append((component_id, location_prefix))
+    def _register(self, category: str, location_prefix: str) -> None:
+        self.components.setdefault(category, []).append(location_prefix)
 
     # -- helpers ------------------------------------------------------
 
-    def error(self, location: str, message: str, kind: str = "validation") -> None:
+    def error(self, location: str, message: str) -> None:
         line = _resolve_line(location, self.header_occurrences, self.key_lines)
-        self.issues.append(Issue("error", location, message, line, kind=kind))
+        self.issues.append(Issue("error", location, message, line))
 
-    def warning(self, location: str, message: str, code: str, kind: str | None = None) -> None:
+    def warning(self, location: str, message: str, code: str) -> None:
         line = _resolve_line(location, self.header_occurrences, self.key_lines)
-        resolved_kind = kind if kind is not None else WARNING_CODES.get(code, ("validation", ""))[0]
-        self.issues.append(Issue("warning", location, message, line, code, resolved_kind))
+        self.issues.append(Issue("warning", location, message, line, code))
 
     # -- entry point ----------------------------------------------------
 
@@ -379,18 +432,16 @@ class Validator:
     def _schema_major_supported(self) -> bool:
         return self.schema_major is None or self.schema_major == SUPPORTED_SCHEMA_MAJOR
 
-    def summarize(self, issues: list[Issue] | None = None) -> dict[str, dict[str, int]]:
+    def summarize(self, pool: list[Issue]) -> dict[str, dict[str, int]]:
         """Roll issues up per component (one path, one cross-set, one rule,
         one reserved folder, ...) grouped by category, for the ok/warnings/
-        broken breakdown printed at the end of a run. Pass a filtered issues
-        list (e.g. after --ignore-warning/--only) to keep the table
-        consistent with what was actually printed; defaults to everything
-        this validator found."""
-        pool = self.issues if issues is None else issues
+        broken breakdown printed at the end of a run. Takes the filtered
+        issues list (after --ignore-warning/--only) so the table stays
+        consistent with what was actually printed."""
         summary: dict[str, dict[str, int]] = {}
         for category, comps in self.components.items():
             counts = {"ok": 0, "ok_with_warnings": 0, "broken": 0, "total": len(comps)}
-            for _component_id, prefix in comps:
+            for prefix in comps:
                 related = [
                     i for i in pool
                     if i.location == prefix or i.location.startswith((prefix + ".", prefix + "["))
@@ -522,37 +573,46 @@ class Validator:
 
     # -- rule instances (attached under paths / folders / cross) --------------
 
-    def _check_rule_instances(
-        self, rules_table: Any, location: str, context: str = "single",
-        component_category: str | None = None,
+    def _check_attachments(
+        self, grouped: Iterable[tuple[str, list[tuple[str, Any]]]], location: str,
+        context: str, component_category: str | None = None,
     ) -> None:
-        if not isinstance(rules_table, dict):
-            return
-
-        for rule_name, instances in rules_table.items():
-            loc = f"{location}.rules.{rule_name}"
-            if rule_name not in self.rule_catalog:
-                self.error(loc, f"rule `{rule_name}` not found in any rules tier (bundled, rules.own/, rules.external/)")
+        """What "valid" means for a rule attachment, in one place. `grouped`
+        yields `(rule_id, [(loc_suffix, instance), ...])` - the two callers
+        below differ only in where they get attachments from and how an
+        instance's location is spelled, never in what is checked."""
+        for rule_id, instances in grouped:
+            loc = f"{location}.rules.{rule_id}"
+            if rule_id not in self.rule_catalog:
+                self.error(loc, f"rule `{rule_id}` not found in any rules tier (bundled, rules.own/, rules.external/)")
                 continue
 
-            entry: RuleEntry = self.rule_catalog[rule_name]
+            entry: RuleEntry = self.rule_catalog[rule_id]
 
             if context == "single" and entry.scope not in ("single", "both"):
-                self.error(loc, f"rule `{rule_name}` has scope `{entry.scope}` - can't be attached to a single path/folder")
+                self.error(loc, f"rule `{rule_id}` has scope `{entry.scope}` - can't be attached to a single path/folder")
             if context == "cross" and entry.scope not in ("cross", "both"):
-                self.error(loc, f"rule `{rule_name}` has scope `{entry.scope}` - can't be attached under paths.cross")
+                self.error(loc, f"rule `{rule_id}` has scope `{entry.scope}` - can't be attached under paths.cross")
 
             param_names = set(entry.params_names)
             required_params = param_names - set(entry.params_defaults)
 
-            if not isinstance(instances, list):
-                instances = [instances]
-
-            for i, inst in enumerate(instances):
-                inst_loc = f"{loc}[{i}]"
+            for i, (loc_suffix, inst) in enumerate(instances):
+                inst_loc = f"{loc}[{i}]{loc_suffix}"
                 if component_category:
-                    self._register(component_category, f"{rule_name}[{i}]", inst_loc)
-                self._check_instance(inst, inst_loc, rule_name, param_names, required_params)
+                    self._register(component_category, inst_loc)
+                self._check_instance(inst, inst_loc, rule_id, param_names, required_params)
+
+    def _check_rule_instances(
+        self, rules_table: Any, location: str, context: str = "single",
+        component_category: str | None = None,
+    ) -> None:
+        """Attachments straight from the TOML - no inheritance applied."""
+        self._check_attachments(
+            ((rule_id, [("", inst) for inst in instances])
+             for rule_id, instances in iter_rule_instances(rules_table)),
+            location, context, component_category,
+        )
 
     def _check_instance(
         self, inst: Any, inst_loc: str, rule_id: str, param_names: set[str], required_params: set[str]
@@ -628,21 +688,33 @@ class Validator:
         # so an out-of-root key can't collide with a same-looking key under
         # root ("/etc/*/" vs "etc/*/"), while two spellings of the SAME
         # out-of-root place still do ("~/x/*/" vs "/home/me/x/*/").
+        # Only pairs with at least one pattern can overlap, so this walks
+        # patterns x keys rather than every pair of keys - the same set of
+        # pairs, without building the quadratic majority just to skip it.
+        # Pairs stay ordered by position in `keys` so the issue is still
+        # reported against the earlier of the two.
         normalized = {k: comparison_key(k) for k in keys}
-        for a, b in combinations(keys, 2):
-            if not is_pattern(a) and not is_pattern(b):
-                continue
-            if not patterns_may_overlap(normalized[a], normalized[b]):
-                continue
-            if self._pattern_overlap_is_sanctioned(a, b, raw_paths):
-                continue
-            self.error(
-                f'paths."{a}"',
-                f'may match the same folder(s) as paths."{b}" - overlapping catalog entries would leave it '
-                f"ambiguous which entry's fields/rules actually apply (a literal entry can override one "
-                f"instance of a pattern via inherit.attributes/inherit.group/inherit.rules - "
-                f"see doc/DESIGN.md)",
-            )
+        position = {k: i for i, k in enumerate(keys)}
+        for pattern in patterned:
+            for other in keys:
+                if other == pattern:
+                    continue
+                # a pattern/pattern pair is reached from both ends; keep the
+                # pass where the outer one comes first
+                if is_pattern(other) and position[other] < position[pattern]:
+                    continue
+                a, b = (pattern, other) if position[pattern] < position[other] else (other, pattern)
+                if not patterns_may_overlap(normalized[a], normalized[b]):
+                    continue
+                if self._pattern_overlap_is_sanctioned(a, b, raw_paths):
+                    continue
+                self.error(
+                    f'paths."{a}"',
+                    f'may match the same folder(s) as paths."{b}" - overlapping catalog entries would leave it '
+                    f"ambiguous which entry's fields/rules actually apply (a literal entry can override one "
+                    f"instance of a pattern via inherit.attributes/inherit.group/inherit.rules - "
+                    f"see doc/DESIGN.md)",
+                )
 
     @staticmethod
     def _pattern_overlap_is_sanctioned(a: str, b: str, raw_paths: dict[str, Any]) -> bool:
@@ -678,7 +750,7 @@ class Validator:
         for key in self.known_path_keys:
             entry = paths[key]
             loc = f'paths."{key}"'
-            self._register("paths", key, loc)
+            self._register("paths", loc)
 
             if not key.endswith("/"):
                 self.warning(loc, "path keys should end with a trailing slash", "path-trailing-slash")
@@ -713,7 +785,7 @@ class Validator:
 
         for i, cross in enumerate(paths.get("cross", [])):
             loc = f"paths.cross[{i}]"
-            self._register("paths.cross", f"cross[{i}]", loc)
+            self._register("paths.cross", loc)
             referenced = cross.get("paths", [])
             # cross-path constraints may reference ANY path set, cataloged
             # or not - so we only check shape here, not membership against
@@ -749,7 +821,7 @@ class Validator:
         for name in reserved_names:
             entry = reserved[name]
             loc = f'folders.reserved."{name}"'
-            self._register("folders", name, loc)
+            self._register("folders", loc)
             if not name.startswith(reserved_prefix):
                 self.warning(loc, f"reserved folder names are expected to start with '{reserved_prefix}'", "reserved-name-prefix")
             if not isinstance(entry, dict):
@@ -839,9 +911,11 @@ class Validator:
         known_keys = {ATTRIBUTES, GROUP, RULES, "exclude_rules"}
         for key in inherit:
             if key not in known_keys:
+                # listed from the set above rather than restated in prose,
+                # so a renamed part can't leave the message naming the old one
                 self.warning(
                     f"{loc}.inherit.{key}",
-                    "field isn't a recognized `inherit` key (doc/group/rules/exclude_rules)",
+                    f"field isn't a recognized `inherit` key ({'/'.join(sorted(known_keys))})",
                     "unknown-path-field",
                 )
 
@@ -851,24 +925,13 @@ class Validator:
     def _check_resolved_rule_instances(
         self, resolved_rules: dict[str, list[RuleAttachment]], location: str, context: str
     ) -> None:
-        for rule_id, attachments in resolved_rules.items():
-            loc = f"{location}.rules.{rule_id}"
-            if rule_id not in self.rule_catalog:
-                self.error(loc, f"rule `{rule_id}` not found in any rules tier (bundled, rules.own/, rules.external/)")
-                continue
-
-            entry: RuleEntry = self.rule_catalog[rule_id]
-
-            if context == "single" and entry.scope not in ("single", "both"):
-                self.error(loc, f"rule `{rule_id}` has scope `{entry.scope}` - can't be attached to a single path/folder")
-
-            param_names = set(entry.params_names)
-            required_params = param_names - set(entry.params_defaults)
-
-            for i, attachment in enumerate(attachments):
-                origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
-                inst_loc = f"{loc}[{i}]{origin_note}"
-                self._check_instance(attachment.instance, inst_loc, rule_id, param_names, required_params)
+        """Attachments after inheritance has been flattened - an inherited
+        one names the entry it came from in its location."""
+        self._check_attachments(
+            ((rule_id, [(a.origin_note, a.instance) for a in attachments])
+             for rule_id, attachments in resolved_rules.items()),
+            location, context,
+        )
 
     def _check_param_refs(self, inst_params: dict[str, Any], loc: str) -> None:
         """A param value may be {ref = "dotted.path"} instead of a
@@ -1004,8 +1067,14 @@ CATEGORY_LABELS = {
     "folders":       "reserved folders",
     "folders.rules": "folder rules (blanket)",
 }
+# CATEGORY_ORDER drives the summary table (one row per component type
+# that registers components). KNOWN_CATEGORIES is what --only accepts,
+# which is wider: "rules" (rule-discovery issues) and "meta" classify
+# issues without registering components, so they filter but never get a
+# summary row. Every value _classify_location can return must appear
+# here, or --only would silently discard that whole class of issue.
 CATEGORY_ORDER = ("paths", "paths.rules", "paths.cross", "folders", "folders.rules")
-KNOWN_CATEGORIES = (*CATEGORY_ORDER, "meta")
+KNOWN_CATEGORIES = (*CATEGORY_ORDER, "rules", "meta")
 
 
 def _parse_comma_list(raw: list[str] | None) -> set[str] | None:
@@ -1094,8 +1163,7 @@ def main(argv: list[str] | None = None) -> int:
              "see the docstring or --list-warnings for the full code list",
     )
     parser.add_argument("--list-warnings", action="store_true", help="print all warning codes and exit")
-    parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
-    parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
+    add_discovery_args(parser)
     args = parser.parse_args(argv)
 
     if args.list_warnings:
@@ -1144,7 +1212,7 @@ def main(argv: list[str] | None = None) -> int:
     errors = [i for i in issues if i.level == "error"]
     warnings = [i for i in issues if i.level == "warning"]
 
-    color = not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    color = should_color(args.no_color)
 
     # --no-warnings only affects what's PRINTED line-by-line - the summary
     # table and the warning count below still reflect the real state

@@ -9,8 +9,9 @@ one prefix (one per client, one per numbered project, ...) that all
 deserve the same purpose/lifecycle/rules without hand-maintaining a
 separate, otherwise-identical catalog entry per folder. A glob-style key
 fills that gap - one entry, many real matches, all sharing the same
-attributes and rule attachments (attachments run once per real match,
-same as [[folders.rules]] already runs once per real folder on disk).
+attributes and rule attachments (attachments run once per real match -
+unlike [[folders.rules]], which is one invocation on root with the rule
+itself doing the walking).
 
 Syntax is the same vocabulary already used everywhere for `exclude`
 params - fnmatch/pathlib.Path.glob: `*` (one path segment), `**`

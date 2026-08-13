@@ -34,6 +34,7 @@ color.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import sys
 from dataclasses import dataclass
@@ -219,11 +220,11 @@ def read_settings(raw_params: str, path: str) -> Settings:
     )
 
 
-def evaluate(settings: Settings, excluded) -> list[tuple[str, str, str, str]]:
+def evaluate(settings: Settings) -> list[tuple[str, str, str, str]]:
     """(action, relative path, current icon, desired icon) per child that
     isn't already correct."""
     findings = []
-    for folder in child_folders(settings.root, settings.recursive, settings.exclude, excluded):
+    for folder in child_folders(settings.root, settings.recursive, settings.exclude):
         rel = folder.relative_to(settings.root).as_posix()
         current = read_icon(folder)
         parsed = parse_icon(current, settings.prefix, settings.colors)
@@ -248,12 +249,31 @@ def evaluate(settings: Settings, excluded) -> list[tuple[str, str, str, str]]:
     return findings
 
 
+# Reporting/exclusion helpers shared by this rule's checker and fixer.
+# They live here rather than in each script because both need them
+# identically, and `excluded` was previously passed into evaluate() as a
+# callback from the very modules that should be importing it.
+MAX_REPORTED = 8
+
+
+def excluded(rel_path: str, globs: list) -> bool:
+    """A folder is excluded when its path relative to root matches a
+    glob, or when its bare name does - so "*.git" catches one at any
+    depth without a "**/" prefix."""
+    return any(fnmatch.fnmatch(rel_path, g) or fnmatch.fnmatch(Path(rel_path).name, g) for g in globs)
+
+
+def summarize(items: list, limit: int = MAX_REPORTED) -> str:
+    shown = ", ".join(items[:limit])
+    return shown + (f", ... ({len(items) - limit} more)" if len(items) > limit else "")
+
+
 def fail(message: str) -> int:
     print(f"error: {message}", file=sys.stderr)
     return 1
 
 
-def child_folders(root: Path, recursive: bool, exclude: list, excluded) -> list[Path]:
+def child_folders(root: Path, recursive: bool, exclude: list) -> list[Path]:
     """Real subdirectories, in a stable order. Symlinks are not followed:
     a link's target is somewhere else, and writing a .directory into it
     would change a folder outside the tree being governed."""

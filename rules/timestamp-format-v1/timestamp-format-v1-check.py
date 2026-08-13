@@ -51,13 +51,27 @@ def format_length(fmt: str) -> int:
     return len(REFERENCE_DT.strftime(fmt))
 
 
-def match_leading(name: str, formats: list):
+def prepare_formats(formats: list) -> list:
+    """Pair each format with its rendered length, longest first. Built
+    once per run rather than per filesystem entry: format_length is a
+    strftime call, far more expensive than the comparison it feeds, and
+    match_leading runs twice for every item in the tree. Sorted on the
+    length alone, so same-length formats keep their declared order and
+    the first match stays the one it was before."""
+    return sorted(((format_length(f), f) for f in formats), key=lambda pair: pair[0], reverse=True)
+
+
+# the detector list is fixed, so its lengths are computed once at import
+PREPARED_DETECTORS = prepare_formats(DETECTOR_FORMATS)
+
+
+def match_leading(name: str, prepared: list):
     """Tries each format (longest expected span first) as a fixed-length
     slice off the front of `name`. Returns (matched_text, fmt) for the
     first one that's both the right shape and a real calendar
-    date/datetime, or None if nothing in the list matches at all."""
-    for fmt in sorted(formats, key=format_length, reverse=True):
-        length = format_length(fmt)
+    date/datetime, or None if nothing in the list matches at all.
+    `prepared` comes from prepare_formats."""
+    for length, fmt in prepared:
         if length > len(name):
             continue
         candidate = name[:length]
@@ -93,8 +107,7 @@ def main() -> int:
         print("error: formats must be a non-empty list of strptime-style format strings", file=sys.stderr)
         return 1
     try:
-        for fmt in formats:
-            format_length(fmt)
+        prepared = prepare_formats(formats)
     except (TypeError, ValueError) as e:
         print(f"error: not a usable strptime format string: {e}", file=sys.stderr)
         return 1
@@ -128,10 +141,10 @@ def main() -> int:
         if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
             continue
 
-        if match_leading(item.name, formats) is not None:
+        if match_leading(item.name, prepared) is not None:
             continue  # correctly formatted
 
-        detected = match_leading(item.name, DETECTOR_FORMATS)
+        detected = match_leading(item.name, PREPARED_DETECTORS)
         if detected is not None:
             matched_text, _ = detected
             violations.append((rel, matched_text))

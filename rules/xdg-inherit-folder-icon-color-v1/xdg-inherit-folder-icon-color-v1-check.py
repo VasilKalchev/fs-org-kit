@@ -14,18 +14,11 @@ exit code: 0 = ran fine (read stdout for the verdict)
 """
 
 import argparse
-import fnmatch
 import json
 import sys
-from pathlib import Path
 
-from _shared import BadParams, UNMANAGED, evaluate, fail, read_settings
+from _shared import UNMANAGED, BadParams, evaluate, fail, read_settings, summarize
 
-MAX_REPORTED = 8
-
-
-def excluded(rel_path: str, globs: list) -> bool:
-    return any(fnmatch.fnmatch(rel_path, g) or fnmatch.fnmatch(Path(rel_path).name, g) for g in globs)
 
 
 def main() -> int:
@@ -55,7 +48,7 @@ def main() -> int:
         }))
         return 0
 
-    findings = evaluate(settings, excluded)
+    findings = evaluate(settings)
     if not findings:
         print(json.dumps({"status": "ok"}))
         return 0
@@ -65,9 +58,7 @@ def main() -> int:
         else f"{rel} (custom icon {current!r}, left alone)"
         for action, rel, current, desired in findings
     ]
-    shown = ", ".join(described[:MAX_REPORTED])
-    if len(described) > MAX_REPORTED:
-        shown += f", ... ({len(described) - MAX_REPORTED} more)"
+    shown = summarize(described)
     print(json.dumps({
         "status": "violation",
         "message": f"{len(findings)} folder(s) don't match the parent color '{settings.parent_color}': {shown}",

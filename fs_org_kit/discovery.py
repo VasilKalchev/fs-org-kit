@@ -61,7 +61,6 @@ class DiscoveryIssue:
 class RuleEntry:
     rule_id: str  # e.g. "file-extensions-v1" - the directory name, verbatim
     tier: Tier
-    dir_path: Path
     manifest_path: Path
     check_script: Path
     fix_script: Optional[Path]
@@ -77,7 +76,6 @@ class RuleEntry:
     # network, no subprocess, no native calls, and writes confined to the
     # rule's cache plus (in --fix mode) root and its own targets.
     sandbox: frozenset[str] = frozenset()
-    exclude: list[str] = field(default_factory=list)
     params_names: list[str] = field(default_factory=list)
     params_defaults: dict = field(default_factory=dict)
 
@@ -117,7 +115,7 @@ SCOPE = {
 # set has no reader and therefore no meaning.
 MANIFEST_KEYS = frozenset({
     "version", "purpose", "severity", "scope", "protocol_version",
-    "overrides_bundled", "uses_cache", "sandbox", "exclude", "params",
+    "overrides_bundled", "uses_cache", "sandbox", "params",
 })
 
 
@@ -125,7 +123,9 @@ def _scan_tier(
     tier_dir: Path,
     tier: Tier,
 ) -> tuple[dict[str, RuleEntry], list[DiscoveryIssue]]:
-    """Scan one tier directory for rule subdirectories."""
+    """Scan one tier directory for rule subdirectories. Deciding what is
+    even a candidate lives here; deciding whether a candidate is a valid
+    rule lives in _load_rule."""
     entries: dict[str, RuleEntry] = {}
     issues: list[DiscoveryIssue] = []
 
@@ -143,132 +143,116 @@ def _scan_tier(
             ))
             continue
 
-        match = RULE_DIR_PATTERN.match(child.name)
-        if not match:
-            issues.append(DiscoveryIssue(
-                IssueLevel.WARNING, tier, child.name,
-                "directory name doesn't match <name>-v<major>, ignored",
-            ))
-            continue
-
-        rule_id = child.name
-        dir_major = match.group("major")
-
-        manifest_path = child / f"{rule_id}.toml"
-        if not manifest_path.is_file():
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"no manifest found, expected {rule_id}.toml",
-            ))
-            continue
-
-        try:
-            with manifest_path.open("rb") as f:
-                manifest = tomllib.load(f)
-        except tomllib.TOMLDecodeError as e:
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"{manifest_path.name} is not valid TOML: {e}",
-            ))
-            continue
-
-        for key in sorted(set(manifest) - MANIFEST_KEYS):
-            issues.append(DiscoveryIssue(
-                IssueLevel.WARNING, tier, rule_id,
-                f"unknown manifest field '{key}', ignored - nothing reads it "
-                f"(valid: {', '.join(sorted(MANIFEST_KEYS))})",
-            ))
-
-        check_script = child / f"{rule_id}-check.py"
-        if not check_script.is_file():
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"no checker script found, expected {rule_id}-check.py",
-            ))
-            continue
-
-        fix_script_candidate = child / f"{rule_id}-fix.py"
-        fix_script = fix_script_candidate if fix_script_candidate.is_file() else None
-
-        version = manifest.get("version")
-        if not version or "." not in str(version):
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"manifest 'version' missing or malformed: {version!r}",
-            ))
-            continue
-        manifest_major = str(version).split(".", 1)[0]
-        if manifest_major != dir_major:
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"manifest version major ({manifest_major}) doesn't match "
-                f"directory suffix -v{dir_major}",
-            ))
-            continue
-
-        severity = manifest.get("severity", "info")
-        if severity not in SEVERITY:
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"severity {severity!r} not one of {sorted(SEVERITY)}",
-            ))
-            continue
-
-        scope = manifest.get("scope", "single")
-        if scope not in SCOPE:
-            issues.append(DiscoveryIssue(
-                IssueLevel.ERROR, tier, rule_id,
-                f"scope {scope!r} not one of {sorted(SCOPE)}",
-            ))
-            continue
-
-        overrides_bundled = bool(manifest.get("overrides_bundled", False))
-        if overrides_bundled and tier == Tier.EXTERNAL:
-            issues.append(DiscoveryIssue(
-                IssueLevel.WARNING, tier, rule_id,
-                "external-tier rule claims overrides_bundled = true; ignored - "
-                "an unverified rule can never override another rule's identity",
-            ))
-            overrides_bundled = False
-
-        sandbox_grants, sandbox_complaints = capabilities_for(manifest.get("sandbox"))
-        for complaint in sandbox_complaints:
-            issues.append(DiscoveryIssue(IssueLevel.WARNING, tier, rule_id, complaint))
-        if sandbox_grants and tier == Tier.EXTERNAL:
-            # Honored, unlike overrides_bundled - an external rule asking for
-            # a capability isn't claiming another rule's identity, and
-            # silently denying it would only produce a confusing runtime
-            # failure with no way forward. Said out loud, though: the point
-            # of the external tier is that nobody vouched for this rule.
-            issues.append(DiscoveryIssue(
-                IssueLevel.WARNING, tier, rule_id,
-                f"external-tier rule grants itself [sandbox] "
-                f"{', '.join(sorted(sandbox_grants))} - review the rule before relying on it",
-            ))
-
-        params = manifest.get("params", {})
-
-        entries[rule_id] = RuleEntry(
-            rule_id=rule_id,
-            tier=tier,
-            dir_path=child,
-            manifest_path=manifest_path,
-            check_script=check_script,
-            fix_script=fix_script,
-            version=str(version),
-            purpose=str(manifest.get("purpose", "")),
-            severity=severity,
-            scope=scope,
-            protocol_version=str(manifest.get("protocol_version", "1.0")),
-            overrides_bundled=overrides_bundled,
-            uses_cache=bool(manifest.get("uses_cache", False)),
-            sandbox=frozenset(sandbox_grants),
-            exclude=list(manifest.get("exclude", [])),
-            params_names=list(params.get("names", [])),
-            params_defaults=dict(params.get("defaults", {})),
-        )
+        entry, child_issues = _load_rule(child, tier)
+        issues.extend(child_issues)
+        if entry is not None:
+            entries[entry.rule_id] = entry
 
     return entries, issues
+
+
+def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[DiscoveryIssue]]:
+    """Validate one candidate rule directory into a RuleEntry, or None if
+    it isn't a usable rule. Every check that reads the manifest is here,
+    so adding a manifest field means touching exactly this function."""
+    issues: list[DiscoveryIssue] = []
+
+    def reject(level: IssueLevel, rule_id: str | None, message: str) -> tuple[None, list[DiscoveryIssue]]:
+        issues.append(DiscoveryIssue(level, tier, rule_id, message))
+        return None, issues
+
+    match = RULE_DIR_PATTERN.match(child.name)
+    if not match:
+        return reject(IssueLevel.WARNING, child.name, "directory name doesn't match <name>-v<major>, ignored")
+
+    rule_id = child.name
+    dir_major = match.group("major")
+
+    manifest_path = child / f"{rule_id}.toml"
+    if not manifest_path.is_file():
+        return reject(IssueLevel.ERROR, rule_id, f"no manifest found, expected {rule_id}.toml")
+
+    try:
+        with manifest_path.open("rb") as f:
+            manifest = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        return reject(IssueLevel.ERROR, rule_id, f"{manifest_path.name} is not valid TOML: {e}")
+
+    for key in sorted(set(manifest) - MANIFEST_KEYS):
+        issues.append(DiscoveryIssue(
+            IssueLevel.WARNING, tier, rule_id,
+            f"unknown manifest field '{key}', ignored - nothing reads it "
+            f"(valid: {', '.join(sorted(MANIFEST_KEYS))})",
+        ))
+
+    check_script = child / f"{rule_id}-check.py"
+    if not check_script.is_file():
+        return reject(IssueLevel.ERROR, rule_id, f"no checker script found, expected {rule_id}-check.py")
+
+    fix_script_candidate = child / f"{rule_id}-fix.py"
+    fix_script = fix_script_candidate if fix_script_candidate.is_file() else None
+
+    version = manifest.get("version")
+    if not version or "." not in str(version):
+        return reject(IssueLevel.ERROR, rule_id, f"manifest 'version' missing or malformed: {version!r}")
+    manifest_major = str(version).split(".", 1)[0]
+    if manifest_major != dir_major:
+        return reject(
+            IssueLevel.ERROR, rule_id,
+            f"manifest version major ({manifest_major}) doesn't match directory suffix -v{dir_major}",
+        )
+
+    severity = manifest.get("severity", "info")
+    if severity not in SEVERITY:
+        return reject(IssueLevel.ERROR, rule_id, f"severity {severity!r} not one of {sorted(SEVERITY)}")
+
+    scope = manifest.get("scope", "single")
+    if scope not in SCOPE:
+        return reject(IssueLevel.ERROR, rule_id, f"scope {scope!r} not one of {sorted(SCOPE)}")
+
+    overrides_bundled = bool(manifest.get("overrides_bundled", False))
+    if overrides_bundled and tier == Tier.EXTERNAL:
+        issues.append(DiscoveryIssue(
+            IssueLevel.WARNING, tier, rule_id,
+            "external-tier rule claims overrides_bundled = true; ignored - "
+            "an unverified rule can never override another rule's identity",
+        ))
+        overrides_bundled = False
+
+    sandbox_grants, sandbox_complaints = capabilities_for(manifest.get("sandbox"))
+    for complaint in sandbox_complaints:
+        issues.append(DiscoveryIssue(IssueLevel.WARNING, tier, rule_id, complaint))
+    if sandbox_grants and tier == Tier.EXTERNAL:
+        # Honored, unlike overrides_bundled - an external rule asking for
+        # a capability isn't claiming another rule's identity, and
+        # silently denying it would only produce a confusing runtime
+        # failure with no way forward. Said out loud, though: the point
+        # of the external tier is that nobody vouched for this rule.
+        issues.append(DiscoveryIssue(
+            IssueLevel.WARNING, tier, rule_id,
+            f"external-tier rule grants itself [sandbox] "
+            f"{', '.join(sorted(sandbox_grants))} - review the rule before relying on it",
+        ))
+
+    params = manifest.get("params", {})
+
+    return RuleEntry(
+        rule_id=rule_id,
+        tier=tier,
+        manifest_path=manifest_path,
+        check_script=check_script,
+        fix_script=fix_script,
+        version=str(version),
+        purpose=str(manifest.get("purpose", "")),
+        severity=severity,
+        scope=scope,
+        protocol_version=str(manifest.get("protocol_version", "1.0")),
+        overrides_bundled=overrides_bundled,
+        uses_cache=bool(manifest.get("uses_cache", False)),
+        sandbox=frozenset(sandbox_grants),
+        params_names=list(params.get("names", [])),
+        params_defaults=dict(params.get("defaults", {})),
+    ), issues
 
 
 def discover_rules(

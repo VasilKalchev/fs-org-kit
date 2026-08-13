@@ -21,10 +21,11 @@ What gets resolved into invocations:
     - blanket path attachments:    [[paths.rules.<name>]] - every
       *cataloged* path (every path with its own [paths."..."] entry)
     - cross-path attachments:      [[paths.cross.rules.<name>]]
-    - blanket folder attachments:  [[folders.rules.<name>]] - every
-      folder under root (cataloged or not). The rule's own params control
-      what happens: exclusions, recursion, etc. are specified by the rule,
-      not the runner - the runner just invokes the rule once per folder.
+    - blanket folder attachments:  [[folders.rules.<name>]] - ONE
+      invocation, on root. The rule's own params do the walking:
+      exclusions, recursion, and which folders count are specified by the
+      rule, not the runner (see doc/DESIGN.md, "Recursive rule invocation
+      on folders").
     - reserved-name attachments:   [[folders.reserved."_x".rules.<name>]] -
       once per folder actually NAMED _x, anywhere under root. A reserved
       entry describes what a name means wherever it appears, so its
@@ -108,18 +109,21 @@ import os
 import subprocess
 import sys
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from fs_org_kit.cache import ensure_rule_cache_dir
 from fs_org_kit.discovery import RuleEntry
+from fs_org_kit.fields import iter_rule_instances
 from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
 from fs_org_kit.param_refs import expand_params
 from fs_org_kit.path_keys import resolve_key
 from fs_org_kit.path_patterns import expand_pattern, is_pattern
 from fs_org_kit.sandbox import Policy, child_env
-from fs_org_kit.validator import StandardLoadError, build_validator, load_standard
+from fs_org_kit.validator import (
+    StandardLoadError, add_discovery_args, load_and_validate, should_color,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -165,11 +169,18 @@ class Invocation:
             return [self.target_path]
         return list(self.target_paths or [])
 
-    @property
-    def target_display(self) -> str:
-        if self.target_path is not None:
-            return str(self.target_path)
-        return ", ".join(str(p) for p in (self.target_paths or []))
+    def target_display(self, relative_to: Path) -> str:
+        """The target(s) as shown in a report line. Each is relativized on
+        its own: joining first and relativizing the joined string never
+        matches, so every cross-scope invocation would silently fall back
+        to absolute paths and report in a different format from every
+        single-target one."""
+        def shorten(p: Path) -> str:
+            try:
+                return str(p.relative_to(relative_to))
+            except ValueError:
+                return str(p)  # genuinely outside (e.g. root elsewhere) - show absolute
+        return ", ".join(shorten(p) for p in self.targets)
 
 
 @dataclass
@@ -200,14 +211,10 @@ def _resolve_params(entry: RuleEntry, inst: dict[str, Any]) -> dict[str, Any]:
 def _iter_raw_instances(
     rules_table: Any, catalog: dict[str, RuleEntry]
 ) -> Iterator[tuple[str, RuleEntry, int, dict[str, Any], str | None]]:
-    if not isinstance(rules_table, dict):
-        return
-    for rule_id, instances in rules_table.items():
+    for rule_id, instances in iter_rule_instances(rules_table):
         entry = catalog.get(rule_id)
         if entry is None:
             continue  # already reported by the validation pass, skip silently here
-        if not isinstance(instances, list):
-            instances = [instances]
         for i, inst in enumerate(instances):
             if isinstance(inst, dict):
                 yield rule_id, entry, i, inst, None
@@ -221,8 +228,7 @@ def _iter_resolved_instances(
         if entry is None:
             continue  # already reported by the validation pass, skip silently here
         for i, attachment in enumerate(attachments):
-            origin_note = f' (inherited from "{attachment.origin_key}")' if attachment.origin_key else ""
-            yield rule_id, entry, i, attachment.instance, origin_note
+            yield rule_id, entry, i, attachment.instance, attachment.origin_note
 
 
 def _emit(
@@ -245,28 +251,16 @@ def _emit(
 
 def _add_invocations(
     invocations: list[Invocation],
-    rules_table: Any,
-    targets: list[tuple[str, Path]],   # (dotted-key, resolved absolute path)
+    attachments: Iterator[tuple[str, RuleEntry, int, dict[str, Any], str | None]],
+    targets: list[Path],
     loc_prefix: str,
-    catalog: dict[str, RuleEntry],
 ) -> None:
-    for rule_id, entry, i, inst, origin_note in _iter_raw_instances(rules_table, catalog):
-        for _key, abs_path in targets:
-            _emit(invocations, rule_id, entry, i, inst, origin_note, loc_prefix, target_path=abs_path)
-
-
-def _add_invocations_from_resolved(
-    invocations: list[Invocation],
-    resolved_rules: dict[str, list[RuleAttachment]],
-    targets: list[tuple[str, Path]],
-    loc_prefix: str,
-    catalog: dict[str, RuleEntry],
-) -> None:
-    """Same as _add_invocations, but consumes an already-inheritance-resolved
-    rules table (RuleAttachment objects) instead of a raw TOML dict - used
-    for individual [paths."..."] entries, where `inherit` may apply."""
-    for rule_id, entry, i, inst, origin_note in _iter_resolved_instances(resolved_rules, catalog):
-        for _key, abs_path in targets:
+    """One invocation per (attachment, target). Callers pass either
+    iterator above, which is why both yield the same 5-tuple: whether an
+    attachment came from raw TOML or from inheritance changes nothing
+    about how it turns into invocations."""
+    for rule_id, entry, i, inst, origin_note in attachments:
+        for abs_path in targets:
             _emit(invocations, rule_id, entry, i, inst, origin_note, loc_prefix, target_path=abs_path)
 
 
@@ -294,15 +288,16 @@ def _resolve_active_targets(
     the literal entry's own resolved fields/rules (already including
     whatever it inherited) are authoritative for that one real folder,
     not a second, separate invocation via the pattern."""
-    literal_abs_paths = {resolve_key(root_dir, key) for key in resolved_paths if not is_pattern(key)}
+    # resolve_key ends in a realpath syscall chain, so each literal key is
+    # resolved once here and read twice below
+    literals = {key: resolve_key(root_dir, key) for key in resolved_paths if not is_pattern(key)}
+    literal_abs_paths = set(literals.values())
     active: list[tuple[str, Path]] = []
     for key in resolved_paths:
         if is_pattern(key):
             active.extend((key, m) for m in expand_pattern(root_dir, key) if m not in literal_abs_paths)
-        else:
-            abs_path = resolve_key(root_dir, key)
-            if abs_path.is_dir():
-                active.append((key, abs_path))
+        elif literals[key].is_dir():
+            active.append((key, literals[key]))
     return active
 
 
@@ -345,12 +340,17 @@ def collect_invocations(
     # excluded + this entry's own, merged
     for key, abs_path in active_targets:
         resolved = resolved_paths[key]
-        _add_invocations_from_resolved(invocations, resolved.rules, [(key, abs_path)], f'paths."{key}"', catalog)
+        _add_invocations(
+            invocations, _iter_resolved_instances(resolved.rules, catalog), [abs_path], f'paths."{key}"'
+        )
 
     # paths.rules blanket - every *cataloged* path that currently exists.
     # The blanket table itself isn't an entry that can use `inherit`, so
     # this stays on the raw-dict path, same as before.
-    _add_invocations(invocations, paths.get("rules"), active_targets, "paths", catalog)
+    _add_invocations(
+        invocations, _iter_raw_instances(paths.get("rules"), catalog),
+        [abs_path for _key, abs_path in active_targets], "paths",
+    )
 
     # paths.cross
     for i, cross in enumerate(paths.get("cross", [])):
@@ -381,9 +381,9 @@ def collect_invocations(
         for name, matches in _find_reserved_folders(root_dir, set(with_rules)).items():
             if not matches:
                 continue
-            targets = [(name, match) for match in matches]
-            _add_invocations_from_resolved(
-                invocations, with_rules[name].rules, targets, f'folders.reserved."{name}"', catalog
+            _add_invocations(
+                invocations, _iter_resolved_instances(with_rules[name].rules, catalog),
+                matches, f'folders.reserved."{name}"',
             )
 
     # {ref = "dotted.path"} param values (see fs_org_kit.param_refs) are
@@ -524,11 +524,7 @@ def run_invocation(
 
 def _format_result(result: RunResult, standard_dir: Path, color: bool) -> str:
     tag = result.status.upper()
-    target = result.invocation.target_display
-    try:
-        target = str(Path(target).relative_to(standard_dir))
-    except ValueError:
-        pass  # outside standard_dir (e.g. root elsewhere) - show absolute
+    target = result.invocation.target_display(standard_dir)
     if color and result.status in _COLOR:
         c = _COLOR[result.status]
         tag = f"{c}{tag}{_COLOR['reset']}"
@@ -565,8 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("path", type=Path, help="path to a populated fs-org-std.toml")
     parser.add_argument("--fix", action="store_true", help="invoke fixers where available, instead of just reporting")
-    parser.add_argument("--include-external", action="store_true", help="also discover rules.external/ (never included by default)")
-    parser.add_argument("--rules-dir", type=Path, default=None, help="override where bundled rules are discovered from")
+    add_discovery_args(parser)
     parser.add_argument("--no-color", action="store_true", help="disable colored output")
     parser.add_argument(
         "--no-sandbox", action="store_true",
@@ -581,28 +576,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        raw_text, data = load_standard(args.path)
+        data, validator, warnings = load_and_validate(
+            args.path, include_external=args.include_external,
+            bundled_rules_dir=args.rules_dir, before="running rules",
+        )
     except StandardLoadError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
     standard_dir = args.path.resolve().parent
-    validator = build_validator(
-        args.path, raw_text, data, include_external=args.include_external, bundled_rules_dir=args.rules_dir,
-    )
-    issues = validator.run()
-    errors = [i for i in issues if i.level == "error"]
-    warnings = [i for i in issues if i.level == "warning"]
-
-    if errors:
-        print(
-            f"error: {args.path} has {len(errors)} validation error(s) - fix these before running rules "
-            f"(run `python -m fs_org_kit.validator {args.path}` for details)",
-            file=sys.stderr,
-        )
-        return 2
-
-    color = not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    color = should_color(args.no_color)
 
     if warnings:
         note = f"standard validated: 0 errors, {len(warnings)} warning(s) (run the validator directly for details)"

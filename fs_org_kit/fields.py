@@ -42,6 +42,7 @@ doc generator - the same resolve-once-and-reuse path `rule_catalog` and
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,6 +53,25 @@ RULES = "rules"
 # Keys on an entry that are structure rather than an attribute. A
 # declared field name may not collide with one.
 STRUCTURAL_KEYS = (GROUP, RULES, "inherit")
+
+
+def iter_rule_instances(rules_table: Any) -> Iterator[tuple[str, list[Any]]]:
+    """Yield `(rule_id, instances)` for each rule in a `rules` table, with
+    the two TOML spellings of an attachment normalized to a list.
+
+    `[x.rules.r]` parses to a table and `[[x.rules.r]]` to a list of
+    tables; both mean "attach rule r", the second just more than once.
+    Normalizing here is what lets every consumer treat them identically -
+    this is the one place that equivalence is encoded.
+
+    Instances are yielded as parsed, with no type filter: the validator
+    reports a non-table instance as an error, so dropping it here would
+    silently swallow the thing it exists to catch. Consumers that only
+    act on well-formed attachments filter on `isinstance(inst, dict)`."""
+    if not isinstance(rules_table, dict):
+        return
+    for rule_id, instances in rules_table.items():
+        yield rule_id, instances if isinstance(instances, list) else [instances]
 
 MISSING_GROUPING_ENUM = "missing-grouping-enum"
 

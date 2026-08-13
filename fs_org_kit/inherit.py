@@ -45,7 +45,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS
+from fs_org_kit.fields import ATTRIBUTES, GROUP, RULES, STRUCTURAL_KEYS, iter_rule_instances
 
 # `inherit` keys naming a source entry, and the part each one fills
 SOURCE_KEYS = (ATTRIBUTES, GROUP, RULES)
@@ -53,11 +53,15 @@ SOURCE_KEYS = (ATTRIBUTES, GROUP, RULES)
 
 @dataclass(frozen=True)
 class RuleAttachment:
-    rule_id: str
     instance: dict[str, Any]
     origin_key: str | None  # None = declared directly on this entry; else the
                              # entry it was inherited from (traced to the
                              # original declaring entry, not just one hop up)
+
+    @property
+    def origin_note(self) -> str:
+        """How an inherited attachment is named in validator/runner output."""
+        return f' (inherited from "{self.origin_key}")' if self.origin_key else ""
 
 
 @dataclass(frozen=True)
@@ -66,7 +70,6 @@ class ResolvedEntry:
     attributes: dict[str, Any]
     group: dict[str, Any]
     rules: dict[str, list[RuleAttachment]]
-    raw: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,14 @@ def _resolve_fields(
     return result
 
 
+def _own_attachments(entry: dict[str, Any]) -> dict[str, list[RuleAttachment]]:
+    """This entry's own `rules` attachments, ignoring inheritance."""
+    return {
+        rule_id: [RuleAttachment(inst, None) for inst in instances if isinstance(inst, dict)]
+        for rule_id, instances in iter_rule_instances(own_fields(entry, RULES))
+    }
+
+
 def _resolve_rules(
     key: str,
     raw_entries: dict[str, dict[str, Any]],
@@ -157,14 +168,11 @@ def _resolve_rules(
             if rule_id in exclude:
                 continue
             result[rule_id] = [
-                RuleAttachment(a.rule_id, a.instance, a.origin_key or parent_key)
+                RuleAttachment(a.instance, a.origin_key or parent_key)
                 for a in attachments
             ]
 
-    for rule_id, instances in own_fields(entry, RULES).items():
-        if not isinstance(instances, list):
-            instances = [instances]
-        own_attachments = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
+    for rule_id, own_attachments in _own_attachments(entry).items():
         result[rule_id] = result.get(rule_id, []) + own_attachments
 
     memo[key] = result
@@ -244,13 +252,9 @@ def resolve_entries(
             rules = _resolve_rules(key, safe_entries, rules_memo, ())
         except _CycleDetected as e:
             issues.append(InheritIssue("error", key, f"inherit.rules cycle: {' -> '.join(e.chain)}"))
-            rules = {}
-            for rule_id, instances in own_fields(safe_entries[key], RULES).items():
-                if not isinstance(instances, list):
-                    instances = [instances]
-                rules[rule_id] = [RuleAttachment(rule_id, inst, None) for inst in instances if isinstance(inst, dict)]
+            rules = _own_attachments(safe_entries[key])
 
-        resolved[key] = ResolvedEntry(key=key, attributes=attributes, group=group, rules=rules, raw=raw_entries[key])
+        resolved[key] = ResolvedEntry(key=key, attributes=attributes, group=group, rules=rules)
 
     # exclude_rules entries that don't correspond to anything actually
     # inherited are very likely a typo or a stale exclusion - worth a

@@ -36,11 +36,16 @@ knowledge about that table, and the core doesn't own it. The rule
 receiving the value does, and takes what it needs. The only failure is
 a path that doesn't resolve at all.
 
-Resolution happens once and flows into both consumers that need it -
-the validator (to catch a broken reference before the runner ever
-touches the filesystem) and the runner (to build the actual JSON
-payload a rule script receives) - the same "resolve once, reuse"
-pattern already used for rule discovery and inheritance.
+Both consumers call `expand_params` themselves: the validator to catch
+a broken reference before the runner ever touches the filesystem
+(keeping only the errors), the runner to build the actual JSON payload
+a rule script receives (keeping only the result). That is two passes,
+not the "resolve once, reuse" pattern used for rule discovery and
+inheritance - deliberately, because expansion is pure and depends on
+nothing but the standard, which neither pass mutates. If a ref ever
+gains context-dependence (relative refs, per-namespace scoping), that
+stops being true and the expanded value has to be resolved once, onto
+the attachment, and threaded through instead.
 """
 
 from __future__ import annotations

@@ -11,6 +11,46 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Cleanup pass: one owner per shared mechanism, inert fields removed
+
+The `exclude` manifest field is gone. It was documented as "globs this
+rule never applies to" and parsed into `RuleEntry`, but nothing ever
+read it - a rule author could write an exclusion that silently did
+nothing. No bundled manifest used it. This is the same "configuration
+surface with nothing behind it" already removed from
+`rule.template.toml`; `severity`, `protocol_version` and `purpose` are
+still in that state and still need a decision.
+
+`--only` now accepts `rules`. Rule-discovery issues classify as that
+category, but it wasn't in the accepted list, so *any* `--only`
+invocation silently discarded every rule-discovery error and warning.
+
+Cross-path results now report their targets relative to the standard's
+directory, like every single-target result already did. The report line
+joined a cross-set's paths and then relativized the joined string,
+which never matches, so it always fell back to absolute paths.
+
+The unknown-`inherit`-key warning listed `doc/group/rules/exclude_rules`
+- naming a part renamed to `attributes` some time ago. The message now
+derives its key list from the set it checks against.
+
+Internally: the "an attachment is a table or a list of tables"
+normalization had six copies across four modules and is now
+`fields.iter_rule_instances`; the validator's raw and resolved
+attachment checkers, and the runner's two invocation builders, were
+duplicate bodies and are now one each; `load_and_validate`,
+`add_discovery_args` and `should_color` replace the load/validate/abort
+and argparse blocks copied between the three CLIs. Several unread
+fields (`RuleEntry.dir_path`, `ResolvedEntry.raw`, two redundant
+`rule_id`s, `Issue.kind` as stored state) were removed. The validator's
+pattern-overlap check walked every pair of catalog keys and discarded
+the literal/literal majority inside the loop; it now walks patterns x
+keys, emitting the identical pairs in the identical order (70ms -> 2ms
+at 400 keys, paid on every validate, run and doc invocation).
+
+`examples/parext` is removed; `examples/para` remains the worked
+example.
+
 ### Doc generator: ToC links, footer, path nesting, and a strip-down to a minimal baseline
 
 Generated docs' ToC links now resolve in Obsidian, the renderer these
