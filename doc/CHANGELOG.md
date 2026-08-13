@@ -9,7 +9,7 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ---
 
-## Unreleased
+## 0.4
 
 ### Runner: relative `root` now resolves against the standard's own directory, not cwd
 
