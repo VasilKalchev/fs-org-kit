@@ -8,8 +8,8 @@ fs-org-kit is a tool that makes a standard for how your files should be
 organized machine-enforceable. Users write a `fs-org-std.toml` describing how a
 directory tree should be organized (paths, their purpose/lifecycle, and
 which rules apply to them); a validator, runner, and doc generator then
-check/fix/document that standard against the real filesystem. Status: 0.1
-complete, with unreleased work on top (see doc/CHANGELOG.md).
+check/fix/document that standard against the real filesystem. For what
+changed and when, see doc/CHANGELOG.md.
 
 Read doc/DESIGN.md before making architectural changes — it records *why*
 things are structured the way they are (rules-on-disk vs. embedded,

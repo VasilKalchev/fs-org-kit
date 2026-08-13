@@ -19,6 +19,8 @@ Rules now live in three trust tiers:
 
 This three-tier model is enforced structurally (not as a convention or config option) - the runner, validator, and discovery module all understand these exact paths.
 
+`rules.own/` and `rules.external/` are two flat, equally-explicit siblings of the standard, not one implicit default plus a nested special case - a downloaded rule dropped straight into `rules.own/` by mistake was a real gap in an earlier version of this layout, and structural clarity was worth more here than a shorter path.
+
 ### Discovery is centralized, and shared rather than repeated
 
 `fs_org_kit/discovery.py` is the single source of truth for "what rules exist right now." It's imported directly by the validator, to resolve rule references in a standard; the runner then reuses `validator.rule_catalog` rather than calling `discover_rules()` again itself - one discovery pass per invocation, not two.
