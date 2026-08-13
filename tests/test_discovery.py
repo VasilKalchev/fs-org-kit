@@ -174,6 +174,53 @@ class TestDiscoveryErrors:
         assert len(errors) == 1
         assert "doesn't match" in errors[0].message and "2" in errors[0].message
 
+    def test_unsupported_protocol_major_excluded_not_blocking(self, tmp_path):
+        """protocol_version major with no adapter -> warning (not error), rule
+        excluded from the catalog, but a sibling rule still loads fine - unlike
+        a broken manifest, this doesn't block anything else."""
+        own_dir = tmp_path / "rules.own" / "future-protocol-v1"
+        own_dir.mkdir(parents=True)
+        (own_dir / "future-protocol-v1.toml").write_text(
+            'version = "1.0"\npurpose = "speaks a protocol this runner doesn\'t know"\n'
+            'scope = "single"\nprotocol_version = "99.0"\n[params]\nnames = []\n[params.defaults]\n'
+        )
+        (own_dir / "future-protocol-v1-check.py").write_text('print("stub")')
+
+        sibling_dir = tmp_path / "rules.own" / "fine-v1"
+        sibling_dir.mkdir(parents=True)
+        (sibling_dir / "fine-v1.toml").write_text(
+            'version = "1.0"\npurpose = "ordinary rule"\n'
+            'scope = "single"\nprotocol_version = "1.0"\n[params]\nnames = []\n[params.defaults]\n'
+        )
+        (sibling_dir / "fine-v1-check.py").write_text('print("stub")')
+
+        catalog, issues = discover_rules(tmp_path)
+
+        assert "future-protocol-v1" not in catalog
+        assert "fine-v1" in catalog
+        matching = [i for i in issues if i.rule_id == "future-protocol-v1"]
+        assert len(matching) == 1
+        assert matching[0].level == IssueLevel.WARNING
+        assert "protocol_version" in matching[0].message and "99" in matching[0].message
+
+    def test_malformed_protocol_version(self, tmp_path):
+        """protocol_version that isn't major.minor shaped -> error, like version."""
+        own_dir = tmp_path / "rules.own" / "bad-protocol-v1"
+        own_dir.mkdir(parents=True)
+        (own_dir / "bad-protocol-v1.toml").write_text(
+            'version = "1.0"\npurpose = "malformed protocol_version"\n'
+            'scope = "single"\nprotocol_version = "nope"\n[params]\nnames = []\n[params.defaults]\n'
+        )
+        (own_dir / "bad-protocol-v1-check.py").write_text('print("stub")')
+
+        catalog, issues = discover_rules(tmp_path)
+
+        assert "bad-protocol-v1" not in catalog
+        errors = [i for i in issues if i.rule_id == "bad-protocol-v1"]
+        assert len(errors) == 1
+        assert errors[0].level == IssueLevel.ERROR
+        assert "protocol_version" in errors[0].message and "malformed" in errors[0].message
+
     def test_unknown_manifest_field(self, tmp_path):
         """A field nothing reads is a typo doing nothing -> warning, rule still loads."""
         own_dir = tmp_path / "rules.own" / "typo-v1"

@@ -147,7 +147,7 @@ Console entry points are declared in `pyproject.toml` (`fs-org-validate`, `fs-or
 
 ### Schema versioning is separate from standard versioning
 
-`fs-org-std.template.toml` tracks `schema_version` (the grammar it uses, e.g., 1.0) separately from `standard_version` (the content version, e.g., 3.2), so the grammar can evolve independently of any one person's standard: different standards can sit at different schema versions, and a validator that doesn't recognize one gives a clear error rather than a flood of misleading ones.
+`schema_version` (the grammar) and `standard_version` (your content) are independent - no shared major, no required format on the latter. See [doc/VERSIONING.md](VERSIONING.md) for the full reasoning, including why they used to be coupled and why that stopped making sense.
 
 ### Attributes are self-describing
 
@@ -219,7 +219,7 @@ What that file was genuinely good at - handing an author a correct starting poin
 
 ### Rule-to-runner protocol is versioned independently
 
-Rule manifests include `protocol_version`, separate from the rule's own `version`, so the runner's command-line interface can evolve without forcing every existing rule to be rewritten in step - an old-protocol rule and a new-protocol one coexist, and a rule declaring an unsupported version gets a clear error instead of a mysterious argparse failure.
+`protocol_version`, separate from a rule's own `version`, lets the runner's wire format evolve without forcing every existing rule to be rewritten in step - old and new protocol majors coexist, additively, rather than the runner supporting only one at a time. See [doc/VERSIONING.md](VERSIONING.md) for why that asymmetry with schema versioning is deliberate.
 
 ### Fixer-specific protocol: self-contained, not check-then-fix
 

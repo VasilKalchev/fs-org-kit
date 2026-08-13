@@ -16,10 +16,11 @@ things are structured the way they are (rules-on-disk vs. embedded,
 single discovery pass shared across tools, structural fixability, etc.),
 and repeating a decision already reverted there wastes a cycle.
 
-Design docs, the changelog, the rule-authoring guide, and the validator
-spec all live under `doc/` (`CHANGELOG.md`, `DESIGN.md`, `RULES.md`,
-`TESTING.md`, `VALIDATOR_SPEC.md`); only `README.md` and this file stay
-at the repo root.
+Design docs, the changelog, the rule-authoring guide, the validator
+spec, the versioning reference, and the roadmap all live under `doc/`
+(`CHANGELOG.md`, `DESIGN.md`, `RULES.md`, `TESTING.md`,
+`VALIDATOR_SPEC.md`, `VERSIONING.md`, `ROADMAP.md`); only `README.md`
+and this file stay at the repo root.
 
 Keep documentation concise: state the decision and its constraint, then
 stop. Rationale belongs in `doc/DESIGN.md` once, referenced from

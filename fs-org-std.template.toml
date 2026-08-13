@@ -157,7 +157,9 @@
 #   size     - <n><unit>, binary units: 500MiB, 10GiB, 1TiB
 #
 # Versioning: schema_version tracks this file's STRUCTURE (the
-# grammar); standard_version tracks the CONTENT of the real standard.
+# grammar); standard_version tracks the CONTENT of the real standard,
+# and is entirely yours - any format, no relationship to schema_version
+# required. See doc/VERSIONING.md.
 
 
 
@@ -170,7 +172,7 @@ description = ""
 schema_version = "2.1"     # version of this TOML *structure* (the grammar/spec)
 schema_date = 2026-08-12
 
-standard_version = "2.1"   # version of the *content* of the standard
+standard_version = "14.2"  # version of the *content* of the standard - yours, any format
 standard_date = 2026-08-12
 
 

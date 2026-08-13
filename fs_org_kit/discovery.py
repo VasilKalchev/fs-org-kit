@@ -109,6 +109,15 @@ SCOPE = {
     "both": "attachable either way - the script must accept both flags and validate them itself",
 }
 
+# Protocol majors this runner knows how to invoke a rule script with. An
+# additive set, not a single "current" value like SUPPORTED_SCHEMA_MAJOR:
+# rules are numerous and independently maintained (bundled, own, and
+# especially external, on someone else's update schedule), so a wire-format
+# bump must not stop every rule that hasn't migrated yet from working. Grows
+# when a new major ships; only shrinks if an old wire format is deliberately
+# retired. See doc/VERSIONING.md.
+SUPPORTED_PROTOCOL_MAJORS = frozenset({"1"})
+
 # Every top-level key a manifest may carry. Anything else is a typo doing
 # nothing, so discovery says so instead of ignoring it silently. Defaults
 # are applied where each field is read below; a field absent from this
@@ -202,6 +211,24 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
             f"manifest version major ({manifest_major}) doesn't match directory suffix -v{dir_major}",
         )
 
+    protocol_version = manifest.get("protocol_version", "1.0")
+    if not protocol_version or "." not in str(protocol_version):
+        return reject(IssueLevel.ERROR, rule_id, f"manifest 'protocol_version' malformed: {protocol_version!r}")
+    protocol_major = str(protocol_version).split(".", 1)[0]
+    if protocol_major not in SUPPORTED_PROTOCOL_MAJORS:
+        # A warning, not an error: unlike a broken manifest, this isn't a
+        # mistake to fix - it resolves itself once either side is updated.
+        # The rule is still excluded from the catalog (never added below),
+        # but that exclusion doesn't block the rest of the standard from
+        # validating - only an attachment that actually references this
+        # rule will fail, at that specific site.
+        return reject(
+            IssueLevel.WARNING, rule_id,
+            f"protocol_version {protocol_version!r} (major {protocol_major}) isn't one this runner "
+            f"speaks (supports major {'/'.join(sorted(SUPPORTED_PROTOCOL_MAJORS))}) - excluded from "
+            "the catalog until either side is updated",
+        )
+
     severity = manifest.get("severity", "info")
     if severity not in SEVERITY:
         return reject(IssueLevel.ERROR, rule_id, f"severity {severity!r} not one of {sorted(SEVERITY)}")
@@ -246,7 +273,7 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
         purpose=str(manifest.get("purpose", "")),
         severity=severity,
         scope=scope,
-        protocol_version=str(manifest.get("protocol_version", "1.0")),
+        protocol_version=str(protocol_version),
         overrides_bundled=overrides_bundled,
         uses_cache=bool(manifest.get("uses_cache", False)),
         sandbox=frozenset(sandbox_grants),

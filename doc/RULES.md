@@ -74,7 +74,11 @@ never loaded.
 
 The manifest's `version` field major **must match** the directory
 suffix - `version = "2.0"` inside a directory named `my-rule-v1/` is a
-discovery error, not a warning. This is checked, not just convention.
+discovery error, not a warning. This is checked, not just convention -
+but it's a guard rail on the naming scheme, not the reason for it. The
+suffix exists so multiple versions of the same rule can coexist while
+you migrate, not primarily to be cross-checked against anything. See
+[doc/VERSIONING.md](VERSIONING.md) for the full reasoning.
 
 ---
 
@@ -104,7 +108,7 @@ recursive = true
 | `purpose` | strongly recommended, not enforced | One sentence, shown in generated documentation. Nothing currently rejects a rule for leaving this empty - but an undocumented rule is a rule nobody else can safely attach. |
 | `severity` | no (defaults `"info"`), checked | How loud a violation is reported. Must be a valid value or discovery rejects the rule - see [enums](#enums-severity-and-scope) below. |
 | `scope` | no (defaults `"single"`), checked | Where this rule may be attached. Must be a valid value or discovery rejects the rule - see [enums](#enums-severity-and-scope) below. |
-| `protocol_version` | no (defaults `"1.0"`) | Which version of the runner↔script wire format `-check.py`/`-fix.py` speak. Independent of `version` - see [below](#protocol_version-vs-version). |
+| `protocol_version` | no (defaults `"1.0"`), checked | Which version of the runner↔script wire format `-check.py`/`-fix.py` speak. Independent of `version` - see [below](#protocol_version-vs-version). A major this runner has no adapter for is a **warning**, not an error - the rule is excluded from the catalog, but the rest of the standard still validates and runs. |
 | `overrides_bundled` | no (defaults `false`) | Only meaningful for a rule in `rules.own/`. See [Overriding a bundled rule](#overriding-a-bundled-rule). |
 | `uses_cache` | no (defaults `false`) | `true` if your rule keeps state between runs. The runner then passes `--cache-dir <path>`. See [Rules that cache](#rules-that-cache). |
 | `sandbox` | no, no default | Table granting capabilities the harness otherwise blocks. See [The sandbox](#the-sandbox). |
@@ -146,6 +150,18 @@ Two independent axes, easy to conflate:
 You will almost never touch `protocol_version` by hand. Leave it at
 `"1.0"` unless you're deliberately building against a newer protocol
 that doesn't exist yet.
+
+Migrating a rule to a newer `protocol_version` **never** requires
+bumping `version`'s major or renaming the rule's directory - it's a
+self-contained change to that one rule (rewrite the scripts, bump
+`protocol_version`, done), and every standard that already has the rule
+attached keeps working unmodified, since nothing about what the rule
+checks or how its params work has changed. `fs_org_kit.discovery`'s
+`SUPPORTED_PROTOCOL_MAJORS` is an additive set - the runner keeps every
+protocol major it has ever supported, rather than replacing it on each
+bump, specifically so rules on someone else's update schedule (yours
+from a while ago, or `rules.external/`) don't all break the moment the
+tool updates. See [doc/VERSIONING.md](VERSIONING.md) for why.
 
 ### Overriding a bundled rule
 

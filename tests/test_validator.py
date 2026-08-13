@@ -94,6 +94,62 @@ allowed = ["jpg", "png", "gif"]
         assert any("empty" in w.message for w in warnings)
 
 
+class TestValidatorMeta:
+    """meta.standard_version is user-owned bookkeeping: no relationship to
+    meta.schema_version's major, no required major.minor shape."""
+
+    def test_standard_version_major_may_differ_from_schema(self, tmp_path):
+        standard_toml = '''root = "~/usr/"
+
+[meta]
+schema_version = "2.0"
+standard_version = "47.3"
+schema_date = "2026-01-01"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = []
+''' + BOILERPLATE_TAIL
+
+        issues, _ = validate(standard_toml, tmp_path)
+        errors = [i for i in issues if i.level == "error"]
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+    def test_standard_version_free_form_no_format_lint(self, tmp_path):
+        standard_toml = '''root = "~/usr/"
+
+[meta]
+schema_version = "2.0"
+standard_version = "March 2026 edition"
+schema_date = "2026-01-01"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = []
+''' + BOILERPLATE_TAIL
+
+        issues, _ = validate(standard_toml, tmp_path)
+        assert not any(i.code == "version-format" and "standard_version" in i.location for i in issues)
+
+    def test_schema_version_still_gets_format_lint(self, tmp_path):
+        standard_toml = '''root = "~/usr/"
+
+[meta]
+schema_version = "not-a-version"
+standard_version = "2.0"
+schema_date = "2026-01-01"
+standard_date = "2026-01-01"
+
+[paths.attributes]
+names = []
+''' + BOILERPLATE_TAIL
+
+        issues, _ = validate(standard_toml, tmp_path)
+        matching = [i for i in issues if i.code == "version-format"]
+        assert len(matching) == 1
+        assert matching[0].location == "meta.schema_version"
+
+
 class TestValidatorRuleAttachmentErrors:
     """Rule attachment validation: unknown rule, scope mismatch, missing reason, unknown param."""
 

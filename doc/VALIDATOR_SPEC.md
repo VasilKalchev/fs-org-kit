@@ -42,7 +42,6 @@ Both run by default. `--validate-only` / `--lint-only` narrow to one;
 - `schema_version`, `standard_version`, `schema_date`, `standard_date`
   must all be present
 - `schema_version` / `standard_version` must be strings
-- `schema_version`'s major must match `standard_version`'s major
 - `schema_version`'s major must be one this validator supports (a
   mismatch here **stops all further checks** - running v1-shaped checks
   against an incompatible grammar would just produce misleading noise)
@@ -140,8 +139,13 @@ doc/DESIGN.md.
 ### Rule discovery integrity
 
 - a discovered rule manifest with a name/version mismatch, missing
-  checker script, invalid TOML, or an out-of-enum `severity`/`scope`
-  is an error for that rule (it doesn't enter the catalog at all)
+  checker script, invalid TOML, a malformed `protocol_version`, or an
+  out-of-enum `severity`/`scope` is an error for that rule (it doesn't
+  enter the catalog at all)
+- a `protocol_version` major this runner has no adapter for is a
+  **warning**, not an error - the rule is still excluded from the
+  catalog, but unlike the errors above, this doesn't block the rest of
+  the standard from validating (see doc/VERSIONING.md for why)
 - an external-tier rule falsely claiming `overrides_bundled = true` is
   flagged - validate-level even though it's a warning, since it's about
   which rule actually runs (see doc/DESIGN.md for why external never
@@ -154,10 +158,11 @@ doc/DESIGN.md.
 - `root` should end with a trailing slash
 - a path key should end with a trailing slash (`some/path/`, not
   `some/path`)
-- `schema_version` / `standard_version` should look like
-  `major.minor` (e.g. `"1.0"`) - malformed values don't break
-  anything (the major-compatibility check just silently skips), so
-  this is a format nitpick, not a validate-level failure
+- `schema_version` should look like `major.minor` (e.g. `"1.0"`) -
+  a malformed value doesn't break anything (the major-compatibility
+  check just silently skips), so this is a format nitpick, not a
+  validate-level failure. `standard_version` has no such expectation -
+  it's free-form, user-owned (see doc/VERSIONING.md)
 - reserved folder names should start with the standard's reserved
   prefix (`_` by default - see `[folders.reserved]`'s `prefix` field)
 - a list-valued attribute shouldn't contain leftover empty

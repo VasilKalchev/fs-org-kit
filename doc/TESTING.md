@@ -75,12 +75,13 @@ quietly go stale.
 
 Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cache is never read or written.
 
-### Discovery tests (15 tests, `tests/test_discovery.py`)
+### Discovery tests (17 tests, `tests/test_discovery.py`)
 
 - **Baseline**: discovers bundled rules when no own/external rules exist
 - **Tier collisions**: own rule vs. bundled (with/without override flag), external rule (can never override)
 - **Scan control**: `include_external=False` truly skips the tier, not just filters results
 - **Structure validation**: broken TOML, missing checker script, directory name format, version major mismatch, invalid severity/scope values, an unknown manifest field warning without rejecting the rule
+- **`protocol_version`**: a major with no adapter is a warning (not an error) that excludes just that rule from the catalog while a sibling rule still loads fine; a malformed value (no `.`) is an error, like `version`
 - **Disabled rules**: an `_`-prefixed directory is skipped silently (no warning - being skipped is the point), isn't even parsed (broken TOML inside one is not an error), and the bundled `_template-*-v1/` rules never reach the catalog
 - **Metadata**: RuleEntry fields are properly populated
 
@@ -99,9 +100,10 @@ Every test points `$FS_ORG_KIT_CACHE_DIR` at a `tmp_path`, so the real user cach
 - **Namespaces are independent**: `folders` reads its own field lists
 - **Declaration errors**: a non-list `names`; `required`/`multi` naming a field that was never declared; a field named after one of an entry's structural keys (`group`/`rules`/`inherit`); one name declared as both kinds; a name listed twice
 
-### Validator tests (43 tests, `tests/test_validator.py`)
+### Validator tests (46 tests, `tests/test_validator.py`)
 
 - **Baseline**: a valid standard with rule attachment produces no errors (except expected lint warnings)
+- **`meta`**: `standard_version`'s major may differ from `schema_version`'s and needs no `major.minor` shape - it's free-form, user-owned bookkeeping; `schema_version` still gets the `major.minor` format lint
 - **Rule attachment errors**: unknown rule, scope mismatch, missing reason, unknown param
 - **Pattern keys**: a pattern key alone is fine; a pattern overlapping a literal (or another pattern) is an error; a literal overriding a pattern via `inherit.attributes`/`inherit.rules` is sanctioned and produces no error; the same overlap *without* that `inherit` link is still an error; two overlapping patterns are never sanctioned even with an `inherit` link; two ordinary distinct literals are never flagged
 - **Inheritance integration**: an inherited field satisfies required-field validation, undefined/cyclic `inherit` references are errors, `exclude_rules` actually removes a rule from validation (not just from the runner), a purely-inherited entry isn't mistaken for an orphaned rule attachment

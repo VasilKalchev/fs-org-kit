@@ -13,7 +13,9 @@ and where possible, fix it.
 > important design decisions and architectural details, see
 > [doc/DESIGN.md](doc/DESIGN.md). For a guide to writing your own rules,
 > see [doc/RULES.md](doc/RULES.md). For what the validator checks and
-> why, see [doc/VALIDATOR_SPEC.md](doc/VALIDATOR_SPEC.md).
+> why, see [doc/VALIDATOR_SPEC.md](doc/VALIDATOR_SPEC.md). For how every
+> version number in this project relates (or deliberately doesn't) to
+> every other one, see [doc/VERSIONING.md](doc/VERSIONING.md).
 
 ---
 
@@ -237,12 +239,16 @@ reason = "..."
 
 ### Versioning
 
-`schema_version` tracks this file's *structure* (the grammar);
-`standard_version` tracks the *content* - your actual paths and
-choices. Both `major.minor`. Their major versions must match each
-other; a validator only understands a specific major and refuses to
-guess past one it doesn't recognize, rather than produce a flood of
-misleading errors against an incompatible grammar.
+`schema_version` tracks this file's *structure* (the grammar), `major.minor`;
+a validator only understands one major at a time and refuses to guess past
+one it doesn't recognize, rather than produce a flood of misleading errors
+against an incompatible grammar. `standard_version` tracks the *content* -
+your actual paths and choices - and is entirely yours: any format, no
+relationship to `schema_version` required. Rules carry their own,
+separate versioning too (a rule's `-v<major>` identity, and the
+runner↔script wire protocol). The full picture, and why each of these
+axes is kept apart from the others on purpose, is in
+[doc/VERSIONING.md](doc/VERSIONING.md).
 
 ---
 

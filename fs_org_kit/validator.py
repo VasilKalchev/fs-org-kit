@@ -339,7 +339,7 @@ def _format_issue(issue: Issue, filename: str, color: bool) -> str:
 # matches nothing rather than erroring.
 WARNING_CODES = {
     "root-trailing-slash":         ("lint",       "root doesn't end with a trailing slash"),
-    "version-format":              ("lint",       "schema_version/standard_version doesn't look like major.minor"),
+    "version-format":              ("lint",       "schema_version doesn't look like major.minor"),
     "no-paths":                    ("lint",       'no standardized [paths."..."] entries found'),
     "missing-path-attribute-list": ("validation", "the paths namespace declares no fields at all"),
     "path-trailing-slash":         ("lint",       "a path key doesn't end with a trailing slash"),
@@ -472,34 +472,35 @@ class Validator:
 
     def _check_meta(self) -> None:
         meta = self.data.get("meta", {})
-        versions: dict[str, tuple[int, ...] | None] = {}
-        for field_name in ("schema_version", "standard_version"):
-            value = meta.get(field_name)
-            if value is None:
-                self.error(f"meta.{field_name}", "missing")
-                versions[field_name] = None
-            elif not isinstance(value, str):
-                self.error(f"meta.{field_name}", "must be a string, e.g. \"1.0\"")
-                versions[field_name] = None
-            else:
-                parsed = _parse_version(value)
-                if parsed is None:
-                    self.warning(f"meta.{field_name}", f"'{value}' doesn't look like a major.minor version", "version-format")
-                versions[field_name] = parsed
+
+        # schema_version is the tool's half of the contract: it must look
+        # like major.minor, and its major is checked against what this
+        # validator supports below. standard_version is entirely the
+        # user's own - required and must be a string, nothing more. The
+        # two used to be forced to share a major; they no longer are, see
+        # doc/VERSIONING.md.
+        schema_value = meta.get("schema_version")
+        schema_v: tuple[int, ...] | None = None
+        if schema_value is None:
+            self.error("meta.schema_version", "missing")
+        elif not isinstance(schema_value, str):
+            self.error("meta.schema_version", "must be a string, e.g. \"1.0\"")
+        else:
+            schema_v = _parse_version(schema_value)
+            if schema_v is None:
+                self.warning("meta.schema_version", f"'{schema_value}' doesn't look like a major.minor version", "version-format")
+
+        standard_value = meta.get("standard_version")
+        if standard_value is None:
+            self.error("meta.standard_version", "missing")
+        elif not isinstance(standard_value, str):
+            self.error("meta.standard_version", "must be a string")
 
         for field_name in ("schema_date", "standard_date"):
             if field_name not in meta:
                 self.error(f"meta.{field_name}", "missing")
 
-        schema_v = versions.get("schema_version")
-        standard_v = versions.get("standard_version")
         self.schema_major = schema_v[0] if schema_v is not None else None
-
-        if schema_v is not None and standard_v is not None and schema_v[0] != standard_v[0]:
-            self.error(
-                "meta.standard_version",
-                f"major version ({standard_v[0]}) doesn't match meta.schema_version's major version ({schema_v[0]})",
-            )
 
         if self.schema_major is not None and self.schema_major != SUPPORTED_SCHEMA_MAJOR:
             self.error(

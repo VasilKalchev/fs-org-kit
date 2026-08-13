@@ -11,6 +11,31 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## Unreleased
 
+### Versioning overhaul: standard_version decoupled, protocol_version enforced
+
+`meta.standard_version` no longer has to share a major with
+`meta.schema_version`, and no longer needs to look like `major.minor` -
+it's entirely user-owned bookkeeping now. The two used to be coupled;
+the major slot was never really yours if a schema bump could force it
+forward regardless of whether your own content changed.
+
+`protocol_version` compatibility is now actually checked, closing a gap
+where the field was parsed and stored but never compared to anything.
+Unlike `SUPPORTED_SCHEMA_MAJOR` (the standard's single-major, hard-stop
+policy), `discovery.SUPPORTED_PROTOCOL_MAJORS` is an additive set - the
+runner keeps every protocol major it has ever supported rather than
+replacing it on each bump, since rules (bundled, own, and especially
+external) are numerous and independently maintained, unlike a standard,
+which is one file with one owner. A rule declaring an unsupported
+protocol major is excluded from the catalog with a **warning**, not an
+error - it doesn't block the rest of the standard from validating,
+unlike a genuinely broken manifest.
+
+New: [doc/VERSIONING.md](VERSIONING.md), the complete reference for
+every version-shaped thing in this project and why each is kept
+separate from the others. `README.md`, `doc/RULES.md` and
+`doc/DESIGN.md` now point to it instead of restating the reasoning.
+
 ### Cleanup pass: one owner per shared mechanism, inert fields removed
 
 The `exclude` manifest field is gone. It was documented as "globs this
