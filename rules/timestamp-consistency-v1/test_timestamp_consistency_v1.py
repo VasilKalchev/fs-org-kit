@@ -242,5 +242,22 @@ class TestArguments:
         assert result.returncode != 0
 
 
+class TestRobustness:
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_a_symlink_back_up_the_tree_is_not_followed(self, tmp_path):
+        tree(tmp_path, "2025/2025-03/notes.txt")
+        (tmp_path / "2025" / "loop").symlink_to(tmp_path)
+        result = run_check({}, tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert status(result) == "ok"
+
+    def test_digits_naming_no_real_date_are_not_a_timestamp(self, tmp_path):
+        """"2025-13" has a timestamp's shape but there's no month 13 - it's
+        an ordinary name, so it can't contradict the 2026 above it."""
+        tree(tmp_path, "2026/2025-13/notes.txt")
+        assert status(run_check({}, tmp_path)) == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

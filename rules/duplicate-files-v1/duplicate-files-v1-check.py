@@ -171,7 +171,7 @@ def collect_files(root: Path, base: Path, recursive: bool, extensions: set,
             continue
         item = Path(entry.path)
         rel = item.relative_to(base).as_posix()
-        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
+        if any(fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(entry.name, p) for p in exclude_globs):
             continue  # for a folder, this also prunes everything below it
         if entry.is_dir():
             if recursive:
@@ -310,6 +310,14 @@ def main() -> int:
     for root in roots:
         for path, st in collect_files(root, root, recursive, extensions, exclude_globs, min_size):
             identity = (st.st_dev, st.st_ino)
+            if identity == (0, 0):
+                # os.DirEntry.stat() leaves both at zero on Windows, which
+                # would make every file look like a hardlink of the first
+                try:
+                    full = os.stat(path, follow_symlinks=False)
+                    identity = (full.st_dev, full.st_ino)
+                except OSError:
+                    continue  # vanished between listing and stat
             if identity in seen_inodes:
                 continue  # another name for bytes we already have
             seen_inodes.add(identity)

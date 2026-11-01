@@ -219,3 +219,10 @@ class TestArgumentHandling:
             [sys.executable, str(CHECK_SCRIPT), "--path", str(tmp_path), "--params", "{oops"],
             capture_output=True, text=True)
         assert result.returncode != 0
+
+
+class TestExcludeByBareName:
+
+    def test_exclude_matches_a_bare_name_at_any_depth(self, tmp_path):
+        write(tmp_path / "a" / "b" / "big.bin", 150)
+        assert verdict(run_check({"max_size": 100, "exclude": ["big.bin"]}, tmp_path)) == {"status": "ok"}

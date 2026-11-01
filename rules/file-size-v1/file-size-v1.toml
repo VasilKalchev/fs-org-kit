@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks that each individual file is not larger than max_size and not smaller than min_size - a per-file threshold, unlike folder-structure-v1's max_size, which is the total for a whole tree."
 severity = "warn"
 scope = "single"

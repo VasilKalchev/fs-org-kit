@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks that any name whose leading characters form a real calendar date or datetime uses one of the standard's accepted formats - a name with no such leading timestamp at all is left alone, not flagged."
 severity = "warn"
 scope = "single"

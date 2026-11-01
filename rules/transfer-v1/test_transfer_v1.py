@@ -361,6 +361,47 @@ class TestArgumentHandling:
         assert run_check(base_params(min_age="soon"), [source, target]).returncode != 0
 
 
+class TestFlattenedNameCollisions:
+    """`recursive` flattens subfolders into one target, so two entries can
+    share a name - matching by name alone took the second for a copy of
+    the first, and never transferred it."""
+
+    def test_same_named_files_from_different_subfolders_are_all_synced(self, tmp_path):
+        source, target = tmp_path / "lib", tmp_path / "mirror"
+        (source / "2024").mkdir(parents=True)
+        (source / "2025").mkdir()
+        (source / "2024" / "IMG.jpg").write_text("first")
+        (source / "2025" / "IMG.jpg").write_text("second, longer")
+        params = base_params(operation="sync", recursive=True)
+        assert verdict(run_check(params, [source, target]))["status"] == "violation"
+        assert verdict(run_fix(params, [source, target]))["status"] == "fixed"
+        assert sorted(p.read_text() for p in target.iterdir()) == ["first", "second, longer"]
+        assert verdict(run_check(params, [source, target]))["status"] == "ok"
+        # a second pass recognizes the renamed copy instead of making another
+        assert verdict(run_fix(params, [source, target]))["status"] == "ok"
+        assert len(list(target.iterdir())) == 2
+
+    def test_same_named_files_from_different_subfolders_are_all_copied(self, tmp_path):
+        source, target = tmp_path / "lib", tmp_path / "backup"
+        (source / "a").mkdir(parents=True)
+        (source / "b").mkdir()
+        (source / "a" / "notes.txt").write_text("from a")
+        (source / "b" / "notes.txt").write_text("from b, longer")
+        params = base_params(operation="copy", recursive=True)
+        assert verdict(run_fix(params, [source, target]))["status"] == "fixed"
+        assert sorted(p.read_text() for p in target.iterdir()) == ["from a", "from b, longer"]
+        assert verdict(run_check(params, [source, target]))["status"] == "ok"
+
+    def test_an_excluded_folder_is_not_walked_into(self, tmp_path):
+        source, target = tmp_path / "lib", tmp_path / "mirror"
+        (source / "cache").mkdir(parents=True)
+        (source / "cache" / "blob.bin").write_text("x")
+        (source / "keep.txt").write_text("x")
+        params = base_params(operation="copy", recursive=True, exclude=["cache"])
+        assert verdict(run_fix(params, [source, target]))["status"] == "fixed"
+        assert [p.name for p in target.iterdir()] == ["keep.txt"]
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

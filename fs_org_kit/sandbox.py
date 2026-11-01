@@ -208,6 +208,17 @@ def child_env(env: dict[str, str] | None = None) -> dict[str, str]:
     # runner as the `broken` reason. Recent Pythons colorize tracebacks,
     # which would embed escape codes in that message.
     env["NO_COLOR"] = "1"
+    return child_io_env(env)
+
+
+def child_io_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for any rule child, sandboxed or not: its stdio is
+    UTF-8 whatever the platform's locale encoding is, matching the
+    runner's decoding. Without it a Windows child writes cp1252 and
+    fails on the first character cp1252 lacks - a filename in a
+    traceback, say."""
+    env = dict(os.environ if env is None else env)
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
@@ -256,15 +267,22 @@ _NETWORK_EVENTS = frozenset({
 
 _SUBPROCESS_EVENTS = frozenset({
     "subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", "os.spawn",
-    "os.fork", "os.forkpty", "pty.spawn",
+    "os.fork", "os.forkpty", "pty.spawn", "os.startfile", "webbrowser.open",
 })
+
+# Events that open a file for writing from C, without passing through
+# the `open` event - the database path is their first argument.
+_NATIVE_WRITE_EVENTS = frozenset({"sqlite3.connect"})
 
 _NATIVE_EVENTS = frozenset({
     "ctypes.dlopen", "ctypes.dlsym", "ctypes.dlsym/handle", "ctypes.call_function",
     "ctypes.addressof", "ctypes.set_exception",
 })
 
-_WATCHED = frozenset(_WRITE_EVENT_PATH_ARGS) | _NETWORK_EVENTS | _SUBPROCESS_EVENTS | _NATIVE_EVENTS | {"open"}
+_WATCHED = (
+    frozenset(_WRITE_EVENT_PATH_ARGS) | _NETWORK_EVENTS | _SUBPROCESS_EVENTS | _NATIVE_EVENTS
+    | _NATIVE_WRITE_EVENTS | {"open"}
+)
 
 # Bits that mean "this open() can modify the file". os.open reports its
 # raw flags and no mode string, so the flags are the only signal there.
@@ -291,11 +309,19 @@ def _install(policy: Policy) -> None:
     # another thread's operation.
     state = threading.local()
 
+    # An anchor ("/", "C:\\") already ends in a separator; adding another
+    # would make nothing beneath it match.
+    prefixes = tuple(w if w.endswith(os.sep) else w + os.sep for w in writable)
+
     def is_writable(target: str) -> bool:
+        # /dev/stdout and /dev/stderr are symlinks into /proc, so they're
+        # checked as named, before realpath turns them into something else
+        if os.fsdecode(os.fspath(target)) in ALWAYS_WRITABLE_FILES:
+            return True
         real = _normalize(target)
         if real in ALWAYS_WRITABLE_FILES:
             return True
-        return any(real == w or real.startswith(w + os.sep) for w in writable)
+        return real in writable or real.startswith(prefixes)
 
     def deny(what: str) -> None:
         violations.append(what)
@@ -319,6 +345,12 @@ def _install(policy: Policy) -> None:
                     deny(f"a native/ctypes call ({event}) - declare [sandbox] native = true to allow it")
                 return
             if policy.unrestricted_writes:
+                return
+            if event in _NATIVE_WRITE_EVENTS:
+                database = args[0] if args else None
+                if _is_path(database) and os.fsdecode(os.fspath(database)) != ":memory:" \
+                        and not is_writable(database):
+                    deny(f"{event} on {os.fspath(database)!s}")
                 return
             if event == "open":
                 if _open_is_write(args) and _is_path(args[0]) and not is_writable(args[0]):
@@ -379,6 +411,11 @@ def main(argv: list[str] | None = None) -> int:
         runpy.run_path(script, run_name="__main__")
     except SystemExit as e:
         code = e.code
+        if code is not None and not isinstance(code, int):
+            # what the interpreter does for sys.exit("message") at top
+            # level - catching it here must not lose the message, which
+            # is the runner's whole `broken` reason
+            print(code, file=sys.stderr)
         status = 0 if code is None else (code if isinstance(code, int) else 1)
     except SandboxViolation as e:
         print(f"sandbox: blocked {e} [{_describe(policy)}]", file=sys.stderr)

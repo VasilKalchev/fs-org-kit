@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Assigns folder icons from name or content conditions - a folder containing .git gets the git icon - while preserving any color already set."
 severity = "info"
 scope = "single"

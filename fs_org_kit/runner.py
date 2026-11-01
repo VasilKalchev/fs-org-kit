@@ -120,9 +120,9 @@ from fs_org_kit.inherit import ResolvedEntry, RuleAttachment
 from fs_org_kit.param_refs import expand_params
 from fs_org_kit.path_keys import resolve_key
 from fs_org_kit.path_patterns import expand_pattern, is_pattern
-from fs_org_kit.sandbox import Policy, child_env
+from fs_org_kit.sandbox import Policy, child_env, child_io_env
 from fs_org_kit.validator import (
-    StandardLoadError, add_discovery_args, load_and_validate, should_color,
+    StandardLoadError, add_discovery_args, load_and_validate, should_color, use_utf8_output,
 )
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -451,7 +451,10 @@ def invoke_script(
         env = child_env()
 
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env)
+        result = subprocess.run(
+            argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, env=child_io_env(env),
+        )
     except subprocess.TimeoutExpired:
         return RunResult(invocation, "broken", f"timed out after {timeout:.0f}s")
     except OSError as e:
@@ -465,6 +468,10 @@ def invoke_script(
         payload = json.loads(result.stdout.strip())
     except json.JSONDecodeError:
         return RunResult(invocation, "broken", f"did not print exactly one JSON line on stdout: {result.stdout!r}")
+    if not isinstance(payload, dict):
+        # valid JSON, wrong shape - `[]` or `"ok"` must cost this one
+        # invocation, not crash the run and hide every other result
+        return RunResult(invocation, "broken", f"stdout JSON is not an object: {payload!r}")
 
     status = payload.get("status")
     if status not in ("ok", "violation", "fixed", "unfixable"):
@@ -574,6 +581,7 @@ def main(argv: list[str] | None = None) -> int:
              f"- raise this for fixers that shell out to slow external tools (e.g. audio transcoding)",
     )
     args = parser.parse_args(argv)
+    use_utf8_output()
 
     try:
         data, validator, warnings = load_and_validate(
@@ -602,14 +610,15 @@ def main(argv: list[str] | None = None) -> int:
         print("no rule attachments to run")
         return 0
 
-    results = [
-        run_invocation(inv, args.fix, timeout=args.timeout, sandboxed=not args.no_sandbox)
-        for inv in invocations
-    ]
-
-    for result in results:
+    # Each result is printed as it arrives, not after the whole pass: a
+    # run that dies or is interrupted partway must still show what the
+    # fixers before that point already changed on disk.
+    results = []
+    for inv in invocations:
+        result = run_invocation(inv, args.fix, timeout=args.timeout, sandboxed=not args.no_sandbox)
+        results.append(result)
         if result.status != "ok":
-            print(_format_result(result, standard_dir, color))
+            print(_format_result(result, standard_dir, color), flush=True)
 
     print()
     _print_summary(results, color)

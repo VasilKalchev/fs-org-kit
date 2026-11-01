@@ -15,6 +15,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -157,8 +158,6 @@ def select_entries(
         return probe == resolved_target or resolved_target.is_relative_to(probe)
 
     def consider(item: Path) -> None:
-        if matches_any(item.name, exclude):
-            return
         if min_age_seconds:
             try:
                 if now - item.lstat().st_mtime < min_age_seconds:
@@ -173,6 +172,11 @@ def select_entries(
         except OSError:
             return
         for child in children:
+            # by bare name or by path from the source, and an excluded
+            # folder takes its subtree with it - the same reading every
+            # bundled rule's `exclude` has
+            if matches_any(child.name, exclude) or matches_any(child.relative_to(source).as_posix(), exclude):
+                continue
             child_is_dir = child.is_dir()
             if is_target(child, child_is_dir):
                 continue
@@ -185,17 +189,65 @@ def select_entries(
     return selected
 
 
-def already_at_target(entry: Path, target: Path) -> bool:
-    """Whether an entry of this name already exists at the target - the
-    only question "copy" and "sync" ask before deciding an entry is
-    still outstanding. Matched by name only, same as basename-sync-v1;
-    this rule doesn't diff content."""
-    return os.path.lexists(target / entry.name)
+def _same_entry(entry: Path, candidate: Path) -> bool:
+    """Whether `candidate` is a transferred copy of `entry`: same kind,
+    and for a file the same size and modification time, which copy2 and
+    copytree preserve. Two seconds of slack covers filesystems that
+    store coarse timestamps (FAT)."""
+    try:
+        a, b = entry.lstat(), candidate.lstat()
+    except OSError:
+        return False
+    if entry.is_symlink() or candidate.is_symlink():
+        return entry.is_symlink() and candidate.is_symlink() and os.readlink(entry) == os.readlink(candidate)
+    if entry.is_dir() or candidate.is_dir():
+        return entry.is_dir() and candidate.is_dir()
+    return a.st_size == b.st_size and abs(a.st_mtime - b.st_mtime) < 2.0
 
 
-def pending(settings: Settings) -> list[Path]:
+def already_at_target(entry: Path, target: Path, strict: bool = False) -> bool:
+    """Whether this entry already exists at the target - the only
+    question "copy" and "sync" ask before deciding an entry is still
+    outstanding. Matched by name only, same as basename-sync-v1; this
+    rule doesn't diff content.
+
+    `strict` is for a name that several selected entries share, which
+    only `recursive` can produce (it flattens subfolders into one
+    target). There, a name at the target says nothing about WHICH of
+    them it came from, so the entry counts as transferred only if the
+    file under its name - or one of the numbered names a conflict
+    rename gives it - is actually a copy of it."""
+    if not strict:
+        return os.path.lexists(target / entry.name)
+    return any(_same_entry(entry, candidate) for candidate in _names_at_target(entry, target))
+
+
+def _names_at_target(entry: Path, target: Path):
+    """The entry's own name at the target, then its -2, -3, ... rename
+    alternatives, for as long as they exist."""
+    candidate = target / entry.name
+    if os.path.lexists(candidate):
+        yield candidate
+    stem, suffix = entry.stem, entry.suffix
+    for n in range(2, 1000):
+        candidate = target / f"{stem}-{n}{suffix}"
+        if not os.path.lexists(candidate):
+            return
+        yield candidate
+
+
+def shared_names(entries: list[Path]) -> set[str]:
+    """Names more than one selected entry has - see already_at_target."""
+    counts: dict[str, int] = {}
+    for entry in entries:
+        counts[entry.name] = counts.get(entry.name, 0) + 1
+    return {name for name, n in counts.items() if n > 1}
+
+
+def pending(settings: Settings) -> tuple[list[Path], set[str]]:
     """Entries still outstanding - what the checker reports and the
-    fixer acts on.
+    fixer acts on - plus the names several selected entries share, which
+    the fixer needs to re-check them the same strict way.
 
     "move" reports every selected entry regardless of the target: the
     point of a move is that source ends up without it, so its continued
@@ -207,9 +259,11 @@ def pending(settings: Settings) -> list[Path]:
         settings.source, settings.target, settings.exclude,
         settings.recursive, settings.min_age_seconds,
     )
+    shared = shared_names(entries)
     if settings.operation == "move":
-        return entries
-    return [e for e in entries if not already_at_target(e, settings.target)]
+        return entries, shared
+    outstanding = [e for e in entries if not already_at_target(e, settings.target, strict=e.name in shared)]
+    return outstanding, shared
 
 
 def fail(message: str) -> int:
@@ -232,6 +286,55 @@ def summarize(items: list, limit: int = MAX_REPORTED, total: int | None = None) 
 def unfixable(message: str) -> int:
     print(json.dumps({"status": "unfixable", "message": message}))
     return 0
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif os.path.lexists(path):
+        path.unlink()
+
+
+def _discard(path: Path) -> None:
+    """Best-effort cleanup of a partial copy - a failure here must not
+    hide the error that made the copy partial in the first place."""
+    try:
+        _remove(path)
+    except OSError:
+        pass
+
+
+def copy_entry(entry: Path, destination: Path) -> None:
+    """Copy so that `destination` is either complete or absent. The copy
+    lands under a temporary sibling name first and is renamed into place
+    only once it's whole - a copy that fails or is killed partway (the
+    runner's timeout) must not leave something under the real name that
+    a later run would take as already transferred."""
+    partial = destination.with_name(f".{destination.name}.partial-{os.getpid()}")
+    try:
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.copytree(entry, partial, symlinks=True)
+        else:
+            shutil.copy2(entry, partial, follow_symlinks=False)
+        os.replace(partial, destination)
+    except BaseException:
+        _discard(partial)
+        raise
+
+
+def move_entry(entry: Path, destination: Path) -> None:
+    """A rename when source and target share a filesystem (atomic);
+    otherwise an all-or-nothing copy, then removal of the source - never
+    shutil.move's in-place copy, which leaves a partial tree under the
+    real name if it's interrupted."""
+    try:
+        os.rename(entry, destination)
+        return
+    except OSError:
+        if os.path.lexists(destination):
+            raise
+    copy_entry(entry, destination)
+    _remove(entry)
 
 
 def destination_for(entry: Path, target: Path, on_conflict: str) -> Path | None:

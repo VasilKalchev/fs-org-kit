@@ -151,11 +151,24 @@ def render(changes: list[tuple[str, str]], mode: str, limit: int) -> str:
     return headline + "\n" + body + (f"\n... ({omitted} more)" if omitted else "")
 
 
-def snapshot_path(cache_dir: Path, target: Path) -> Path:
-    """One snapshot file per scanned path, since a single rule can be
-    attached to many. Named by digest rather than by the path itself:
-    a path contains separators and characters a filename can't hold."""
-    digest = hashlib.sha256(str(target).encode("utf-8")).hexdigest()[:32]
+def snapshot_path(cache_dir: Path, target: Path, recursive: bool, exclude: list, update_baseline: bool) -> Path:
+    """One snapshot file per scanned path AND per way of scanning it,
+    since a single rule can be attached to many paths - and to one path
+    more than once (a blanket attachment beside a per-path one). Two
+    attachments that scan differently would otherwise share a baseline
+    and keep overwriting it, each reporting the other's exclusions as
+    changes on every run; and an update_baseline = false attachment's
+    fixed baseline would be moved by an attachment that updates.
+
+    Named by digest rather than by the path itself: a path contains
+    separators and characters a filename can't hold."""
+    identity = json.dumps({
+        "path": str(target),
+        "recursive": recursive,
+        "exclude": sorted(str(g) for g in exclude),
+        "update_baseline": update_baseline,
+    }, sort_keys=True)
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
     return cache_dir / f"{digest}.json"
 
 
@@ -232,7 +245,7 @@ def main() -> int:
         return 0
 
     cache_dir = Path(args.cache_dir)
-    stored_at = snapshot_path(cache_dir, root.resolve())
+    stored_at = snapshot_path(cache_dir, root.resolve(), recursive, exclude, update_baseline)
     previous = load_snapshot(stored_at)
 
     if previous is None:

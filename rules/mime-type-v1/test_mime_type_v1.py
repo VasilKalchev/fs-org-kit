@@ -258,5 +258,24 @@ class TestArguments:
         assert result.returncode != 0
 
 
+class TestSniffingEdges:
+
+    def test_cjk_text_is_text(self, tmp_path):
+        """3-byte characters: the 64-byte sniff window always ends partway
+        through one, which says nothing about the file."""
+        (tmp_path / "notes.txt").write_text("\u65e5\u672c\u8a9e\u306e\u30c6\u30ad\u30b9\u30c8" * 10, encoding="utf-8")
+        result = run_check({"allowed": ["text/plain"], "unknown_is_violation": True}, tmp_path)
+        assert status(result) == "ok"
+
+    def test_a_heic_photo_is_not_an_mp4(self, tmp_path):
+        (tmp_path / "IMG_0001.heic").write_bytes(b"\x00\x00\x00\x18" + b"ftyp" + b"heic" + b"\x00" * 12)
+        assert status(run_check({"allowed": ["image/heic"]}, tmp_path)) == "ok"
+
+    def test_excluding_a_folder_prunes_its_contents(self, tmp_path):
+        (tmp_path / "vendor").mkdir()
+        (tmp_path / "vendor" / "doc.pdf").write_bytes(PDF)
+        assert status(run_check({"allowed": ["image/png"], "exclude": ["vendor"]}, tmp_path)) == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

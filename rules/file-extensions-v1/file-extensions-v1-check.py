@@ -32,6 +32,28 @@ def normalize(extensions: list) -> set:
     return {str(e).lower().lstrip(".") for e in extensions}
 
 
+def iter_entries(root: Path, recursive: bool, exclude_globs: list):
+    """Every entry under root, in a stable order, minus what `exclude`
+    names. A glob is matched against the path relative to root and
+    against the bare name, and an excluded folder takes its whole
+    subtree with it - the same reading every bundled rule's `exclude`
+    has. Symlinked folders are listed, never descended into."""
+    def walk(folder: Path):
+        try:
+            children = sorted(folder.iterdir())
+        except OSError:
+            return
+        for child in children:
+            rel = child.relative_to(root).as_posix()
+            if any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(child.name, g) for g in exclude_globs):
+                continue
+            yield child
+            if recursive and child.is_dir() and not child.is_symlink():
+                yield from walk(child)
+
+    yield from walk(root)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", required=True)
@@ -70,13 +92,10 @@ def main() -> int:
         print(f"error: --path is not a directory: {root}", file=sys.stderr)
         return 1
 
-    files = root.rglob("*") if recursive else root.glob("*")
+    files = iter_entries(root, recursive, exclude_globs)
     violations = []
     for f in files:
         if not f.is_file():
-            continue
-        rel = f.relative_to(root).as_posix()
-        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
             continue
         ext = extension_of(f)
         if allowed and ext not in allowed:

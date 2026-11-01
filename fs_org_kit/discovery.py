@@ -186,6 +186,10 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
             manifest = tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
         return reject(IssueLevel.ERROR, rule_id, f"{manifest_path.name} is not valid TOML: {e}")
+    except UnicodeDecodeError as e:
+        return reject(IssueLevel.ERROR, rule_id, f"{manifest_path.name} is not UTF-8 text: {e}")
+    except OSError as e:
+        return reject(IssueLevel.ERROR, rule_id, f"{manifest_path.name} could not be read: {e.strerror or e}")
 
     for key in sorted(set(manifest) - MANIFEST_KEYS):
         issues.append(DiscoveryIssue(
@@ -237,7 +241,13 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
     if scope not in SCOPE:
         return reject(IssueLevel.ERROR, rule_id, f"scope {scope!r} not one of {sorted(SCOPE)}")
 
-    overrides_bundled = bool(manifest.get("overrides_bundled", False))
+    # Real booleans only, as [sandbox] already insists: bool("false") is
+    # True, so coercing would let a quoted "false" override a bundled rule.
+    for flag in ("overrides_bundled", "uses_cache"):
+        if flag in manifest and not isinstance(manifest[flag], bool):
+            return reject(IssueLevel.ERROR, rule_id, f"'{flag}' must be true or false, not {manifest[flag]!r}")
+
+    overrides_bundled = manifest.get("overrides_bundled", False)
     if overrides_bundled and tier == Tier.EXTERNAL:
         issues.append(DiscoveryIssue(
             IssueLevel.WARNING, tier, rule_id,
@@ -262,6 +272,14 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
         ))
 
     params = manifest.get("params", {})
+    if not isinstance(params, dict):
+        return reject(IssueLevel.ERROR, rule_id, "[params] must be a table")
+    names = params.get("names", [])
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        return reject(IssueLevel.ERROR, rule_id, "params.names must be a list of strings")
+    defaults = params.get("defaults", {})
+    if not isinstance(defaults, dict):
+        return reject(IssueLevel.ERROR, rule_id, "[params.defaults] must be a table")
 
     return RuleEntry(
         rule_id=rule_id,
@@ -275,10 +293,10 @@ def _load_rule(child: Path, tier: Tier) -> tuple[RuleEntry | None, list[Discover
         scope=scope,
         protocol_version=str(protocol_version),
         overrides_bundled=overrides_bundled,
-        uses_cache=bool(manifest.get("uses_cache", False)),
+        uses_cache=manifest.get("uses_cache", False),
         sandbox=frozenset(sandbox_grants),
-        params_names=list(params.get("names", [])),
-        params_defaults=dict(params.get("defaults", {})),
+        params_names=list(names),
+        params_defaults=dict(defaults),
     ), issues
 
 

@@ -14,6 +14,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 """
 
 import argparse
+import codecs
 import fnmatch
 import json
 import sys
@@ -44,6 +45,16 @@ SIGNATURES = [
 # formats needing a signature check at a non-zero offset
 RIFF_SUBTYPES = {b"WEBP": "image/webp", b"WAVE": "audio/wav"}
 
+FTYP_BRANDS = {
+    b"heic": "image/heic", b"heix": "image/heic", b"hevc": "image/heic", b"hevx": "image/heic",
+    b"heim": "image/heic", b"heis": "image/heic",
+    b"mif1": "image/heif", b"msf1": "image/heif",
+    b"avif": "image/avif", b"avis": "image/avif",
+    b"M4A ": "audio/mp4", b"M4B ": "audio/mp4",
+    b"qt  ": "video/quicktime",
+    b"3gp4": "video/3gpp", b"3gp5": "video/3gpp", b"3gp6": "video/3gpp", b"3g2a": "video/3gpp2",
+}
+
 
 def sniff(path: Path):
     try:
@@ -62,7 +73,9 @@ def sniff(path: Path):
             return RIFF_SUBTYPES[subtype]
 
     if head[4:8] == b"ftyp":
-        return "video/mp4"
+        # ISO base media: one container, many formats - the major brand
+        # says which (an iPhone's HEIC photo is not an MP4 video)
+        return FTYP_BRANDS.get(head[8:12], "video/mp4")
 
     if head[:2] in (b"\xff\xfb", b"\xff\xfa"):
         return "audio/mpeg"
@@ -70,12 +83,36 @@ def sniff(path: Path):
     # heuristic text/plain fallback: valid UTF-8, no null bytes
     if head and b"\x00" not in head:
         try:
-            head.decode("utf-8")
+            # final=False: the 64-byte prefix may end partway through a
+            # multibyte character, which says nothing about the file
+            codecs.getincrementaldecoder("utf-8")().decode(head, final=False)
             return "text/plain"
         except UnicodeDecodeError:
             pass
 
     return None
+
+
+def iter_entries(root: Path, recursive: bool, exclude_globs: list):
+    """Every entry under root, in a stable order, minus what `exclude`
+    names. A glob is matched against the path relative to root and
+    against the bare name, and an excluded folder takes its whole
+    subtree with it - the same reading every bundled rule's `exclude`
+    has. Symlinked folders are listed, never descended into."""
+    def walk(folder: Path):
+        try:
+            children = sorted(folder.iterdir())
+        except OSError:
+            return
+        for child in children:
+            rel = child.relative_to(root).as_posix()
+            if any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(child.name, g) for g in exclude_globs):
+                continue
+            yield child
+            if recursive and child.is_dir() and not child.is_symlink():
+                yield from walk(child)
+
+    yield from walk(root)
 
 
 def main() -> int:
@@ -113,14 +150,12 @@ def main() -> int:
         print(f"error: --path is not a directory: {root}", file=sys.stderr)
         return 1
 
-    files = root.rglob("*") if recursive else root.glob("*")
+    files = iter_entries(root, recursive, exclude_globs)
     violations = []
     for f in files:
         if not f.is_file():
             continue
         rel = f.relative_to(root).as_posix()
-        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
-            continue
         mime = sniff(f)
 
         if mime is None:

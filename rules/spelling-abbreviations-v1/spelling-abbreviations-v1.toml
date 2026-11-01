@@ -1,4 +1,4 @@
-version = "1.1"
+version = "1.2"
 purpose = "Checks that words in file/folder names are either spelled correctly or are known abbreviations - catches typos and undocumented shorthand before they spread across a tree."
 severity = "warn"
 scope = "single"

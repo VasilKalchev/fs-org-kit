@@ -170,14 +170,14 @@ class TestTraversal:
         params = {"pattern": r"^[a-z0-9.]+$", "mode": "allow", "exclude": ["vendor", "vendor/*"]}
         assert status(run_check(params, tmp_path)) == "ok"
 
-    def test_excluding_a_folder_does_not_prune_its_contents(self, tmp_path):
-        """`exclude` filters items, it doesn't stop the walk - the glob has
-        to cover what's inside too (which is why the test above lists both)."""
+    def test_excluding_a_folder_prunes_its_contents(self, tmp_path):
+        """An excluded folder takes its subtree with it, the same reading
+        every bundled rule's `exclude` has - "vendor" alone is enough."""
         nested = tmp_path / "vendor"
         nested.mkdir()
         (nested / "Bad Name.txt").touch()
         params = {"pattern": r"^[a-z0-9.]+$", "mode": "allow", "exclude": ["vendor"]}
-        assert status(run_check(params, tmp_path)) == "violation"
+        assert status(run_check(params, tmp_path)) == "ok"
 
 
 class TestMessage:

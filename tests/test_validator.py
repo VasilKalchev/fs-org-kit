@@ -1058,5 +1058,65 @@ reason = "r"
         assert not any("not found in any rules tier" in i.message for i in issues_with if i.level == "error")
 
 
+class TestValidatorMalformedShapes:
+    """A table of the wrong shape is reported, never raised - and never
+    passed through to the runner as something it can act on."""
+
+    ATTRIBUTES = '''
+[paths.attributes]
+names = ["purpose"]
+required = ["purpose"]
+'''
+
+    def errors_at(self, issues, location):
+        return [i for i in issues if i.level == "error" and i.location == location]
+
+    def test_cross_paths_as_a_string_is_an_error(self, tmp_path):
+        """A bare string iterates as one-character strings - it must not
+        pass as a list of paths and reach the runner as '~', '/', ..."""
+        standard_toml = BOILERPLATE_HEAD + self.ATTRIBUTES + '''
+[[paths.cross]]
+paths = "~/Desktop/"
+''' + BOILERPLATE_TAIL
+        issues, _ = validate(standard_toml, tmp_path)
+        assert self.errors_at(issues, "paths.cross[0].paths")
+
+    def test_cross_with_a_single_path_is_an_error(self, tmp_path):
+        standard_toml = BOILERPLATE_HEAD + self.ATTRIBUTES + '''
+[[paths.cross]]
+paths = ["a/"]
+''' + BOILERPLATE_TAIL
+        issues, _ = validate(standard_toml, tmp_path)
+        errors = self.errors_at(issues, "paths.cross[0].paths")
+        assert errors and "2 or more" in errors[0].message
+
+    def test_cross_written_as_a_table_is_reported(self, tmp_path):
+        """[paths.cross] instead of [[paths.cross]] parses as a table."""
+        standard_toml = BOILERPLATE_HEAD + self.ATTRIBUTES + '''
+[paths.cross]
+paths = ["a/", "b/"]
+''' + BOILERPLATE_TAIL
+        issues, _ = validate(standard_toml, tmp_path)
+        errors = self.errors_at(issues, "paths.cross")
+        assert errors and "[[paths.cross]]" in errors[0].message
+
+    def test_a_top_level_section_that_isnt_a_table_is_reported(self, tmp_path):
+        standard_toml = 'root = "~/usr/"\npaths = "x"\n\n' + minimal_meta() + '[folders]\n[enums]\n'
+        issues, _ = validate(standard_toml, tmp_path)
+        assert self.errors_at(issues, "paths")
+
+    def test_a_hash_inside_a_quoted_key_is_not_a_comment(self):
+        from fs_org_kit.validator import _index_source
+        headers, _ = _index_source('[paths."C#/"]\npurpose = "x"\n')
+        assert headers == {'paths."C#/"': [1]}
+
+    def test_a_standard_that_isnt_utf8_is_a_load_error(self, tmp_path):
+        from fs_org_kit.validator import StandardLoadError, load_standard
+        std = tmp_path / "std.toml"
+        std.write_bytes(b'root = "\xff\xfe/"\n')
+        with pytest.raises(StandardLoadError, match="not UTF-8"):
+            load_standard(std)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

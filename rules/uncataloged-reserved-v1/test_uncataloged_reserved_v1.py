@@ -200,14 +200,14 @@ class TestTraversal:
         (nested / "_build").mkdir()
         assert status(run_check({"cataloged": [], "exclude": ["vendor/*"]}, tmp_path)) == "ok"
 
-    def test_excluding_a_folder_does_not_prune_its_subtree(self, tmp_path):
-        """`exclude` filters what gets reported, it doesn't stop the walk."""
+    def test_excluding_a_folder_prunes_its_subtree(self, tmp_path):
+        """An excluded folder takes its subtree with it, the same reading
+        every bundled rule's `exclude` has."""
         outer = tmp_path / "_vendor"
         outer.mkdir()
         (outer / "_build").mkdir()
         payload = json.loads(run_check({"cataloged": [], "exclude": ["_vendor"]}, tmp_path).stdout)
-        assert payload["status"] == "violation"
-        assert "_vendor/_build" in payload["message"]
+        assert payload["status"] == "ok"
 
 
 class TestMessage:

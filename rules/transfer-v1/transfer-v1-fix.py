@@ -28,20 +28,15 @@ from _shared import (
     VERB_PAST,
     BadParams,
     already_at_target,
+    copy_entry,
     destination_for,
     fail,
+    move_entry,
     pending,
     read_settings,
     summarize,
     unfixable,
 )
-
-
-def copy_entry(entry, destination) -> None:
-    if entry.is_dir() and not entry.is_symlink():
-        shutil.copytree(entry, destination, symlinks=True)
-    else:
-        shutil.copy2(entry, destination, follow_symlinks=False)
 
 
 def main() -> int:
@@ -62,7 +57,7 @@ def main() -> int:
     except BadParams as e:
         return fail(str(e))
 
-    entries = pending(settings)
+    entries, shared = pending(settings)
     if not entries:
         print(json.dumps({"status": "ok"}))
         return 0
@@ -92,9 +87,15 @@ def main() -> int:
             # Re-checked here, not just at selection time: a self-
             # contained fixer doesn't trust its own snapshot against a
             # filesystem it's actively changing.
-            if already_at_target(entry, settings.target):
+            if already_at_target(entry, settings.target, strict=entry.name in shared):
                 continue
-            destination = settings.target / entry.name
+            # A name another selected entry already took (recursive only)
+            # gets a numbered one - sync never overwrites either.
+            try:
+                destination = destination_for(entry, settings.target, "rename")
+            except FileExistsError as e:
+                failed.append(f"{label} ({e})")
+                continue
         else:
             try:
                 destination = destination_for(entry, settings.target, settings.on_conflict)
@@ -112,7 +113,7 @@ def main() -> int:
 
         try:
             if settings.operation == "move":
-                shutil.move(str(entry), str(destination))
+                move_entry(entry, destination)
             else:
                 copy_entry(entry, destination)
             moved.append(label)

@@ -69,6 +69,17 @@ class TestComparisonKey:
     def test_trailing_slash_is_irrelevant(self):
         assert comparison_key("a/b/") == comparison_key("a/b")
 
+    def test_a_relative_key_is_placed_under_an_absolute_root(self):
+        """The runner resolves both of these to one folder, so the overlap
+        check must see one folder too."""
+        assert comparison_key("prj/a/", "~/usr/") == comparison_key("~/usr/prj/a/", "~/usr/")
+
+    def test_dot_dot_segments_are_collapsed(self):
+        assert comparison_key("a/../b/") == comparison_key("b/")
+
+    def test_a_relative_root_leaves_relative_keys_relative(self):
+        assert comparison_key("etc/", "tree/") != comparison_key("/etc/", "tree/")
+
 
 # ---------------------------------------------------------------------
 # Validator / runner integration
@@ -137,6 +148,19 @@ class TestValidatorOverlapAcrossTheRootBoundary:
         standard = BOILERPLATE_HEAD + entry("/srv/*/") + entry("srv/*/") + BOILERPLATE_TAIL
         issues, _ = validate(standard, tmp_path)
         assert errors(issues) == []
+
+    def test_an_absolute_spelling_of_a_key_under_root_collides(self, tmp_path):
+        """With root "~/usr/", "~/usr/prj/a/" IS "prj/a/" - one of the
+        folders "prj/*/" matches. Not flagging it let the runner silently
+        drop the pattern's rules for that folder."""
+        standard = BOILERPLATE_HEAD + entry("prj/*/") + entry("~/usr/prj/a/") + BOILERPLATE_TAIL
+        issues, _ = validate(standard, tmp_path)
+        assert any("may match the same folder" in i.message for i in errors(issues))
+
+    def test_a_dot_dot_spelling_collides(self, tmp_path):
+        standard = BOILERPLATE_HEAD + entry("x/../prj/*/") + entry("prj/a/") + BOILERPLATE_TAIL
+        issues, _ = validate(standard, tmp_path)
+        assert any("may match the same folder" in i.message for i in errors(issues))
 
     def test_two_spellings_of_the_same_outside_place_still_collide(self, tmp_path):
         home = str(Path.home())

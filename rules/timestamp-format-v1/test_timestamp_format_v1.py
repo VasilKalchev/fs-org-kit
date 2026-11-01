@@ -157,5 +157,14 @@ class TestEdgeCases:
         assert result.returncode != 0
 
 
+class TestExcludePrunes:
+
+    def test_excluding_a_folder_prunes_its_contents(self, tmp_path):
+        (tmp_path / "imported").mkdir()
+        (tmp_path / "imported" / "20250105 photo.jpg").touch()
+        result = run_check({"formats": ACCEPTED, "exclude": ["imported"]}, tmp_path)
+        assert json.loads(result.stdout)["status"] == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

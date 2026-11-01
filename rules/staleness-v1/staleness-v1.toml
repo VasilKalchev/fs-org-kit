@@ -1,4 +1,4 @@
-version = "1.1"
+version = "1.2"
 purpose = "Checks each direct child of a path against an age threshold - either flagging things that have gone stale (mode=\"stale\", for active folders that should stay current) or things that are unexpectedly active (mode=\"active\", for archive folders that shouldn't be seeing new activity)."
 severity = "warn"
 scope = "single"

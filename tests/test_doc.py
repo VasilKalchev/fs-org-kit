@@ -307,6 +307,21 @@ origin = ["self"]
         main([str(std)])
         assert "| See also | b/ |" in capsys.readouterr().out
 
+    def test_a_pipe_or_newline_in_a_value_stays_inside_its_cell(self, tmp_path, capsys):
+        """A multi-line TOML string or a `|` would otherwise end the row
+        or the cell early."""
+        std = write_standard(tmp_path, '''
+[paths."a/"]
+purpose = """first line
+second | line"""
+
+[paths."a/".group]
+lifecycle = "ongoing"
+origin = ["self"]
+''')
+        main([str(std)])
+        assert "| Purpose | first line<br>second \\| line |" in capsys.readouterr().out
+
     def test_field_of_only_empty_strings_is_omitted(self, tmp_path, capsys):
         std = write_standard(tmp_path, '''
 [paths."a/"]

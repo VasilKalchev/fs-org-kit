@@ -256,8 +256,11 @@ def folder_matches(folder: Path, matcher: Matcher, cache: dict) -> bool:
         if not hits:
             return False
         if matcher.ratio:
+            # "the fraction of the folder's files" - so the matching
+            # subfolders `hits` may include don't count towards it
             files = [e.name for e in entries if e.is_file()]
-            if not files or len(hits) / len(files) < matcher.ratio:
+            file_hits = [n for n in files if any(fnmatch.fnmatch(n, g) for g in matcher.contains_any)]
+            if not files or len(file_hits) / len(files) < matcher.ratio:
                 return False
     return True
 

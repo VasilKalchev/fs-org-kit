@@ -12,6 +12,7 @@ Run with: python -m pytest tests/test_sandbox.py -v
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -341,3 +342,34 @@ class TestScriptSemanticsArePreserved:
         result = run_under_sandbox("raise ValueError('boom')\n", Policy(), tmp_path)
         assert result.returncode != 0
         assert "boom" in result.stderr
+
+    def test_a_string_exit_code_keeps_its_message(self, tmp_path):
+        """sys.exit("...") prints its message at top level; caught by the
+        harness, it must still print, since it's the `broken` reason."""
+        result = run_under_sandbox('import sys\nsys.exit("custom failure")\n', Policy(), tmp_path)
+        assert result.returncode == 1
+        assert "custom failure" in result.stderr
+
+
+class TestPolicyEdges:
+
+    def test_a_filesystem_anchor_covers_everything_beneath_it(self, tmp_path):
+        """"/" (or "C:\\") already ends in a separator - appending another
+        used to make nothing beneath it match."""
+        anchor = os.path.realpath(tmp_path.anchor)
+        target = tmp_path / "out.txt"
+        result = run_under_sandbox(
+            f"open({str(target)!r}, 'w').write('x')\n", Policy(writable=(anchor,)), tmp_path
+        )
+        assert result.returncode == 0, result.stderr
+        assert target.read_text() == "x"
+
+    def test_sqlite_outside_the_policy_is_blocked(self, tmp_path):
+        """sqlite3 opens its file from C, without an `open` event."""
+        database = tmp_path / "elsewhere.sqlite3"
+        result = run_under_sandbox(
+            f"import sqlite3\nsqlite3.connect({str(database)!r})\n", Policy(), tmp_path
+        )
+        assert result.returncode != 0
+        assert "sqlite3.connect" in result.stderr
+        assert not database.exists()

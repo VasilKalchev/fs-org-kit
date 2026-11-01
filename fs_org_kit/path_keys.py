@@ -17,6 +17,7 @@ join.
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
 
 
@@ -26,8 +27,10 @@ def is_home_relative(key: str) -> bool:
 
 def is_absolute_key(key: str) -> bool:
     """True for a key naming an absolute location - either literally
-    ("/etc/") or once `~` is expanded ("~/.config/")."""
-    return key.startswith("/") or is_home_relative(key)
+    ("/etc/") or once `~` is expanded ("~/.config/"). A drive-letter
+    path ("C:/x/") counts on Windows, the same answer `resolve_key`'s
+    `is_absolute()` gives there."""
+    return key.startswith("/") or is_home_relative(key) or Path(key).is_absolute()
 
 
 def resolve_key(root_dir: Path, key: str) -> Path:
@@ -46,16 +49,25 @@ def resolve_key(root_dir: Path, key: str) -> Path:
     return (root_dir / key).resolve()
 
 
-def comparison_key(key: str) -> str:
+def comparison_key(key: str, root: str | None = None) -> str:
     """A normalized form for comparing two catalog keys against each other
     without touching disk - used for the validator's pattern-overlap
     check, where "~/x/" and "/home/me/x/" must be recognized as the same
     place. `expanduser()` reads $HOME (and the pwd database for `~user`),
     never the filesystem being validated, so this stays disk-free.
 
-    Relative keys are returned with a leading "./" so they can never
-    collide with an absolute key that happens to share their segments -
-    "etc/nginx/" under root is not "/etc/nginx/"."""
+    Given the standard's `root` string, and that root is absolute or
+    `~`-relative, a relative key is placed under it first - otherwise
+    "prj/a/" and "~/usr/prj/a/" (with root "~/usr/") would compare as
+    two places when the runner resolves them to one. `..` and `.`
+    segments are collapsed for the same reason ("a/../b/" is "b/").
+
+    Relative keys that can't be placed (no root, or a relative root) are
+    returned with a leading "./" so they can never collide with an
+    absolute key that happens to share their segments - "etc/nginx/"
+    under root is not "/etc/nginx/"."""
+    if not is_absolute_key(key) and root and is_absolute_key(root):
+        key = root.rstrip("/") + "/" + key
     if is_absolute_key(key):
-        return str(Path(key).expanduser()).rstrip("/") or "/"
-    return "./" + key.strip("/")
+        return posixpath.normpath(Path(key).expanduser().as_posix())
+    return "./" + posixpath.normpath(key)

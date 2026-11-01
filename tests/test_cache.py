@@ -134,6 +134,26 @@ class TestListAndClear:
         assert clear("never-ran-v1") == []
         assert clear() == []
 
+    def test_an_id_that_walks_out_of_the_cache_is_refused(self, root, tmp_path):
+        """`container / "../.."` is a directory above the cache, and this
+        ends in rmtree - refused before anything is touched."""
+        bystander = tmp_path / "bystander"
+        bystander.mkdir()
+        ensure_rule_cache_dir("duplicate-files-v1")
+        for rule_id in ("..", "../..", "x-v1/../..", str(bystander)):
+            with pytest.raises(ValueError):
+                clear(rule_id)
+        assert bystander.is_dir()
+        assert [name for name, _, _ in list_caches()] == ["duplicate-files-v1"]
+
+    def test_an_absolute_path_is_refused_by_the_cli(self, root, tmp_path, capsys, monkeypatch):
+        bystander = tmp_path / "bystander"
+        bystander.mkdir()
+        monkeypatch.setattr(sys, "argv", ["fs-org-cache", "--clear", str(bystander)])
+        assert main() == 2
+        assert "not a rule id" in capsys.readouterr().err
+        assert bystander.is_dir()
+
 
 class TestCLI:
 

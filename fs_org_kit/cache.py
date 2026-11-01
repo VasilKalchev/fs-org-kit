@@ -60,6 +60,9 @@ import shutil
 import sys
 from pathlib import Path
 
+from fs_org_kit.discovery import RULE_DIR_PATTERN
+from fs_org_kit.validator import use_utf8_output
+
 ENV_OVERRIDE = "FS_ORG_KIT_CACHE_DIR"
 APP_DIR_NAME = "fs-org-kit"
 RULES_SUBDIR = "rules"
@@ -77,6 +80,18 @@ def cache_root() -> Path:
     else:
         base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
     return Path(base) / APP_DIR_NAME
+
+
+def is_valid_rule_id(rule_id: str) -> bool:
+    """A single `<name>-v<major>` path component - the only shape a
+    rule's cache directory ever has (see fs_org_kit.discovery)."""
+    return (
+        bool(RULE_DIR_PATTERN.match(rule_id))
+        and rule_id not in (".", "..")
+        and "/" not in rule_id and "\\" not in rule_id
+        and Path(rule_id).name == rule_id
+        and not Path(rule_id).is_absolute()
+    )
 
 
 def rule_cache_dir(rule_id: str) -> Path:
@@ -128,8 +143,15 @@ def list_caches() -> list[tuple[str, Path, int]]:
 
 def clear(rule_id: str | None = None) -> list[str]:
     """Delete one rule's cache, or every rule's cache when rule_id is
-    None. Returns the rule ids actually removed."""
+    None. Returns the rule ids actually removed.
+
+    A rule id is a directory name, nothing else. Anything that would
+    resolve elsewhere - "..", an absolute path, a name with a separator -
+    is refused before any deletion: `container / "/home/me"` is
+    `/home/me`, and this function ends in rmtree."""
     if rule_id is not None:
+        if not is_valid_rule_id(rule_id):
+            raise ValueError(f"not a rule id: {rule_id!r} (expected a name like duplicate-files-v1)")
         directory = rule_cache_dir(rule_id)
         if not directory.is_dir():
             return []
@@ -164,6 +186,7 @@ def main() -> int:
     group.add_argument("--path", action="store_true",
                        help="print the cache root and exit")
     args = parser.parse_args()
+    use_utf8_output()
 
     if args.path:
         print(cache_root())
@@ -171,7 +194,11 @@ def main() -> int:
 
     if args.clear is not None:
         target = args.clear or None
-        removed = clear(target)
+        try:
+            removed = clear(target)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
         if not removed:
             print(f"nothing cached for {target}" if target else "nothing cached")
         else:

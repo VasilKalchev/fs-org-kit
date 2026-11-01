@@ -18,6 +18,7 @@ import argparse
 import fnmatch
 import json
 import os
+import shlex
 import shutil
 import struct
 import sys
@@ -140,7 +141,15 @@ def check_desktop(path: Path) -> tuple[str, str]:
             return BROKEN, "Type=Application with no Exec"
         # Exec is a command line with field codes (%f, %U, ...); only the
         # program itself can be checked for existence.
-        program = exec_line.split()[0].strip('"')
+        # Exec quotes an argument containing spaces the way a shell would
+        # ("/opt/My App/run"); a plain split broke it at the space
+        try:
+            words = shlex.split(exec_line)
+        except ValueError:
+            words = exec_line.split()
+        if not words:
+            return BROKEN, "Type=Application with no Exec"
+        program = words[0].strip('"')
         if "/" in program:
             return resolve_local(program, path.parent), f"Exec -> {program}"
         return (OK, "") if shutil.which(program) else (BROKEN, f"Exec -> {program} (not on PATH)")
@@ -282,7 +291,9 @@ def walk(root: Path, base: Path, recursive: bool, exclude: list, kinds: set,
             verdict, detail = check_one(child, kind, follow_chains)
             results.append((verdict, rel, detail))
             continue
-        if child.is_dir() and recursive:
+        # never descend through a symlink, even when `symlink` isn't a
+        # checked kind - a link to an ancestor would recurse forever
+        if child.is_dir() and not child.is_symlink() and recursive:
             walk(child, base, recursive, exclude, kinds, follow_chains, results)
 
 

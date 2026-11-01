@@ -26,7 +26,10 @@ SIZE_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)\s*([A-Za-z]*)$")
 
 
 def is_excluded(relative_posix: str, exclude_globs: list) -> bool:
-    return any(fnmatch.fnmatch(relative_posix, pattern) for pattern in exclude_globs)
+    """Matched against the path relative to --path, or the bare name -
+    the same reading every bundled rule's `exclude` has."""
+    name = relative_posix.rsplit("/", 1)[-1]
+    return any(fnmatch.fnmatch(relative_posix, p) or fnmatch.fnmatch(name, p) for p in exclude_globs)
 
 
 def scan_tree(root: Path, exclude_globs: list):
@@ -61,7 +64,10 @@ def scan_tree(root: Path, exclude_globs: list):
             items += 1
             if entry.is_dir():
                 folders += 1
-                subdirs.append(child)
+                # counted, never descended into: a link back up the tree
+                # would recurse until the interpreter gave up
+                if not entry.is_symlink():
+                    subdirs.append(child)
             elif entry.is_file():
                 files += 1
                 try:

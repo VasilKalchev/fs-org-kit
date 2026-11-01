@@ -1,4 +1,4 @@
-version = "1.1"
+version = "1.2"
 purpose = "Checks each file's ACTUAL type, sniffed from its content (magic bytes), against an allowed or disallowed list of MIME types - catches mislabeled files that file-extensions-v1 can't (a .txt that's actually a PNG, an .exe renamed to .jpg)."
 severity = "error"
 scope = "single"
@@ -22,6 +22,9 @@ exclude = []
 # Detection is a compact built-in magic-byte sniffer covering common
 # image, audio, video, archive, and document formats, plus a heuristic
 # text/plain fallback (valid UTF-8, no null bytes) - not exhaustive.
+# ISO base media files (`ftyp`) are told apart by their major brand:
+# image/heic, image/heif, image/avif, audio/mp4, video/quicktime,
+# video/3gpp(2), and video/mp4 for every other brand.
 # `unknown_is_violation` controls whether a file the sniffer can't
 # identify at all counts against `allowed` (yes, if true - "not in the
 # allowed list" includes "unrecognized") or is simply skipped (default).

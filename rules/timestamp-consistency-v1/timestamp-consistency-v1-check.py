@@ -15,6 +15,7 @@ exit code: 0 = ran fine (read stdout for the verdict)
 """
 
 import argparse
+import calendar
 import json
 import re
 import sys
@@ -33,7 +34,25 @@ YEAR_PATTERN = re.compile(r"^(\d{4})$")
 
 def parse_component(name: str) -> tuple | None:
     """Returns a 6-tuple (year, month, day, hour, minute, second), each
-    an int or None, or None if nothing recognizable was found at all."""
+    an int or None, or None if nothing recognizable was found at all.
+    Digits in a timestamp's shape that name no real moment ("2024-13",
+    "20240230") aren't a timestamp."""
+    fields = _match_component(name)
+    return fields if fields is not None and _is_real(fields) else None
+
+
+def _is_real(fields: tuple) -> bool:
+    year, month, day, hour, minute, second = fields
+    if year < 1:
+        return False
+    if month is not None and not 1 <= month <= 12:
+        return False
+    if day is not None and not 1 <= day <= calendar.monthrange(year, month)[1]:
+        return False
+    return all(v is None or 0 <= v < limit for v, limit in ((hour, 24), (minute, 60), (second, 60)))
+
+
+def _match_component(name: str) -> tuple | None:
     m = DATETIME_PATTERN.match(name)
     if m:
         y, mo, d, h, mi, s = map(int, m.groups())
@@ -73,7 +92,11 @@ def merge_check(accumulated: dict, new_fields: tuple) -> tuple[dict, str | None]
 
 
 def walk(current_dir: Path, accumulated: dict, recursive: bool, require_all: bool, root: Path, violations: list) -> None:
-    for child in sorted(current_dir.iterdir()):
+    try:
+        children = sorted(current_dir.iterdir())
+    except OSError:
+        return  # unreadable - nothing in it can be judged, which isn't a reason to fail the rest
+    for child in children:
         parsed = parse_component(child.name)
         if parsed is None:
             if require_all:
@@ -88,7 +111,9 @@ def walk(current_dir: Path, accumulated: dict, recursive: bool, require_all: boo
                 # for every single file under one bad folder
                 child_accumulated = accumulated
 
-        if child.is_dir() and recursive:
+        # a symlinked folder isn't descended into: a link back up the
+        # tree would recurse until the interpreter gave up
+        if child.is_dir() and not child.is_symlink() and recursive:
             walk(child, child_accumulated, recursive, require_all, root, violations)
 
 

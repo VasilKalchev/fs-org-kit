@@ -301,5 +301,13 @@ class TestArguments:
         assert result.returncode != 0
 
 
+class TestExcludePrunes:
+
+    def test_excluding_a_folder_prunes_its_contents(self, tmp_path):
+        (tmp_path / "vendor").mkdir()
+        (tmp_path / "vendor" / "reprot.txt").touch()
+        assert status(run_check({"abbreviations": [], "exclude": ["vendor"]}, tmp_path)) == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 RULE_DIR = Path(__file__).parent
 CHECK_SCRIPT = RULE_DIR / "link-integrity-v1-check.py"
 
@@ -290,3 +292,27 @@ class TestArgumentHandling:
 
     def test_rejects_non_list_exclude(self, tmp_path):
         assert run_check({"exclude": "*.lnk"}, tmp_path).returncode != 0
+
+
+class TestTraversalAndExec:
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_a_symlinked_folder_is_not_descended_into_when_links_arent_checked(self, tmp_path):
+        """With `symlink` out of `kinds`, a link to an ancestor used to be
+        walked into until the recursion limit."""
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "loop").symlink_to(tmp_path)
+        (tmp_path / "x.desktop").write_text(desktop_entry(Type="Link", URL="missing.txt"))
+        payload = verdict(run_check({"kinds": ["desktop"]}, tmp_path))
+        assert payload["status"] == "violation"
+        assert "1 broken link(s) of 1 checked" in payload["message"]
+
+    def test_a_quoted_exec_path_with_a_space_is_one_program(self, tmp_path):
+        app_dir = tmp_path / "My App"
+        app_dir.mkdir()
+        program = app_dir / "run"
+        program.write_text("")
+        (tmp_path / "app.desktop").write_text(
+            desktop_entry(Type="Application", Exec=f'"{program.as_posix()}" --flag')
+        )
+        assert verdict(run_check({"kinds": ["desktop"]}, tmp_path))["status"] == "ok"

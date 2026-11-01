@@ -50,7 +50,10 @@ def format_size(n: int) -> str:
 
 
 def is_excluded(relative_posix: str, exclude_globs: list) -> bool:
-    return any(fnmatch.fnmatch(relative_posix, pattern) for pattern in exclude_globs)
+    """Matched against the path relative to --path, or the bare name -
+    the same reading every bundled rule's `exclude` has."""
+    name = relative_posix.rsplit("/", 1)[-1]
+    return any(fnmatch.fnmatch(relative_posix, p) or fnmatch.fnmatch(name, p) for p in exclude_globs)
 
 
 def normalize_extensions(values: list) -> set:

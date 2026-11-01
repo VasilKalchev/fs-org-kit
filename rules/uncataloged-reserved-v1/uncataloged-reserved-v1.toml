@@ -1,4 +1,4 @@
-version = "1.1"
+version = "1.2"
 purpose = "Checks for folders that use the standard's reserved-name prefix (e.g. \"_\") but aren't cataloged under [folders.reserved.\"...\"] - a folder that LOOKS reserved but isn't documented."
 severity = "warn"
 scope = "single"

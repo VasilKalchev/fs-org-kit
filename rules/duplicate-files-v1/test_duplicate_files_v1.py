@@ -400,3 +400,12 @@ class TestArgumentHandling:
     def test_rejects_non_list_exclude(self, tmp_path, cache):
         result = run_check({"exclude": "*.tmp"}, path=tmp_path, cache_dir=cache)
         assert result.returncode != 0
+
+
+class TestExcludeByBareName:
+
+    def test_exclude_matches_a_bare_name_at_any_depth(self, tmp_path, cache):
+        write(tmp_path / "a.txt", "dup")
+        write(tmp_path / "deep" / "er" / "copy.txt", "dup")
+        result = run_check({"exclude": ["copy.txt"]}, path=tmp_path, cache_dir=cache)
+        assert json.loads(result.stdout)["status"] == "ok"

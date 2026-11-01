@@ -4,6 +4,7 @@ tests/test_runner.py - unit tests for fs_org_kit.runner
 Run with: python -m pytest tests/test_runner.py -v
 """
 
+import dataclasses
 import os
 import tempfile
 import time
@@ -722,6 +723,34 @@ allowed = ["jpg"]
         assert "SKIPPED" in out
         assert "BROKEN" not in out
         assert exit_code == 0                            # skipped is not a failure
+
+
+class TestScriptOutputShape:
+    """What a script prints is checked before it's trusted."""
+
+    def _invoke(self, tmp_path, catalog, body: str):
+        script = tmp_path / "odd-v1-check.py"
+        script.write_text(body, encoding="utf-8")
+        entry = dataclasses.replace(catalog["file-extensions-v1"], check_script=script)
+        (tmp_path / "target").mkdir()
+        inv = Invocation("odd-v1", entry, "loc", "reason", {}, target_path=tmp_path / "target")
+        return invoke_script(script, inv, is_fix=False)
+
+    def test_json_that_is_not_an_object_is_broken_not_a_crash(self, tmp_path, catalog):
+        result = self._invoke(tmp_path, catalog, 'print("[]")\n')
+        assert result.status == "broken"
+        assert "not an object" in result.message
+
+    def test_a_non_ascii_message_survives_the_pipe(self, tmp_path, catalog):
+        """The child's stdio is UTF-8 whatever the platform's locale
+        encoding is, so a message naming 日本.txt arrives intact."""
+        body = (
+            "import json\n"
+            'print(json.dumps({"status": "violation", "message": "日本 ü"}, ensure_ascii=False))\n'
+        )
+        result = self._invoke(tmp_path, catalog, body)
+        assert result.status == "violation"
+        assert result.message == "日本 ü"
 
 
 if __name__ == "__main__":

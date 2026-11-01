@@ -136,5 +136,24 @@ class TestEdgeCases:
         assert result.returncode != 0
 
 
+class TestTraversalSafety:
+
+    def test_exclude_matches_a_bare_name_at_any_depth(self, tmp_path):
+        nested = tmp_path / "a" / "cache"
+        nested.mkdir(parents=True)
+        for i in range(6):
+            (nested / f"f{i}").mkdir()
+        result = run_check({"max_folders": 5, "recursive": True, "exclude": ["cache"]}, tmp_path)
+        assert json.loads(result.stdout)["status"] == "ok"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_a_symlink_back_up_the_tree_is_not_followed(self, tmp_path):
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "loop").symlink_to(tmp_path)
+        result = run_check({"max_depth": 10, "recursive": True}, tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["status"] == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

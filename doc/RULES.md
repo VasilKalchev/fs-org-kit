@@ -109,8 +109,8 @@ recursive = true
 | `severity` | no (defaults `"info"`), checked | How loud a violation is reported. Must be a valid value or discovery rejects the rule - see [enums](#enums-severity-and-scope) below. |
 | `scope` | no (defaults `"single"`), checked | Where this rule may be attached. Must be a valid value or discovery rejects the rule - see [enums](#enums-severity-and-scope) below. |
 | `protocol_version` | no (defaults `"1.0"`), checked | Which version of the runner↔script wire format `-check.py`/`-fix.py` speak. Independent of `version` - see [below](#protocol_version-vs-version). A major this runner has no adapter for is a **warning**, not an error - the rule is excluded from the catalog, but the rest of the standard still validates and runs. |
-| `overrides_bundled` | no (defaults `false`) | Only meaningful for a rule in `rules.own/`. See [Overriding a bundled rule](#overriding-a-bundled-rule). |
-| `uses_cache` | no (defaults `false`) | `true` if your rule keeps state between runs. The runner then passes `--cache-dir <path>`. See [Rules that cache](#rules-that-cache). |
+| `overrides_bundled` | no (defaults `false`), checked | Must be a real boolean - a quoted `"false"` is rejected rather than read as true. Only meaningful for a rule in `rules.own/`. See [Overriding a bundled rule](#overriding-a-bundled-rule). |
+| `uses_cache` | no (defaults `false`), checked | A real boolean. `true` if your rule keeps state between runs. The runner then passes `--cache-dir <path>`. See [Rules that cache](#rules-that-cache). |
 | `sandbox` | no, no default | Table granting capabilities the harness otherwise blocks. See [The sandbox](#the-sandbox). |
 | `params.names` | yes | Every parameter your checker/fixer accepts. |
 | `params.defaults` | no | Defaults for some or all of those params. Any param **not** listed here has no default and **must** be supplied at every attachment site in the standard, or validation fails. |
@@ -136,6 +136,11 @@ Both vocabularies are closed and live in `fs_org_kit/discovery.py`
 (`SEVERITY`, `SCOPE`), along with `MANIFEST_KEYS` - the full set of
 fields a manifest may carry. A field outside that set is a typo doing
 nothing, and discovery says so rather than ignoring it.
+
+`severity` is checked but not yet acted on: the runner reports every
+violation the same way whatever its rule's severity, `none` included.
+The meanings above are what each value is for; making the report honor
+them is in [BACKLOG.md](BACKLOG.md).
 
 ### `protocol_version` vs `version`
 
@@ -247,6 +252,13 @@ from one declaration in the standard, so nothing can drift apart:
 [paths."prj/_arch/".rules.<your-rule>-v1.params]
 tags = { ref = "tags.state" }
 ```
+
+**`exclude` means the same thing in every bundled rule**, and a new rule
+should keep it: a list of globs, each matched against an item's path
+relative to the scanned root *and* against its bare name (so `"cache"`
+catches a `cache/` at any depth), with an excluded folder taking its
+whole subtree with it. Symlinked folders are listed, never descended
+into - a link back up the tree would otherwise recurse forever.
 
 ### What your script must print
 

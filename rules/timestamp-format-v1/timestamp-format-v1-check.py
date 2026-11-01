@@ -85,6 +85,28 @@ def match_leading(name: str, prepared: list):
     return None
 
 
+def iter_entries(root: Path, recursive: bool, exclude_globs: list):
+    """Every entry under root, in a stable order, minus what `exclude`
+    names. A glob is matched against the path relative to root and
+    against the bare name, and an excluded folder takes its whole
+    subtree with it - the same reading every bundled rule's `exclude`
+    has. Symlinked folders are listed, never descended into."""
+    def walk(folder: Path):
+        try:
+            children = sorted(folder.iterdir())
+        except OSError:
+            return
+        for child in children:
+            rel = child.relative_to(root).as_posix()
+            if any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(child.name, g) for g in exclude_globs):
+                continue
+            yield child
+            if recursive and child.is_dir() and not child.is_symlink():
+                yield from walk(child)
+
+    yield from walk(root)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", required=True)
@@ -128,7 +150,7 @@ def main() -> int:
         print(f"error: --path is not a directory: {root}", file=sys.stderr)
         return 1
 
-    items = root.rglob("*") if recursive else root.glob("*")
+    items = iter_entries(root, recursive, exclude_globs)
     violations = []
     for item in items:
         is_dir = item.is_dir()
@@ -138,8 +160,6 @@ def main() -> int:
             continue
 
         rel = item.relative_to(root).as_posix()
-        if any(fnmatch.fnmatch(rel, p) for p in exclude_globs):
-            continue
 
         if match_leading(item.name, prepared) is not None:
             continue  # correctly formatted

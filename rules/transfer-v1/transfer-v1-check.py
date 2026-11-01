@@ -39,7 +39,7 @@ def main() -> int:
     except BadParams as e:
         return fail(str(e))
 
-    entries = pending(settings)
+    entries, _shared_names = pending(settings)
     if not entries:
         print(json.dumps({"status": "ok"}))
         return 0

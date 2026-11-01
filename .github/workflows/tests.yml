@@ -7,11 +7,19 @@ on:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    # The kit targets Linux, macOS and Windows (cache locations, .lnk
+    # shortcuts, path handling), so each is tested - a Windows-only bug
+    # in duplicate-files-v1 once passed an Ubuntu-only suite unnoticed.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]" pyspellchecker  # per-rule dependency, spelling-abbreviations-v1
       - run: pytest

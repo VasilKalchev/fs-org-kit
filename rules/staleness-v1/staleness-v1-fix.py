@@ -18,11 +18,11 @@ exit code: 0 = ran fine (read stdout for the verdict)
 
 import argparse
 import json
-import shutil
+import os
 import sys
 from pathlib import Path
 
-from _shared import find_violations, parse_duration, resolve_destination
+from _shared import find_violations, move_item, parse_duration, resolve_destination
 
 
 def main() -> int:
@@ -107,11 +107,11 @@ def main() -> int:
     resolved, failed = [], []
     for item, age in violations:
         target = destination / item.name
-        if target.exists():
+        if os.path.lexists(target):
             failed.append(f"{item.name} (a '{item.name}' already exists at {destination}, not overwritten)")
             continue
         try:
-            shutil.move(str(item), str(target))
+            move_item(item, target)
             resolved.append(item.name)
         except OSError as e:
             failed.append(f"{item.name} ({e})")

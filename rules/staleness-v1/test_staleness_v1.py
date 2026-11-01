@@ -423,5 +423,17 @@ class TestArguments:
         assert result.returncode != 0
 
 
+class TestDanglingLinks:
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_a_dangling_symlink_is_judged_by_the_link_itself(self, tmp_path):
+        """Its target has no timestamp to read - one stale link used to
+        make the whole attachment `broken`."""
+        (tmp_path / "gone").symlink_to(tmp_path / "nowhere")
+        result = run(CHECK_SCRIPT, {"mode": "stale", "threshold": "1d"}, tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert status(result) == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

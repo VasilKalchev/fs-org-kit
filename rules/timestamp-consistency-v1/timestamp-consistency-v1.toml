@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks that a file or folder's embedded timestamp is consistent with the timestamps embedded in its ancestor folder names - a file dated 2026-03-06 inside a 2026-03-05 folder is a contradiction, even though both are individually valid dates."
 severity = "error"
 scope = "single"

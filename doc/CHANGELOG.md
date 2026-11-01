@@ -11,6 +11,30 @@ Four commands: `fs-org-validate`, `fs-org-run`, `fs-org-doc`,
 
 ## 0.5
 
+### Fixes from a full codebase review
+
+**Core.**
+
+- The runner treats stdout that is valid JSON but not an object as `broken`, not a crash. It prints each result as it arrives, so a run that dies partway still shows what fixers already changed. Rule children get UTF-8 stdio (`PYTHONIOENCODING`) and every CLI writes UTF-8, so redirected output no longer fails on Windows' cp1252.
+- The validator reports a top-level table of the wrong type, `[paths.cross]` written as a table, and a non-table cross set instead of raising. `paths.cross[].paths` must be a list of 2 or more strings: a bare string used to pass and reach the runner as one target per character (`~`, `/`, ...). A standard that isn't UTF-8, or can't be read, is a load error (exit 2). A `#` inside a quoted key no longer truncates the line index.
+- Discovery rejects, as an issue against that rule, a manifest that isn't UTF-8 or can't be read, a non-table `params`, a non-list `params.names`, a non-table `params.defaults`, and a non-boolean `overrides_bundled`/`uses_cache` (`bool("false")` is true).
+- The overlap check places relative keys under an absolute `root` and collapses `..`, so `~/usr/prj/a/` (root `~/usr/`) and `x/../prj/*/` collide with `prj/*/` as the runner resolves them. A drive-letter key counts as absolute.
+- `fs-org-cache --clear` refuses anything that isn't a single `<name>-v<major>` component. It used to join the argument onto the cache root and `rmtree` it: `--clear ../..` or an absolute path deleted outside the cache.
+- Sandbox: `/dev/stdout` and `/dev/stderr` are checked before `realpath`; a filesystem anchor as a writable entry covers what's beneath it; `sqlite3.connect`, `os.startfile` and `webbrowser.open` are policed; `sys.exit("message")` keeps its message.
+- The doc generator escapes `|` and newlines in table cells and list items.
+- CI runs on Ubuntu, Windows and macOS with Python 3.11 and 3.13.
+
+**Rules** (each a minor `version` bump).
+
+- `duplicate-files-v1` 1.1: `os.DirEntry.stat()` reports inode 0 on Windows, so the hardlink check made every file after the first look like a hardlink of it, and nothing was ever reported there. The identity now comes from a full `stat` when needed.
+- `transfer-v1` 1.1: with `recursive`, two entries flattened to one name are matched by size and mtime, not by name alone. The second `notes.txt` was taken for a copy of the first and never copied or synced. Copies land under `.<name>.partial-<pid>` and are renamed into place, and a cross-device move copies that way before removing the source, so an interrupted run never leaves a partial copy under the real name. An excluded folder is no longer walked into.
+- `staleness-v1` 1.2: the same all-or-nothing move; a dangling symlink at the destination counts as taken; a dangling symlink among the children no longer makes the attachment `broken`.
+- `changed-since-v1` 1.1: a baseline is keyed by path *and* `recursive`/`exclude`/`update_baseline`, so two attachments that scan one path differently no longer overwrite each other's baseline. Existing baselines restart once.
+- `folder-structure-v1` 1.1, `timestamp-consistency-v1` 1.1, `link-integrity-v1` 1.2: never descend through a symlinked folder (a link to an ancestor recursed until the interpreter gave up). `timestamp-consistency-v1` also survives an unreadable folder and no longer reads impossible dates (`2025-13`) as timestamps. `link-integrity-v1` reads a quoted `Exec=` path containing spaces as one program.
+- `mime-type-v1` 1.2: text whose 64-byte sniff window ends mid-character (all CJK text) is text; `ftyp` files are told apart by brand (HEIC/HEIF/AVIF/M4A/QuickTime/3GP), not all `video/mp4`.
+- `xdg-auto-folder-icon-v1` 1.1: `ratio` is a fraction of files, as documented; matching subfolders no longer count towards it.
+- **`exclude` now means one thing in every bundled rule**: globs matched against the path from the scanned root *and* the bare name, and an excluded folder prunes its subtree. `naming-pattern-v1` 1.1, `timestamp-format-v1` 1.1, `uncataloged-reserved-v1` 1.2, `mime-type-v1`, `file-extensions-v1` 1.1 and `spelling-abbreviations-v1` 1.2 used to filter only the folder itself and match the relative path only; `file-size-v1` 1.1, `duplicate-files-v1`, `basename-sync-v1` 1.1 and `folder-structure-v1` didn't match bare names. An `exclude` naming a folder now skips what's inside it too; an attachment that relied on the old reading needs a narrower pattern. See [RULES.md](RULES.md).
+
 ### `tests/conftest.py`: one shared minimal-standard builder and `validate()`, not five
 
 A second `/simplify` finding, this one from the "Reuse" angle: the

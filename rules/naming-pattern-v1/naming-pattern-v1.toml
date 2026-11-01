@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks file and/or folder names against a regular expression - either every name must match it (allow), or no name may match it (disallow)."
 severity = "warn"
 scope = "single"

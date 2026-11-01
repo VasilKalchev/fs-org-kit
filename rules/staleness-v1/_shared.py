@@ -6,7 +6,9 @@ naming, so discovery.py never touches it).
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -51,8 +53,13 @@ def effective_timestamp(item: Path, basis: str) -> float:
     back to the folder's own timestamp only if it's entirely empty."""
     stat_attr = "st_atime" if basis == "atime" else "st_mtime"
 
-    if item.is_file():
-        return getattr(item.stat(), stat_attr)
+    if not item.is_dir():
+        # a file, or a link that doesn't lead to a folder - a dangling one
+        # included, judged by the link itself rather than failing the run
+        try:
+            return getattr(item.stat(), stat_attr)
+        except OSError:
+            return getattr(item.lstat(), stat_attr)
 
     newest = None
     for f in item.rglob("*"):
@@ -87,6 +94,41 @@ def find_violations(root: Path, mode: str, threshold_seconds: int, basis: str, e
             violations.append((item, age))
 
     return violations
+
+
+def move_item(item: Path, destination: Path) -> None:
+    """Move so that `destination` is either complete or absent: a rename
+    when both sides share a filesystem, otherwise a copy under a
+    temporary sibling name, renamed into place once whole, then removal
+    of the source. shutil.move copies in place, so an interrupted
+    cross-device move left a partial tree under the real name - and every
+    later run then refused to overwrite it."""
+    try:
+        os.rename(item, destination)
+        return
+    except OSError:
+        if os.path.lexists(destination):
+            raise
+    partial = destination.with_name(f".{destination.name}.partial-{os.getpid()}")
+    try:
+        if item.is_dir() and not item.is_symlink():
+            shutil.copytree(item, partial, symlinks=True)
+        else:
+            shutil.copy2(item, partial, follow_symlinks=False)
+        os.replace(partial, destination)
+    except BaseException:
+        try:
+            if partial.is_dir() and not partial.is_symlink():
+                shutil.rmtree(partial)
+            elif os.path.lexists(partial):
+                partial.unlink()
+        except OSError:
+            pass
+        raise
+    if item.is_dir() and not item.is_symlink():
+        shutil.rmtree(item)
+    else:
+        item.unlink()
 
 
 def format_age(seconds: float) -> str:

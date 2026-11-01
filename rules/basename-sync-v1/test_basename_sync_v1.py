@@ -207,5 +207,16 @@ sys.exit(0)
         assert str(b) in captured["missing"]
 
 
+class TestExcludeByBareName:
+
+    def test_exclude_matches_a_bare_name_at_any_depth(self, tmp_path):
+        a, b = tmp_path / "a", tmp_path / "b"
+        (a / "album").mkdir(parents=True)
+        b.mkdir()
+        (a / "album" / "cover.jpg").touch()
+        result = run(CHECK_SCRIPT, {"mode": "shared", "exclude": ["cover.jpg"]}, a, b)
+        assert json.loads(result.stdout)["status"] == "ok"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

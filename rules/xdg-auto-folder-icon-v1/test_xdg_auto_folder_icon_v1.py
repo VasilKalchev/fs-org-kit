@@ -290,3 +290,17 @@ class TestArgumentHandling:
 
     def test_rejects_default_color_not_in_colors(self, tmp_path):
         assert run_check({"match": [GIT_RULE], "default_color": "chartreuse"}, tmp_path).returncode != 0
+
+
+class TestRatioDenominator:
+
+    def test_ratio_is_a_fraction_of_files_not_of_files_and_folders(self, tmp_path):
+        """A subfolder whose name matches contains_any isn't one of the
+        folder's files, so it can't push the fraction over the line."""
+        album = tmp_path / "album"
+        album.mkdir()
+        (album / "a.jpg").touch()
+        (album / "notes.txt").touch()
+        (album / "old.jpg").mkdir()
+        rule = {"contains_any": ["*.jpg"], "ratio": 0.6, "icon": "folder-{color}-images"}
+        assert verdict(run_check({"match": [rule]}, tmp_path))["status"] == "ok"

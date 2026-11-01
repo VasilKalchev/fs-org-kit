@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Moves, copies, or syncs non-excluded entries from one cataloged path to another, e.g. sweeping a desktop into a dated inbox folder."
 severity = "info"
 scope = "cross"
@@ -68,6 +68,15 @@ protocol_version = "1.0"
 # which is exactly when silently destroying an existing copy would go
 # unnoticed. "sync" ignores `on_conflict`: an entry the target already
 # has (by name) is treated as already synced, not a conflict.
+#
+# Flattening can give two entries one name (`a/notes.txt`, `b/notes.txt`).
+# For such a name, "copy" and "sync" count an entry as transferred only
+# when the file under its name - or a -2, -3, ... rename of it - has the
+# same size and modification time, so the second one gets copied under a
+# numbered name instead of being taken for the first. A copy lands under a
+# temporary `.<name>.partial-<pid>` name and is renamed into place only
+# once complete, so an interrupted run never leaves a partial copy under
+# the real name.
 #
 # [sandbox] unrestricted_writes
 #

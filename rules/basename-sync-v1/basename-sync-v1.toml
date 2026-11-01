@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks whether 2+ paths agree on which files exist by name (ignoring or comparing extensions) - e.g. a lossless library that should have a matching lossy mirror, or a not-processed/processed pair where the source should disappear once processed."
 severity = "warn"
 scope = "cross"

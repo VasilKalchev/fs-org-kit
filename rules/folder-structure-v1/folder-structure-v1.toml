@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Checks the shape of a folder: how many items/files/folders sit directly inside it, how deeply nested its subfolders go, and how much space it takes up on disk - catches a folder that's become a dumping ground, or an over-engineered nest of near-empty subfolders."
 severity = "warn"
 scope = "single"

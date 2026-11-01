@@ -320,5 +320,50 @@ class TestDiscoveryMetadata:
             assert entry.has_fixer is False  # file-extensions-v1 has no fixer
 
 
+class TestMalformedManifests:
+    """One bad manifest becomes an issue against that rule - it never
+    raises, which would take down every tool reading the same tier."""
+
+    HEAD = 'version = "1.0"\npurpose = "p"\nscope = "single"\nprotocol_version = "1.0"\n'
+
+    def own_rule(self, tmp_path, manifest: bytes | str):
+        rule_dir = tmp_path / "rules.own" / "odd-v1"
+        rule_dir.mkdir(parents=True)
+        path = rule_dir / "odd-v1.toml"
+        if isinstance(manifest, bytes):
+            path.write_bytes(manifest)
+        else:
+            path.write_text(manifest)
+        (rule_dir / "odd-v1-check.py").write_text('print("stub")')
+        return discover_rules(tmp_path, include_external=False)
+
+    def rule_errors(self, issues):
+        return [i for i in issues if i.rule_id == "odd-v1" and i.level == IssueLevel.ERROR]
+
+    def test_params_that_isnt_a_table(self, tmp_path):
+        catalog, issues = self.own_rule(tmp_path, self.HEAD + 'params = ["a"]\n')
+        assert "odd-v1" not in catalog
+        assert self.rule_errors(issues)
+
+    def test_params_names_that_isnt_a_list(self, tmp_path):
+        catalog, issues = self.own_rule(tmp_path, self.HEAD + '[params]\nnames = "abc"\n')
+        assert "odd-v1" not in catalog
+        assert self.rule_errors(issues)
+
+    def test_a_manifest_that_isnt_utf8(self, tmp_path):
+        catalog, issues = self.own_rule(tmp_path, self.HEAD.encode() + b'purpose2 = "\xff"\n')
+        assert "odd-v1" not in catalog
+        assert any("UTF-8" in i.message for i in self.rule_errors(issues))
+
+    def test_a_quoted_false_is_not_a_boolean(self, tmp_path):
+        """bool("false") is True - coercing would let a quoted "false"
+        override a bundled rule."""
+        catalog, issues = self.own_rule(
+            tmp_path, self.HEAD + 'overrides_bundled = "false"\n[params]\nnames = []\n'
+        )
+        assert "odd-v1" not in catalog
+        assert any("true or false" in i.message for i in self.rule_errors(issues))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

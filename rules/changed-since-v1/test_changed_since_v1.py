@@ -303,3 +303,18 @@ class TestArgumentHandling:
 
     def test_rejects_non_list_exclude(self, tmp_path):
         assert run_check({"exclude": "*.log"}, tree(tmp_path), cache(tmp_path)).returncode != 0
+
+
+class TestBaselineIdentity:
+
+    def test_attachments_scanning_differently_keep_separate_baselines(self, tmp_path):
+        """A blanket attachment and a per-path one on the same folder, one
+        excluding *.log: sharing a baseline, each reported the other's
+        exclusions as changes on every run."""
+        watched, c = tree(tmp_path), cache(tmp_path)
+        (watched / "app.log").write_text("x")
+        everything, no_logs = {}, {"exclude": ["*.log"]}
+        run_check(everything, watched, c)
+        run_check(no_logs, watched, c)
+        assert verdict(run_check(everything, watched, c)) == {"status": "ok"}
+        assert verdict(run_check(no_logs, watched, c)) == {"status": "ok"}

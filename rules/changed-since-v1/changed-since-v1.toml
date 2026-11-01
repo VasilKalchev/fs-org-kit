@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Reports what was added, removed, or modified under a path since the last run, from a cached snapshot of names, sizes, and modification times."
 severity = "info"
 scope = "single"
@@ -28,6 +28,12 @@ uses_cache = true
 # one attachment: keep comparing against the original snapshot, so a
 # change stays reported until someone deals with it instead of becoming
 # the new baseline on the next run.
+#
+# A baseline belongs to one path scanned one way: `recursive`, `exclude`
+# and `update_baseline` are part of what it's stored under. Two
+# attachments on the same path with different settings keep separate
+# baselines rather than overwriting each other's, and changing one of
+# those settings starts a fresh baseline (one silent first run).
 #
 # WHAT COUNTS AS A CHANGE
 #

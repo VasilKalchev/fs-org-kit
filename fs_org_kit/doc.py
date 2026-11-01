@@ -39,6 +39,7 @@ from fs_org_kit.fields import ATTRIBUTES, GROUP, FieldSpec, iter_rule_instances
 from fs_org_kit.inherit import ResolvedEntry
 from fs_org_kit.validator import (
     DEFAULT_RESERVED_PREFIX, StandardLoadError, Validator, add_discovery_args, load_and_validate,
+    use_utf8_output,
 )
 
 
@@ -78,6 +79,13 @@ def slug_for(title: str) -> str:
 
 def link(text: str, slug: str | None) -> str:
     return f"[{text}](#{slug})" if slug else text
+
+
+def cell(text: object) -> str:
+    """A standard's prose made safe for one Markdown table cell (or list
+    item): a `|` would end the cell early, and a newline - natural in a
+    multi-line TOML string - would end the row."""
+    return str(text).replace("|", "\\|").replace("\r\n", "\n").replace("\n", "<br>")
 
 
 # ---------------------------------------------------------------------
@@ -217,7 +225,7 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, spec: FieldS
     for name in spec.attribute_names:
         value = resolved.attributes.get(name)
         if isinstance(value, str) and value:
-            rows.append((_field_label(name), value))
+            rows.append((_field_label(name), cell(value)))
             continue
         values = _string_values(value)
         if values:
@@ -240,7 +248,7 @@ def _render_attribute_table(b: DocBuilder, resolved: ResolvedEntry, spec: FieldS
         b.line(f"**{label}:**")
         b.line()
         for v in values:
-            b.line(f"- {v}")
+            b.line(f"- {cell(v)}")
         b.line()
 
 
@@ -257,7 +265,7 @@ def _render_rule_table(b: DocBuilder, rows: list[tuple[str, str]]) -> None:
     b.line("|---|---|")
     for rule_id, reason in rows:
         rule_slug = slug_for(f"`{rule_id}`")
-        b.line(f"| {link(f'`{rule_id}`', rule_slug)} | {reason} |")
+        b.line(f"| {link(f'`{rule_id}`', rule_slug)} | {cell(reason)} |")
     b.line()
 
 
@@ -349,7 +357,7 @@ def render_rules(b: DocBuilder, sites_by_rule: dict[str, list[RuleAttachmentSite
         b.line(f"**Attached at {len(sites)} location(s):**")
         b.line()
         for site in sorted(sites, key=lambda s: s.location_label):
-            b.line(f"- {link(f'`{site.location_label}`', site.location_slug)} - {site.reason}")
+            b.line(f"- {link(f'`{site.location_label}`', site.location_slug)} - {cell(site.reason)}")
         b.line()
 
 
@@ -382,7 +390,7 @@ def render_enums(b: DocBuilder, data: dict[str, Any]) -> None:
         b.line("| Value | Meaning |")
         b.line("|---|---|")
         for val, desc in values.items():
-            b.line(f"| `{val}` | {desc} |")
+            b.line(f"| `{val}` | {cell(desc)} |")
         b.line()
 
 
@@ -394,7 +402,7 @@ def render_abbreviations(b: DocBuilder, data: dict[str, Any]) -> None:
     b.line("| Abbreviation | Meaning |")
     b.line("|---|---|")
     for k in sorted(abbreviations.keys(), key=str.lower):
-        b.line(f"| `{k}` | {abbreviations[k]} |")
+        b.line(f"| `{k}` | {cell(abbreviations[k])} |")
     b.line()
 
 
@@ -440,7 +448,7 @@ def render_tags(b: DocBuilder, data: dict[str, Any]) -> None:
         b.line("| Value | Meaning |")
         b.line("|---|---|")
         for value, meaning in values.items():
-            b.line(f"| `{value}` | {meaning} |")
+            b.line(f"| `{value}` | {cell(meaning)} |")
         b.line()
 
 
@@ -496,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
     add_discovery_args(parser)
     parser.add_argument("--title", default=None, help="override the document title")
     args = parser.parse_args(argv)
+    use_utf8_output()
 
     try:
         data, validator, warnings = load_and_validate(

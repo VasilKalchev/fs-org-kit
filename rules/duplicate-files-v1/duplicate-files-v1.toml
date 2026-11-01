@@ -1,4 +1,4 @@
-version = "1.0"
+version = "1.1"
 purpose = "Finds byte-identical files by content hash - either within a single path (scope=single) or only across the given paths (scope=cross), e.g. the same photo sitting in both an inbox and its filed destination. Hashes are cached on disk and reused until a file's size or mtime changes."
 severity = "warn"
 scope = "both"

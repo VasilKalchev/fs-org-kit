@@ -72,6 +72,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import codecs
 import os
 import re
 import sys
@@ -127,7 +128,7 @@ def _index_source(text: str) -> tuple[dict[str, list[int]], dict[str, int]]:
     key_lines: dict[str, int] = {}
 
     for lineno, raw_line in enumerate(text.splitlines(), start=1):
-        line = re.sub(r"\s*#.*$", "", raw_line).strip()
+        line = _strip_comment(raw_line).strip()
         if not line:
             continue
 
@@ -149,6 +150,21 @@ def _index_source(text: str) -> tuple[dict[str, list[int]], dict[str, int]]:
     return header_occurrences, key_lines
 
 
+def _strip_comment(line: str) -> str:
+    """The line up to its `#` comment, if any. A `#` inside a quoted key
+    or value (`[paths."C#/"]`) is part of it, not a comment."""
+    quote = None
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[:i]
+    return line
+
+
 class StandardLoadError(Exception):
     """A standard file couldn't be read or parsed - the message is ready
     to print to stderr as-is; the caller exits 2."""
@@ -162,10 +178,13 @@ def load_standard(path: Path) -> tuple[str, dict[str, Any]]:
         raw_text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise StandardLoadError(f"{path} not found")
+    except UnicodeDecodeError as e:
+        raise StandardLoadError(f"{path} is not UTF-8 text: {e}")
+    except OSError as e:
+        raise StandardLoadError(f"{path} could not be read: {e.strerror or e}")
 
     try:
-        with path.open("rb") as f:
-            data = tomllib.load(f)
+        data = tomllib.loads(raw_text)
     except tomllib.TOMLDecodeError as e:
         raise StandardLoadError(f"{path} is not valid TOML: {e}")
 
@@ -223,6 +242,19 @@ def should_color(no_color_flag: bool) -> bool:
     """Colorize only when asked for, writing to a terminal, and NO_COLOR
     isn't set - the same answer for every CLI in the package."""
     return not no_color_flag and sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+def use_utf8_output() -> None:
+    """Make stdout/stderr UTF-8 for every CLI in the package. Redirected
+    output on Windows defaults to the locale encoding (cp1252), so
+    `fs-org-doc std.toml > out.md` would otherwise fail on the first
+    character a standard, a path or a rule message carries that cp1252
+    lacks. A stream that is already UTF-8 is left alone."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if encoding and reconfigure and codecs.lookup(encoding).name != "utf-8":
+            reconfigure(encoding="utf-8")
 
 
 def _split_location(location: str) -> list[str]:
@@ -414,7 +446,10 @@ class Validator:
     # -- entry point ----------------------------------------------------
 
     def run(self) -> list[Issue]:
-        self._check_top_level()
+        if not self._check_top_level():
+            # a table that isn't one - every later check would only be
+            # guessing at the shape of its contents, so stop at the report
+            return self.issues
         self._check_meta()
         if not self._schema_major_supported():
             # the grammar itself may have changed incompatibly - running
@@ -457,7 +492,10 @@ class Validator:
 
     # -- top-level shape ------------------------------------------------
 
-    def _check_top_level(self) -> None:
+    def _check_top_level(self) -> bool:
+        """Presence and shape of the top-level tables. Returns False when
+        one has the wrong type, which is the point past which nothing
+        else can be checked safely."""
         required = ("root", "meta", "paths", "folders", "enums")
         for key in required:
             if key not in self.data:
@@ -469,6 +507,31 @@ class Validator:
                 self.error("root", "must be a string")
             elif not root.endswith("/"):
                 self.warning("root", "expected a trailing slash, e.g. \"~/usr/\"", "root-trailing-slash")
+
+        shape_ok = True
+        for key in ("meta", "paths", "folders", "enums"):
+            if key in self.data and not isinstance(self.data[key], dict):
+                self.error(key, "must be a table")
+                shape_ok = False
+        if not shape_ok:
+            return False
+
+        reserved = self.data.get("folders", {}).get("reserved")
+        if reserved is not None and not isinstance(reserved, dict):
+            self.error("folders.reserved", "must be a table")
+            shape_ok = False
+
+        cross = self.data.get("paths", {}).get("cross")
+        if cross is not None:
+            if not isinstance(cross, list):
+                self.error("paths.cross", "must be an array of tables - write [[paths.cross]], not [paths.cross]")
+                shape_ok = False
+            else:
+                for i, item in enumerate(cross):
+                    if not isinstance(item, dict):
+                        self.error(f"paths.cross[{i}]", "expected a table")
+                        shape_ok = False
+        return shape_ok
 
     def _check_meta(self) -> None:
         meta = self.data.get("meta", {})
@@ -688,13 +751,15 @@ class Validator:
         # Compared in normalized form (fs_org_kit.path_keys.comparison_key)
         # so an out-of-root key can't collide with a same-looking key under
         # root ("/etc/*/" vs "etc/*/"), while two spellings of the SAME
-        # out-of-root place still do ("~/x/*/" vs "/home/me/x/*/").
+        # place still do ("~/x/*/" vs "/home/me/x/*/", or "prj/a/" vs
+        # "~/usr/prj/a/" under root "~/usr/").
         # Only pairs with at least one pattern can overlap, so this walks
         # patterns x keys rather than every pair of keys - the same set of
         # pairs, without building the quadratic majority just to skip it.
         # Pairs stay ordered by position in `keys` so the issue is still
         # reported against the earlier of the two.
-        normalized = {k: comparison_key(k) for k in keys}
+        root = self.data.get("root")
+        normalized = {k: comparison_key(k, root if isinstance(root, str) else None) for k in keys}
         position = {k: i for i, k in enumerate(keys)}
         for pattern in patterned:
             for other in keys:
@@ -790,11 +855,13 @@ class Validator:
             referenced = cross.get("paths", [])
             # cross-path constraints may reference ANY path set, cataloged
             # or not - so we only check shape here, not membership against
-            # the [paths."..."] catalog
-            if not referenced:
-                self.error(f"{loc}.paths", "list is empty")
-            elif not all(isinstance(p, str) for p in referenced):
+            # the [paths."..."] catalog. The list check comes first: a bare
+            # string iterates as one-character strings, which would pass the
+            # element check and reach the runner as one target per character.
+            if not isinstance(referenced, list) or not all(isinstance(p, str) for p in referenced):
                 self.error(f"{loc}.paths", "must be a list of path strings")
+            elif len(referenced) < 2:
+                self.error(f"{loc}.paths", f"needs 2 or more paths, got {len(referenced)}")
             self._check_rule_instances(cross.get("rules"), loc, context="cross")
 
     # -- folders ------------------------------------------------------------
@@ -1166,6 +1233,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list-warnings", action="store_true", help="print all warning codes and exit")
     add_discovery_args(parser)
     args = parser.parse_args(argv)
+    use_utf8_output()
 
     if args.list_warnings:
         for code, (kind, desc) in sorted(WARNING_CODES.items()):
