@@ -310,7 +310,7 @@ class TestDiscoveryMetadata:
             # Check all RuleEntry fields
             assert entry.rule_id == "file-extensions-v1"
             assert entry.tier == Tier.BUNDLED
-            assert entry.version == "1.0"
+            assert entry.version.split(".")[0] == "1"  # major matches -v1; minor moves with fixes
             assert entry.purpose != ""
             assert entry.severity in ("none", "info", "warn", "error")
             assert entry.scope in ("single", "cross", "both")

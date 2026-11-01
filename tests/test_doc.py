@@ -44,7 +44,7 @@ names = []
 
 def write_standard(tmp_path, body: str) -> "Path":
     std = tmp_path / "fs-org-std.toml"
-    std.write_text(BOILERPLATE.format(root=tmp_path, body=body))
+    std.write_text(BOILERPLATE.format(root=tmp_path.as_posix(), body=body))
     return std
 
 
